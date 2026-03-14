@@ -571,21 +571,21 @@ function createBookingModal({ onSave }) {
 
 function createConfirmDialog() {
   const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
+  overlay.className = "modal-overlay modal-overlay--confirm";
   overlay.innerHTML = `
     <div class="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogMessage">
       <div class="confirm-modal__header">
         <div class="confirm-modal__badge" aria-hidden="true">!</div>
         <div>
-          <p class="confirm-modal__eyebrow">Bitte bestaetigen</p>
-          <h3 id="confirmDialogTitle">Eintrag loeschen?</h3>
+          <p class="confirm-modal__eyebrow">Bitte bestätigen</p>
+          <h3 id="confirmDialogTitle">Eintrag löschen?</h3>
         </div>
       </div>
       <p class="confirm-modal__message" id="confirmDialogMessage"></p>
-      <p class="confirm-modal__hint">Dieser Vorgang kann nicht rueckgaengig gemacht werden.</p>
+      <p class="confirm-modal__hint">Dieser Vorgang kann nicht rückgängig gemacht werden.</p>
       <div class="modal-actions confirm-modal__actions">
         <button type="button" class="btn" data-confirm-cancel>Abbrechen</button>
-        <button type="button" class="btn btn--danger-solid" data-confirm-accept>Endgueltig loeschen</button>
+        <button type="button" class="btn btn--danger-solid" data-confirm-accept>Endgültig löschen</button>
       </div>
     </div>
   `;
@@ -612,8 +612,8 @@ function createConfirmDialog() {
     if (event.key === "Escape") close(false);
   });
 
-  async function confirm({ title, message, confirmLabel = "Endgueltig loeschen" }) {
-    titleNode.textContent = title || "Eintrag loeschen?";
+  async function confirm({ title, message, confirmLabel = "Endgültig löschen" }) {
+    titleNode.textContent = title || "Eintrag löschen?";
     messageNode.textContent = message || "";
     acceptBtn.textContent = confirmLabel;
     overlay.classList.add("is-open");
@@ -722,15 +722,15 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
       const confirmed = await confirmDialog.confirm({
-        title: "Buchung endgueltig loeschen?",
-        message: `Die Buchung "${currentBooking.title}" wird dauerhaft entfernt.`
+        title: "Buchung endgültig löschen?",
+        message: `Möchten Sie die Buchung „${currentBooking.title}“ wirklich löschen?`
       });
       if (!confirmed) return;
       onBookingDelete(currentBooking.id)
         .then(() => close())
         .catch((error) => {
           console.error(error);
-          window.alert(error.message || "Buchung konnte nicht gel\u00f6scht werden.");
+          window.alert(error.message || "Buchung konnte nicht gelöscht werden.");
         });
       return;
     }
