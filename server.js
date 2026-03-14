@@ -1224,16 +1224,26 @@ containerRegistrationNamespace.on("connection", (socket) => {
   socket.data.isAdmin = false;
   emitContainerRegistrationInit(socket);
 
-  socket.on("adminAuth", () => {
-    if (!socket.data.canAdmin) {
+  socket.on("adminAuth", async () => {
+    const portalToken = String(socket.handshake.auth?.token || "").trim();
+    const fakeReq = {
+      headers: {
+        authorization: portalToken ? `Bearer ${portalToken}` : "",
+        cookie: socket.handshake.headers.cookie || ""
+      }
+    };
+    const user = getAuthenticatedPortalUser(fakeReq);
+
+    if (!user || !socket.data.canAdmin) {
       socket.data.isAdmin = false;
       socket.emit("adminAuthResult", { ok: false });
       return;
     }
+
     socket.data.isAdmin = true;
     socket.emit("adminAuthResult", {
       ok: true,
-      user: socket.data.portalUser?.username || "",
+      user: socket.data.portalUser?.username || user.username || "",
       roles: flattenPermissionRoles(socket.data.portalPermissions)
     });
   });
