@@ -1,28 +1,90 @@
 let token = localStorage.getItem("token");
 let currentPermissions = {};
+let liveFeedPollTimer = null;
 
 function $(id) { return document.getElementById(id); }
 
-function formatDashboardDate(date = new Date()) {
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatFeedTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("de-DE", {
-    weekday: "long",
     day: "2-digit",
-    month: "long",
-    year: "numeric"
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
   }).format(date);
 }
 
 function updateDashboardHero() {
   const hours = new Date().getHours();
-  let greeting = "Guten Morgen";
-  if (hours >= 18) greeting = "Guten Abend";
-  else if (hours >= 12) greeting = "Guten Tag";
+  let greeting = "Guten Abend";
+  if (hours >= 2 && hours < 12) greeting = "Guten Morgen";
+  else if (hours >= 12 && hours < 16) greeting = "Mahlzeit";
 
   const greetingEl = $("dashboardGreeting");
-  const dateEl = $("dashboardDate");
 
-  if (greetingEl) greetingEl.textContent = `${greeting}, willkommen im Dashboard`;
-  if (dateEl) dateEl.textContent = formatDashboardDate();
+  if (greetingEl) greetingEl.textContent = greeting;
+}
+
+function renderDashboardLiveFeed(items = [], message = "") {
+  const feedEl = $("dashboardLiveFeed");
+  if (!feedEl) return;
+
+  if (message) {
+    feedEl.innerHTML = `<div class="module-feed__empty">${escapeHtml(message)}</div>`;
+    return;
+  }
+
+  if (!items.length) {
+    feedEl.innerHTML = '<div class="module-feed__empty">Keine Live-Vorgaenge vorhanden.</div>';
+    return;
+  }
+
+  feedEl.innerHTML = items.map((item) => `
+    <article class="module-feed__item">
+      <div class="module-feed__top">
+        <span class="module-feed__app">${escapeHtml(item.app || "Feed")}</span>
+        <span class="module-feed__time">${escapeHtml(formatFeedTimestamp(item.at))}</span>
+      </div>
+      <div class="module-feed__title">${escapeHtml(item.title || "")}</div>
+      <div class="module-feed__meta">${escapeHtml(item.meta || "")}</div>
+    </article>
+  `).join("");
+}
+
+async function loadDashboardLiveFeed() {
+  const feedEl = $("dashboardLiveFeed");
+  if (!feedEl) return;
+
+  try {
+    const response = await api("/api/dashboard/live-feed?limit=10", { method: "GET", headers: {} });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      renderDashboardLiveFeed([], data?.error || "Live-Feed konnte nicht geladen werden.");
+      return;
+    }
+
+    renderDashboardLiveFeed(Array.isArray(data?.items) ? data.items : []);
+  } catch {
+    renderDashboardLiveFeed([], "Live-Feed konnte nicht geladen werden.");
+  }
+}
+
+function startDashboardLiveFeedPolling() {
+  if (liveFeedPollTimer) window.clearInterval(liveFeedPollTimer);
+  void loadDashboardLiveFeed();
+  liveFeedPollTimer = window.setInterval(() => {
+    if (!document.hidden) void loadDashboardLiveFeed();
+  }, 30000);
 }
 
 function getVisibleModuleLinks() {
@@ -48,12 +110,10 @@ function refreshModuleSummary() {
   if (stateEl) stateEl.textContent = count > 0 ? `${count} Bereich${count === 1 ? "" : "e"} aktiv` : "Keine Freigabe";
   if (primaryEl) primaryEl.textContent = count > 0 ? `${firstName}: ${firstSummary}` : firstSummary;
 
-  if (msgEl && (!msgEl.dataset.messageType || msgEl.dataset.messageType === "summary")) {
-    msgEl.dataset.messageType = "summary";
+  if (msgEl && msgEl.dataset.messageType === "summary") {
+    msgEl.dataset.messageType = "";
     msgEl.style.color = "";
-    msgEl.textContent = count > 0
-      ? `${count} Modul${count === 1 ? "" : "e"} stehen bereit.`
-      : "Aktuell ist kein Modul fuer dieses Konto freigeschaltet.";
+    msgEl.textContent = "";
   }
 }
 
@@ -340,6 +400,7 @@ $("logoutBtn")?.addEventListener("click", () => {
 
   const ready = await loadMeAndPermissions();
   if (!ready) return;
+  startDashboardLiveFeedPolling();
 
   await bindModuleLink(
     "containerAdminLink",

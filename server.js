@@ -1122,6 +1122,193 @@ function emitContainerPlanningChange(action, bookingId) {
   });
 }
 
+function normalizeDashboardFeedLimit(rawLimit) {
+  const limit = Number(rawLimit);
+  if (!Number.isInteger(limit) || limit <= 0) return 10;
+  return Math.min(limit, 25);
+}
+
+function dashboardFeedJoin(parts) {
+  return parts.filter((part) => String(part || "").trim()).join(" | ");
+}
+
+function getDashboardCaseActionLabel(action) {
+  const labels = {
+    create: "Vorgang angelegt",
+    edit: "Vorgang bearbeitet",
+    claim: "Vorgang uebernommen",
+    submit: "Zur Pruefung eingereicht",
+    approve: "Vorgang gebucht",
+    cancel: "Vorgang storniert",
+    set_translogica: "Translogica aktualisiert"
+  };
+  return labels[action] || "Vorgang aktualisiert";
+}
+
+function getDashboardContainerEventLabel(type) {
+  const labels = {
+    driver_register: "Container angemeldet",
+    admin_set_status: "Status aktualisiert",
+    admin_set_time: "Zeitfenster aktualisiert",
+    admin_reset_container: "Container zurueckgesetzt"
+  };
+  return labels[type] || "Container-Vorgang aktualisiert";
+}
+
+function buildContainerEventMeta(row) {
+  const details = row?.details || {};
+  const bookingNo = String(details.bookingNo || "").trim();
+  const from = String(details.from || "").trim();
+  const to = String(details.to || "").trim();
+  const timeSlot = String(details.timeSlot || "").trim();
+  const changeLabel = row?.type === "admin_set_time" ? "Zeit" : "Status";
+  const pieces = [
+    row?.containerId ? `Container ${row.containerId}` : "",
+    row?.plate ? `Kennzeichen ${row.plate}` : "",
+    bookingNo ? `Buchung ${bookingNo}` : "",
+    from || to ? `${changeLabel} ${from || "-"} -> ${to || "-"}` : "",
+    timeSlot ? `Slot ${timeSlot}` : ""
+  ];
+  return dashboardFeedJoin(pieces);
+}
+
+async function getDashboardLiveFeedItems(req, limit) {
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const lockedLocationId = (req.user.role !== "admin" && req.user.location_id && !canUseAllLocations)
+    ? Number(req.user.location_id)
+    : null;
+  const lockedDepartmentId = req.user.fixed_department_id ? Number(req.user.fixed_department_id) : null;
+  const perSourceLimit = Math.min(Math.max(limit, 8), 25);
+  const items = [];
+
+  if (perms?.bookings?.view) {
+    const params = [];
+    const where = ["1=1"];
+    let idx = 1;
+
+    if (lockedLocationId) {
+      where.push(`h.location_id = $${idx++}`);
+      params.push(lockedLocationId);
+    }
+
+    if (lockedDepartmentId) {
+      where.push(`h.department_id = $${idx++}`);
+      params.push(lockedDepartmentId);
+    }
+
+    params.push(perSourceLimit);
+    const rows = (await q(
+      `
+      SELECT
+        h.id,
+        h.action,
+        h.created_at,
+        h.receipt_no,
+        COALESCE(u.username, '(geloescht)') AS changed_by,
+        COALESCE(c.license_plate, '') AS license_plate,
+        COALESCE(c.entrepreneur, '') AS entrepreneur,
+        COALESCE(l.name, 'Standort') AS location_name,
+        COALESCE(d.name, 'Abteilung') AS department_name
+      FROM booking_case_history h
+      LEFT JOIN users u ON u.id = h.changed_by
+      LEFT JOIN booking_cases c ON c.id = h.case_id
+      LEFT JOIN locations l ON l.id = h.location_id
+      LEFT JOIN departments d ON d.id = h.department_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY h.created_at DESC, h.id DESC
+      LIMIT $${idx}
+      `,
+      params
+    )).rows;
+
+    for (const row of rows) {
+      const reference = row.receipt_no
+        ? `Beleg ${row.receipt_no}`
+        : row.license_plate
+          ? `Kennzeichen ${row.license_plate}`
+          : row.entrepreneur || `Vorgang ${row.id}`;
+
+      items.push({
+        id: `booking-case-${row.id}`,
+        app: "Paletten Buchungen",
+        title: getDashboardCaseActionLabel(row.action),
+        meta: dashboardFeedJoin([reference, row.location_name, row.department_name, row.changed_by ? `von ${row.changed_by}` : ""]),
+        at: row.created_at
+      });
+    }
+  }
+
+  if (hasContainerAdminPermission(req.user, perms)) {
+    const rows = (await q(
+      `
+      SELECT
+        id,
+        at,
+        type,
+        container_id AS "containerId",
+        plate,
+        details
+      FROM container_registration_history
+      ORDER BY at DESC, id DESC
+      LIMIT $1
+      `,
+      [perSourceLimit]
+    )).rows;
+
+    for (const row of rows) {
+      items.push({
+        id: `container-registration-${row.id}`,
+        app: "Container Anmeldung",
+        title: getDashboardContainerEventLabel(row.type),
+        meta: buildContainerEventMeta(row),
+        at: row.at
+      });
+    }
+  }
+
+  if (hasContainerPlanningPermission(perms)) {
+    const rows = (await q(
+      `
+      SELECT
+        id,
+        title,
+        container_no AS "containerNo",
+        plate,
+        warehouse,
+        order_no AS "orderNo",
+        booking_date::text AS date,
+        created_at
+      FROM container_planning_bookings
+      ORDER BY created_at DESC, id DESC
+      LIMIT $1
+      `,
+      [perSourceLimit]
+    )).rows;
+
+    for (const row of rows) {
+      items.push({
+        id: `container-planning-${row.id}`,
+        app: "Container und LKW Planung",
+        title: row.title ? `Planung erstellt: ${row.title}` : "Planungseintrag erstellt",
+        meta: dashboardFeedJoin([
+          row.date || "",
+          row.containerNo ? `Container ${row.containerNo}` : "",
+          row.plate ? `Kennzeichen ${row.plate}` : "",
+          row.warehouse && row.warehouse !== "-" ? row.warehouse : "",
+          row.orderNo ? `Auftrag ${row.orderNo}` : ""
+        ]),
+        at: row.created_at
+      });
+    }
+  }
+
+  return items
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, limit);
+}
+
 async function requireContainerPlanningAccess(req, res, next) {
   const perms = await getMyPermissions(req.user);
   if (!hasContainerPlanningPermission(perms)) {
@@ -1261,6 +1448,16 @@ app.get("/api/modules/container-registration/admin-history.csv", authRequired, r
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=container-registration-history.csv");
   res.send(historyRowsToCsv(entries.slice().reverse()));
+});
+
+app.get("/api/dashboard/live-feed", authRequired, async (req, res) => {
+  try {
+    const limit = normalizeDashboardFeedLimit(req.query.limit);
+    const items = await getDashboardLiveFeedItems(req, limit);
+    res.json({ items });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Live-Feed konnte nicht geladen werden." });
+  }
 });
 
 containerRegistrationNamespace.use(async (socket, next) => {
