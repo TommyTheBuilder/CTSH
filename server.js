@@ -916,6 +916,9 @@ app.get(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH, requireModulePageAccess((_use
 app.get(MODULE_CONTAINER_REGISTRATION_VIEWER_PATH, requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer.html"));
 });
+app.get("/container-registration/viewer-sw.js", requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer-sw.js"));
+});
 
 function defaultRegistrationContainer(id) {
   return {

@@ -397,15 +397,21 @@ body.dark .rampUrl { color: #bbf7d0; }
   </div>
 </main>
 
+<script src="/public/shared-theme.js"></script>
 <script>
 const socket = io("/container-registration");
 let audioContext = null;
+let notificationRegistration = null;
+let alertsPrimed = false;
 let currentLang = localStorage.getItem("viewerLang") || "de";
 let currentState = null;
 const queryParams = new URLSearchParams(window.location.search);
 const filteredPlate = String(queryParams.get("plate") || "").trim().toUpperCase();
 const filteredSlot = Number(queryParams.get("slot"));
 let focusedContainerId = Number.isInteger(filteredSlot) && filteredSlot >= 1 && filteredSlot <= 8 ? filteredSlot : null;
+const ALERT_REPEAT_COUNT = 3;
+const ALERT_REPEAT_INTERVAL = 0.95;
+const ALERT_VIBRATION_PATTERN = [180, 120, 180, 120, 180];
 
 const I18N = {
   de: {
@@ -441,7 +447,15 @@ const I18N = {
 function applyTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("dark", isDark);
-  localStorage.setItem("viewer-theme", isDark ? "dark" : "light");
+}
+
+async function initializeTheme() {
+  if (window.CtshTheme?.resolveInitialTheme) {
+    await window.CtshTheme.resolveInitialTheme({ bodyClass: "dark" });
+    return;
+  }
+
+  applyTheme("light");
 }
 
 function toggleSettingsMenu(force) {
@@ -583,24 +597,121 @@ function applyStaticTranslations(){
   document.getElementById("langToggle").textContent = t("toggle");
 }
 
-function triggerNotification(){
-  if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+async function ensureAudioContext() {
   try {
     if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === "suspended") audioContext.resume();
-
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gainNode.gain.value = 0.15;
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.2);
+    if (audioContext.state === "suspended") await audioContext.resume();
+    return audioContext;
   } catch (error) {
-    console.warn("Konnte Benachrichtigungston nicht abspielen:", error);
+    console.warn("Audiokontext konnte nicht initialisiert werden:", error);
+    return null;
   }
+}
+
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) return "denied";
+  if (Notification.permission !== "default") return Notification.permission;
+
+  try {
+    return await Notification.requestPermission();
+  } catch (error) {
+    console.warn("Benachrichtigungsrechte konnten nicht angefragt werden:", error);
+    return Notification.permission;
+  }
+}
+
+function scheduleChime(ctx, startAt) {
+  const tones = [
+    { frequency: 659.25, duration: 0.20, gain: 0.035 },
+    { frequency: 880.0, duration: 0.34, gain: 0.03 }
+  ];
+
+  tones.forEach((tone, index) => {
+    const offset = index === 0 ? 0 : 0.22;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    const toneStart = startAt + offset;
+    const toneEnd = toneStart + tone.duration;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+    gainNode.gain.setValueAtTime(0.0001, toneStart);
+    gainNode.gain.exponentialRampToValueAtTime(tone.gain, toneStart + 0.03);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.start(toneStart);
+    oscillator.stop(toneEnd);
+  });
+}
+
+async function playProfessionalAlert() {
+  const ctx = await ensureAudioContext();
+  if (!ctx || ctx.state !== "running") return;
+
+  const startAt = ctx.currentTime + 0.03;
+  for (let repeat = 0; repeat < ALERT_REPEAT_COUNT; repeat += 1) {
+    scheduleChime(ctx, startAt + (repeat * ALERT_REPEAT_INTERVAL));
+  }
+}
+
+async function showBackgroundNotification(id, data) {
+  if (!document.hidden) return;
+
+  const permission = await requestNotificationPermission();
+  if (permission !== "granted") return;
+
+  const title = `Container ${id}: ${statusText(data.status)}`;
+  const body = `${t("scheduleLabel")}: ${timeText(data.time)} • ${plateText(data.plate)}`;
+  const options = {
+    body,
+    vibrate: ALERT_VIBRATION_PATTERN,
+    tag: `container-status-${id}`,
+    renotify: true,
+    requireInteraction: true,
+    icon: "/public/logo.png",
+    badge: "/public/logo.png",
+    data: { url: window.location.href }
+  };
+
+  try {
+    if (notificationRegistration?.showNotification) {
+      await notificationRegistration.showNotification(title, options);
+      return;
+    }
+
+    new Notification(title, options);
+  } catch (error) {
+    console.warn("Systembenachrichtigung konnte nicht angezeigt werden:", error);
+  }
+}
+
+async function triggerNotification(id, data){
+  if (navigator.vibrate) navigator.vibrate(ALERT_VIBRATION_PATTERN);
+  await playProfessionalAlert();
+  await showBackgroundNotification(id, data);
+}
+
+function primeAlerts() {
+  if (alertsPrimed) return;
+  alertsPrimed = true;
+  void ensureAudioContext();
+  void requestNotificationPermission();
+}
+
+async function initializeAlerts() {
+  if ("serviceWorker" in navigator) {
+    try {
+      notificationRegistration = await navigator.serviceWorker.register("/container-registration/viewer-sw.js");
+    } catch (error) {
+      console.warn("Viewer Service Worker konnte nicht registriert werden:", error);
+    }
+  }
+
+  ["pointerdown", "touchstart", "keydown"].forEach((eventName) => {
+    window.addEventListener(eventName, primeAlerts, { passive: true });
+  });
 }
 
 document.getElementById("langToggle").addEventListener("click", () => {
@@ -615,9 +726,12 @@ document.getElementById("settingsToggle").addEventListener("click", (event) => {
   toggleSettingsMenu();
 });
 
-document.getElementById("darkmodeToggle").addEventListener("click", () => {
+document.getElementById("darkmodeToggle").addEventListener("click", async () => {
   const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
   applyTheme(nextTheme);
+  if (window.CtshTheme?.persistTheme) {
+    await window.CtshTheme.persistTheme(nextTheme);
+  }
   toggleSettingsMenu(false);
 });
 
@@ -640,14 +754,15 @@ socket.on("statusChanged", ({ id, data }) => {
   if (focusedContainerId && Number(id) !== focusedContainerId) return;
   if (currentState) currentState[id] = data;
   applyOne(id, data);
-  triggerNotification();
+  void triggerNotification(id, data);
 });
 
 socket.on("connect_error", () => {
   renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
 });
 
-applyTheme(localStorage.getItem("viewer-theme") || "light");
+void initializeTheme();
+void initializeAlerts();
 applyStaticTranslations();
 </script>
 </body>

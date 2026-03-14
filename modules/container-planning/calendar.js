@@ -13,7 +13,6 @@ const darkModeToggle = document.getElementById("darkModeToggle");
 const moduleDashboardBtn = document.getElementById("moduleDashboardBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
-const DARK_MODE_KEY = "containerplanung.darkmode";
 const TOKEN_KEY = "token";
 const urlState = new URL(window.location.href);
 const queryPortalToken = String(urlState.searchParams.get("portalToken") || "").trim();
@@ -66,7 +65,7 @@ initApp();
 async function initApp() {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  applyInitialTheme();
+  await applyInitialTheme();
   render();
   refreshDataAndRender();
 }
@@ -432,10 +431,20 @@ function syncViewButtons() {
   weekViewBtn?.classList.toggle("btn--ghost", viewMode !== "week");
 }
 
-function applyInitialTheme() {
-  const isDark = localStorage.getItem(DARK_MODE_KEY) === "1";
-  document.body.classList.toggle("theme-dark", isDark);
-  if (darkModeToggle) darkModeToggle.textContent = isDark ? "Light Mode" : "Dark Mode";
+async function applyInitialTheme() {
+  if (window.CtshTheme?.resolveInitialTheme) {
+    await window.CtshTheme.resolveInitialTheme({
+      bodyClass: "theme-dark",
+      tokenStorageKeys: [TOKEN_KEY],
+      onApply: (theme) => {
+        if (darkModeToggle) darkModeToggle.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+      }
+    });
+    return;
+  }
+
+  document.body.classList.toggle("theme-dark", false);
+  if (darkModeToggle) darkModeToggle.textContent = "Dark Mode";
 }
 
 todayBtn?.addEventListener("click", () => {
@@ -480,11 +489,20 @@ gearMenuToggle?.addEventListener("click", (event) => {
 document.addEventListener("click", () => gearMenu?.classList.remove("is-open"));
 gearMenuDropdown?.addEventListener("click", (event) => event.stopPropagation());
 
-darkModeToggle?.addEventListener("click", () => {
-  const enabled = !document.body.classList.contains("theme-dark");
-  document.body.classList.toggle("theme-dark", enabled);
-  localStorage.setItem(DARK_MODE_KEY, enabled ? "1" : "0");
-  darkModeToggle.textContent = enabled ? "Light Mode" : "Dark Mode";
+darkModeToggle?.addEventListener("click", async () => {
+  const nextTheme = document.body.classList.contains("theme-dark") ? "light" : "dark";
+  if (window.CtshTheme?.applyTheme) {
+    window.CtshTheme.applyTheme(nextTheme, {
+      bodyClass: "theme-dark",
+      onApply: (theme) => {
+        if (darkModeToggle) darkModeToggle.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+      }
+    });
+    await window.CtshTheme.persistTheme(nextTheme, { tokenStorageKeys: [TOKEN_KEY] });
+  } else {
+    document.body.classList.toggle("theme-dark", nextTheme === "dark");
+    if (darkModeToggle) darkModeToggle.textContent = nextTheme === "dark" ? "Light Mode" : "Dark Mode";
+  }
   gearMenu?.classList.remove("is-open");
 });
 
