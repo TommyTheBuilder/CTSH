@@ -16,264 +16,463 @@
   --muted:#475569;
   --white:#111827;
   --stroke:#E2E8F0;
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --radius: 18px;
-  --header-bg: #0a192f;
-  --brand-blue: #2563EB;
-
+  --shadow:0 4px 6px -1px rgba(0,0,0,.1);
+  --radius:18px;
+  --header-bg:#0a192f;
+  --brand-blue:#2563EB;
   --red:#ef4444;
   --orange:#f59e0b;
   --green:#22c55e;
-  --card: #ffffff;
-  --card2: #ffffff;
+  --card:#ffffff;
+  --card2:#ffffff;
 }
 *{box-sizing:border-box}
 body{
   margin:0;
-  min-height: 100vh;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  min-height:100vh;
+  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
   color:var(--white);
-  background: var(--bg);
+  background:var(--bg);
 }
 header{
-  position: sticky;
-  top: 0;
-  width: 100%;
-  background-color: var(--header-bg);
-  border-bottom: 0;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+  position:sticky;
+  top:0;
+  width:100%;
+  background-color:var(--header-bg);
+  z-index:100;
+  box-shadow:0 2px 8px rgba(15,23,42,.22);
 }
+.headerBar{
+  width:100%;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  padding:10px 24px;
+}
+.logoLink{ display:inline-flex; align-items:center; }
+.logoImage{ height:42px; width:auto; object-fit:contain; }
+.headerActions{ display:flex; align-items:center; gap:10px; margin-left:auto; }
+.iconBtn,.navBtn{
+  border:1px solid rgba(255,255,255,.3);
+  background:rgba(255,255,255,.14);
+  color:#fff;
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:700;
+}
+.iconBtn{
+  width:40px;
+  height:40px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+}
+.navBtn{
+  height:40px;
+  padding:0 14px;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+}
+.navBtn.primary{ background:var(--brand-blue); border-color:var(--brand-blue); }
+.settingsWrap{ position:relative; }
+.settingsMenu{
+  position:absolute;
+  right:0;
+  top:calc(100% + 8px);
+  min-width:240px;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 10px 24px rgba(15,23,42,.25);
+  display:none;
+  z-index:30;
+  background:#F1F5F9;
+}
+.settingsMenu.open{ display:block; }
+.menuItem{
+  width:100%;
+  display:block;
+  text-align:left;
+  border:0;
+  margin:0;
+  padding:11px 14px;
+  font-size:14px;
+  cursor:pointer;
+}
+.menuItem.darkSection{ background:#1F2937; color:#fff; font-weight:700; }
+.menuItem.lightSection{ background:#F1F5F9; color:#0F172A; border-bottom:1px solid #E2E8F0; }
+.menuItemLink{ text-decoration:none; }
 
-.headerBar { width: 100%; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:10px 24px; }
-.logoLink { display:inline-flex; align-items:center; }
-.logoImage { height:42px; width:auto; object-fit:contain; }
-.headerActions { display:flex; align-items:center; gap:10px; margin-left:auto; }
-.iconBtn,.navBtn { border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14); color:#fff; border-radius:10px; cursor:pointer; font-weight:700; }
-.iconBtn { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; font-size:18px; }
-.navBtn { height:40px; padding:0 14px; text-decoration:none; display:inline-flex; align-items:center; }
-.navBtn.primary { background:var(--brand-blue); border-color:var(--brand-blue); }
-
-.settingsWrap { position: relative; }
-.settingsMenu { position:absolute; right:0; top:calc(100% + 8px); min-width:240px; border-radius:12px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,.25); display:none; z-index:30; background:#F1F5F9; }
-.settingsMenu.open { display:block; }
-.menuItem { width:100%; display:block; text-align:left; border:0; margin:0; padding:11px 14px; font-size:14px; cursor:pointer; }
-.menuItem.darkSection { background:#1F2937; color:#fff; font-weight:700; }
-.menuItem.lightSection { background:#F1F5F9; color:#0F172A; border-bottom:1px solid #E2E8F0; }
-.menuItemLink { text-decoration:none; }
-
-body.dark {
+body.dark{
   --bg:#0b1220;
   --muted:#a7b3d1;
   --white:#f6f8ff;
   --stroke:rgba(255,255,255,.10);
-  --shadow: 0 10px 30px rgba(0,0,0,.35);
-  --card: rgba(255,255,255,.05);
-  --card2: rgba(255,255,255,.02);
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+  --card:rgba(255,255,255,.05);
+  --card2:rgba(255,255,255,.02);
 }
+body.modalOpen{ overflow:hidden; }
 
 .wrap{
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 14px 16px;
+  max-width:980px;
+  margin:0 auto;
+  padding:14px 16px;
 }
 .top{
   display:flex;
   align-items:flex-end;
   justify-content:space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap:12px;
+  flex-wrap:wrap;
 }
-h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: #fff; }
-.sub{ margin:6px 0 0; color: rgba(255,255,255,.85); font-size: 13px; }
+h1{ margin:0; font-size:20px; letter-spacing:.3px; color:#fff; }
+.sub{ margin:6px 0 0; color:rgba(255,255,255,.85); font-size:13px; }
 
 .legend{
   display:flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  color: var(--white);
-  font-size: 12px;
+  gap:10px;
+  flex-wrap:wrap;
+  color:var(--white);
+  font-size:12px;
 }
 .langToggle{
-  border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, var(--card), var(--card2));
-  color: var(--white);
-  border-radius: 14px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
+  border:1px solid var(--stroke);
+  background:linear-gradient(180deg,var(--card),var(--card2));
+  color:var(--white);
+  border-radius:14px;
+  padding:8px 12px;
+  cursor:pointer;
+  font-size:12px;
+  font-weight:700;
 }
 .badge{
   display:flex;
   align-items:center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 14px;
-  border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, var(--card), var(--card2));
-  box-shadow: var(--shadow);
+  gap:8px;
+  padding:8px 12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+  background:linear-gradient(180deg,var(--card),var(--card2));
+  box-shadow:var(--shadow);
 }
-.dot{ width:10px; height:10px; border-radius: 999px; }
-.dot.red{ background: var(--red); }
-.dot.orange{ background: var(--orange); }
-.dot.green{ background: var(--green); }
+.dot{ width:10px; height:10px; border-radius:999px; }
+.dot.red{ background:var(--red); }
+.dot.orange{ background:var(--orange); }
+.dot.green{ background:var(--green); }
 
-main .wrap{ padding-top: 16px; padding-bottom: 22px; }
-
+main .wrap{ padding-top:16px; padding-bottom:22px; }
 .grid{
   display:grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px;
 }
-@media (min-width: 860px){
-  .grid{ grid-template-columns: repeat(4, 1fr); }
+@media (min-width:860px){
+  .grid{ grid-template-columns:repeat(4,1fr); }
 }
 
 .slot{
-  border-radius: var(--radius);
-  border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, var(--card), var(--card2));
-  box-shadow: var(--shadow);
+  border-radius:var(--radius);
+  border:1px solid var(--stroke);
+  background:linear-gradient(180deg,var(--card),var(--card2));
+  box-shadow:var(--shadow);
   overflow:hidden;
-  cursor: pointer;
-  user-select: none;
-  transition: transform .08s ease, opacity .08s ease;
+  cursor:pointer;
+  user-select:none;
+  transition:transform .08s ease, opacity .08s ease, box-shadow .16s ease;
 }
-.slot:active{ transform: scale(.99); }
-.slot.disabled{ opacity: .55; cursor: not-allowed; }
-.slot.selected{ outline: 3px solid rgba(255,255,255,.35); outline-offset: 2px; }
+.slot:hover{ box-shadow:0 14px 32px rgba(15,23,42,.16); }
+.slot:active{ transform:scale(.99); }
+.slot.disabled{ opacity:.55; cursor:not-allowed; }
+.slot.selected{
+  outline:3px solid rgba(37,99,235,.44);
+  outline-offset:2px;
+  box-shadow:0 20px 36px rgba(37,99,235,.18);
+}
 
 .slotTop{
-  padding: 10px 12px;
+  padding:10px 12px;
   display:flex;
   align-items:center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255,255,255,.08);
+  justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.08);
 }
-.slotName{ font-weight: 900; letter-spacing:.2px; }
+.slotName{ font-weight:900; letter-spacing:.2px; }
 
 .timeBig{
-  margin-top: 10px;
-  width: 100%;
-  text-align: center;
-  font-weight: 950;
-  font-size: 28px;
-  letter-spacing: 2px;
-  padding: 10px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.90);
-  color: #0b1220;
+  margin-top:10px;
+  width:100%;
+  text-align:center;
+  font-weight:950;
+  font-size:28px;
+  letter-spacing:2px;
+  padding:10px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.9);
+  color:#0b1220;
 }
 .timeSmallHint{
-  text-align: center;
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--muted);
+  text-align:center;
+  margin-top:6px;
+  font-size:11px;
+  color:var(--muted);
 }
-
 .slotBody{
-  padding: 12px;
+  padding:12px;
   display:flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 170px;
-  justify-content: center;
+  flex-direction:column;
+  gap:10px;
+  min-height:170px;
+  justify-content:center;
 }
-
-.statusRow{
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 12px;
-}
-.statusText{ font-weight: 900; color: var(--white); }
-
-.regRow{
+.statusRow,.regRow{
   display:flex;
   align-items:center;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 12px;
+  justify-content:space-between;
+  color:var(--muted);
+  font-size:12px;
 }
-.regValue{ font-weight: 900; color: var(--white); }
-
+.statusText,.regValue{ font-weight:900; color:var(--white); }
 .bar{
-  width: 100%;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.10);
+  width:100%;
+  height:10px;
+  border-radius:999px;
+  background:rgba(255,255,255,.10);
   overflow:hidden;
-  border: 1px solid rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.08);
 }
-.fill{ height: 100%; width: 100%; }
-.fill.red{ background: var(--red); }
-.fill.orange{ background: var(--orange); }
-.fill.green{ background: var(--green); }
+.fill{ height:100%; width:100%; }
+.fill.red{ background:var(--red); }
+.fill.orange{ background:var(--orange); }
+.fill.green{ background:var(--green); }
 
-
-.formCard{
-  margin-top: 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
-  box-shadow: var(--shadow);
-  padding: 14px;
-}
-label{ display:block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+label{ display:block; color:var(--muted); font-size:12px; margin-bottom:6px; }
 input{
-  width: 100%;
-  font-size: 18px;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  color: var(--white);
-  outline: none;
+  width:100%;
+  font-size:18px;
+  padding:14px 15px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.36);
+  background:rgba(248,250,252,.96);
+  color:#0f172a;
+  outline:none;
+  transition:border-color .14s ease, box-shadow .14s ease;
+}
+input:focus{
+  border-color:rgba(37,99,235,.55);
+  box-shadow:0 0 0 4px rgba(37,99,235,.12);
 }
 .btn{
-  margin-top: 10px;
   width:100%;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.10);
-  color: var(--white);
-  font-weight: 950;
-  cursor: pointer;
-  font-size: 16px;
+  padding:13px 14px;
+  border-radius:14px;
+  border:1px solid rgba(37,99,235,.3);
+  background:linear-gradient(135deg,rgba(37,99,235,.96),rgba(29,78,216,.94));
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+  font-size:16px;
+  box-shadow:0 18px 28px rgba(37,99,235,.22);
 }
-.btn:hover{ background: rgba(255,255,255,.14); }
+.btn:hover{ filter:brightness(1.04); }
 .btn:disabled{ opacity:.6; cursor:not-allowed; }
+.secondaryBtn{
+  width:100%;
+  padding:13px 14px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(255,255,255,.86);
+  color:var(--white);
+  font-weight:800;
+  cursor:pointer;
+}
+.secondaryBtn:hover{ background:rgba(255,255,255,.96); }
 
+.feedbackStack{ margin-top:16px; }
 .msg{
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.04);
+  margin-top:10px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(37,99,235,.16);
+  background:rgba(255,255,255,.74);
   display:none;
-  font-size: 14px;
+  font-size:14px;
+  box-shadow:var(--shadow);
 }
 .small{
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
+  margin-top:10px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
 }
-.selectedInfo{
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
+.noteCard{
+  padding:13px 15px;
+  border-radius:18px;
+  border:1px solid var(--stroke);
+  background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.74));
+  box-shadow:var(--shadow);
 }
-.selectedInfo b{ color: var(--white); }
+
+.modalOverlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:rgba(15,23,42,.54);
+  backdrop-filter:blur(14px);
+  z-index:220;
+}
+.modalOverlay[hidden]{ display:none; }
+.modalCard{
+  position:relative;
+  width:min(100%,460px);
+  border-radius:26px;
+  border:1px solid rgba(148,163,184,.24);
+  background:
+    radial-gradient(circle at top right, rgba(37,99,235,.18), transparent 42%),
+    linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.95));
+  box-shadow:0 30px 60px rgba(15,23,42,.24);
+  padding:28px;
+}
+.modalCard::before{
+  content:"";
+  position:absolute;
+  inset:0 0 auto;
+  height:5px;
+  border-radius:26px 26px 0 0;
+  background:linear-gradient(90deg,#2563eb,#38bdf8);
+}
+.modalClose{
+  position:absolute;
+  top:16px;
+  right:16px;
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(255,255,255,.84);
+  color:var(--white);
+  font-size:24px;
+  line-height:1;
+  cursor:pointer;
+}
+.modalEyebrow{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 12px;
+  border-radius:999px;
+  background:rgba(37,99,235,.1);
+  color:#1d4ed8;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.modalTitle{
+  margin:16px 0 8px;
+  font-size:28px;
+  line-height:1.1;
+  color:#0f172a;
+}
+.modalLead{
+  margin:0;
+  color:var(--muted);
+  font-size:14px;
+  line-height:1.5;
+}
+.modalMeta{
+  margin-top:18px;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.modalMetaCard{
+  padding:14px;
+  border-radius:18px;
+  border:1px solid rgba(148,163,184,.2);
+  background:rgba(255,255,255,.84);
+}
+.modalMetaLabel{
+  display:block;
+  margin-bottom:6px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.modalMetaValue{
+  display:block;
+  color:#0f172a;
+  font-size:20px;
+  font-weight:900;
+}
+.modalForm{ margin-top:18px; }
+.modalHint{
+  margin-top:8px;
+  color:var(--muted);
+  font-size:12px;
+}
+.modalMsg{ margin-top:14px; }
+.modalActions{
+  margin-top:18px;
+  display:flex;
+  gap:12px;
+}
 
 body.dark h1,
-body.dark .legend { color: #fff; }
+body.dark .legend{ color:#fff; }
+body.dark .sub{ color:rgba(255,255,255,.85); }
+body.dark input{
+  border-color:rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);
+  color:var(--white);
+}
+body.dark input:focus{
+  border-color:rgba(96,165,250,.52);
+  box-shadow:0 0 0 4px rgba(59,130,246,.18);
+}
+body.dark .msg{
+  background:rgba(15,23,42,.64);
+  border-color:rgba(96,165,250,.24);
+}
+body.dark .noteCard{
+  background:linear-gradient(180deg,rgba(15,23,42,.56),rgba(15,23,42,.36));
+}
+body.dark .modalCard{
+  border-color:rgba(255,255,255,.1);
+  background:
+    radial-gradient(circle at top right, rgba(59,130,246,.22), transparent 42%),
+    linear-gradient(180deg,rgba(15,23,42,.98),rgba(15,23,42,.94));
+  box-shadow:0 34px 68px rgba(0,0,0,.46);
+}
+body.dark .modalClose,
+body.dark .secondaryBtn,
+body.dark .modalMetaCard{
+  background:rgba(255,255,255,.05);
+  border-color:rgba(255,255,255,.1);
+}
+body.dark .modalTitle,
+body.dark .modalMetaValue{ color:#f8fafc; }
+body.dark .modalEyebrow{
+  background:rgba(59,130,246,.16);
+  color:#bfdbfe;
+}
 
-body.dark .sub { color: rgba(255,255,255,.85); }
+@media (max-width:640px){
+  .modalCard{
+    padding:24px 18px 18px;
+    border-radius:22px;
+  }
+  .modalMeta{ grid-template-columns:1fr; }
+  .modalActions{ flex-direction:column-reverse; }
+}
 </style>
 </head>
 
@@ -286,7 +485,7 @@ body.dark .sub { color: rgba(255,255,255,.85); }
 
     <div class="headerActions">
       <div class="settingsWrap">
-        <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
+        <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">&#9881;</button>
         <div class="settingsMenu" id="settingsMenu" role="menu">
           <button class="menuItem darkSection" type="button" id="darkmodeToggle">Darkmode umschalten</button>
         </div>
@@ -297,7 +496,7 @@ body.dark .sub { color: rgba(255,255,255,.85); }
   <div class="wrap top">
     <div>
       <h1 id="title">Fahrer Anmeldung</h1>
-      <div class="sub" id="subtitle">Nur Container mit Termin-Uhrzeit sind auswählbar.</div>
+      <div class="sub" id="subtitle">Nur Container mit Termin-Uhrzeit sind ausw&auml;hlbar.</div>
     </div>
     <div class="legend">
       <button id="langToggle" class="langToggle" type="button">English</button>
@@ -312,24 +511,45 @@ body.dark .sub { color: rgba(255,255,255,.85); }
   <div class="wrap">
     <div id="grid" class="grid"></div>
 
-    <div class="formCard">
-      <div class="selectedInfo" id="selInfo">Bitte zuerst einen Container auswählen.</div>
-
-      <div style="margin-top:10px;">
-        <label id="plateLabel">Kennzeichen</label>
-        <input id="plate" placeholder="z.B. B-AB 1234" autocomplete="off" />
-      </div>
-
-      <button class="btn" id="sendBtn" disabled>Anmelden</button>
-
-      <div id="msg" class="msg"></div>
-
-      <div class="small" id="noteText">
-        Hinweis: Container ohne Termin-Uhrzeit sind nicht auswählbar.
+    <div class="feedbackStack">
+      <div id="msg" class="msg" role="status" aria-live="polite"></div>
+      <div class="small noteCard" id="noteText">
+        Hinweis: Container ohne Termin-Uhrzeit sind nicht ausw&auml;hlbar.
       </div>
     </div>
   </div>
 </main>
+
+<div class="modalOverlay" id="plateModal" hidden aria-hidden="true">
+  <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalLead">
+    <button class="modalClose" id="modalCloseBtn" type="button" aria-label="Schlie&szlig;en">&times;</button>
+    <div class="modalEyebrow" id="modalEyebrow">Anmeldung</div>
+    <h2 class="modalTitle" id="modalTitle">Kennzeichen eingeben</h2>
+    <p class="modalLead" id="modalLead">Best&auml;tige den ausgew&auml;hlten Slot und gib das Kennzeichen ein.</p>
+
+    <div class="modalMeta">
+      <div class="modalMetaCard">
+        <span class="modalMetaLabel" id="modalContainerLabel">Container</span>
+        <strong class="modalMetaValue" id="modalContainerValue">-</strong>
+      </div>
+      <div class="modalMetaCard">
+        <span class="modalMetaLabel" id="modalSlotLabel">Termin</span>
+        <strong class="modalMetaValue" id="modalSlotValue">--:--</strong>
+      </div>
+    </div>
+
+    <form class="modalForm" id="plateForm">
+      <label id="plateLabel" for="plate">Kennzeichen</label>
+      <input id="plate" placeholder="z.B. B-AB 1234" autocomplete="off" />
+      <div class="modalHint" id="modalHint">Bitte Kennzeichen ohne Leerzeichen oder Bindestriche eingeben.</div>
+      <div id="modalMsg" class="msg modalMsg" role="status" aria-live="polite"></div>
+      <div class="modalActions">
+        <button class="secondaryBtn" id="cancelBtn" type="button">Abbrechen</button>
+        <button class="btn" id="sendBtn" type="submit">Anmelden</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script src="/public/shared-theme.js"></script>
 <script>
@@ -338,10 +558,14 @@ let state = null;
 let selectedId = null;
 
 const gridEl = document.getElementById("grid");
+const plateModalEl = document.getElementById("plateModal");
+const plateFormEl = document.getElementById("plateForm");
 const plateEl = document.getElementById("plate");
 const msgEl = document.getElementById("msg");
+const modalMsgEl = document.getElementById("modalMsg");
 const btnEl = document.getElementById("sendBtn");
-const selInfoEl = document.getElementById("selInfo");
+const cancelBtnEl = document.getElementById("cancelBtn");
+const modalCloseBtnEl = document.getElementById("modalCloseBtn");
 const DRIVER_LANG_KEY = "driverLang";
 let currentLang = getInitialLanguage();
 
@@ -371,7 +595,7 @@ const I18N = {
   de: {
     pageTitle: "Fahrer Anmeldung",
     title: "Fahrer Anmeldung",
-    subtitle: "Nur Container mit Termin-Uhrzeit sind auswählbar.",
+    subtitle: "Nur Container mit Termin-Uhrzeit sind ausw\u00e4hlbar.",
     legendRed: "Frei",
     legendOrange: "Angemeldet",
     legendGreen: "An die Rampe",
@@ -384,20 +608,24 @@ const I18N = {
     slotTime: "Termin-Uhrzeit",
     status: "Status",
     checkedIn: "Angemeldet",
-    selectFirst: "Bitte zuerst einen <b>Container</b> auswählen.",
-    selected: "Ausgewählt",
-    slot: "Termin",
+    modalEyebrow: "Anmeldung",
+    modalTitle: "Kennzeichen eingeben",
+    modalLead: "Best\u00e4tige den ausgew\u00e4hlten Slot und gib das Kennzeichen ein.",
+    modalContainerLabel: "Container",
+    modalSlotLabel: "Termin",
     plateLabel: "Kennzeichen",
     platePlaceholder: "z.B. B-AB 1234",
+    modalHint: "Bitte Kennzeichen ohne Leerzeichen oder Bindestriche eingeben.",
     registerBtn: "Anmelden",
-    note: "Hinweis: Container ohne Termin-Uhrzeit sind nicht auswählbar.",
-    msgNoTime: "Dieser Container hat noch keinen Termin. Bitte einen Container mit Uhrzeit wählen.",
-    msgOccupied: "Dieser Container ist bereits belegt. Bitte einen anderen wählen.",
-    msgUnavailable: "Dein ausgewählter Container ist nicht mehr verfügbar. Bitte neu auswählen.",
-    msgSelectFirst: "Bitte zuerst einen Container auswählen.",
-    msgNotSelectable: "Dieser Container ist nicht auswählbar. Bitte einen anderen wählen.",
+    cancelBtn: "Abbrechen",
+    note: "Hinweis: Container ohne Termin-Uhrzeit sind nicht ausw\u00e4hlbar.",
+    msgNoTime: "Dieser Container hat noch keinen Termin. Bitte einen Container mit Uhrzeit w\u00e4hlen.",
+    msgOccupied: "Dieser Container ist bereits belegt. Bitte einen anderen w\u00e4hlen.",
+    msgUnavailable: "Dein ausgew\u00e4hlter Container ist nicht mehr verf\u00fcgbar. Bitte neu ausw\u00e4hlen.",
+    msgSelectFirst: "Bitte zuerst einen Container ausw\u00e4hlen.",
+    msgNotSelectable: "Dieser Container ist nicht ausw\u00e4hlbar. Bitte einen anderen w\u00e4hlen.",
     msgEnterPlate: "Bitte Kennzeichen eingeben.",
-    unavailableState: "Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte über das Portal mit den passenden Rechten neu öffnen.",
+    unavailableState: "Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte \u00fcber das Portal mit den passenden Rechten neu \u00f6ffnen.",
     moduleDisconnected: "Container-Modul nicht verbunden.",
     settingsAria: "Einstellungen",
     darkmodeToggle: "Darkmode umschalten",
@@ -420,12 +648,16 @@ const I18N = {
     slotTime: "Scheduled time",
     status: "Status",
     checkedIn: "Checked in",
-    selectFirst: "Please select a <b>container</b> first.",
-    selected: "Selected",
-    slot: "Slot",
+    modalEyebrow: "Check-in",
+    modalTitle: "Enter license plate",
+    modalLead: "Confirm the selected slot and enter the vehicle's license plate.",
+    modalContainerLabel: "Container",
+    modalSlotLabel: "Scheduled time",
     plateLabel: "License plate",
     platePlaceholder: "e.g. B-AB 1234",
+    modalHint: "Please enter the plate without spaces or hyphens.",
     registerBtn: "Check in",
+    cancelBtn: "Cancel",
     note: "Note: Containers without a scheduled time cannot be selected.",
     msgNoTime: "This container has no scheduled time yet. Please choose one with a time.",
     msgOccupied: "This container is already occupied. Please choose another one.",
@@ -479,11 +711,10 @@ function statusText(status){
   if (status === "orange") return t("statusOrange");
   return t("statusRed");
 }
-function hasTime(c){ return !!(c.time && c.time.trim()); }
+
+function hasTime(c){ return !!(c?.time && c.time.trim()); }
 function timeText(c){ return hasTime(c) ? c.time.trim() : "--:--"; }
 
-
-// frei = Slot erstellt + kein Kennzeichen
 function isFree(c){
   return (c.status === "slot_created" || c.status === "red") && (!c.plate || !c.plate.trim());
 }
@@ -494,26 +725,39 @@ function statusTone(status){
   return "red";
 }
 
-// wählbar: Termin gesetzt + frei
 function isSelectableForDriver(c){
   return hasTime(c) && isFree(c);
 }
 
-// Anzeige HH:MM der Anmeldung
 function registeredTime(iso){
   if (!iso) return "--:--";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "--:--";
-  return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "--:--";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function normalizePlate(value){
+  return String(value || "").toUpperCase().replace(/[\s-]+/g, "").trim();
 }
 
 function showMsg(text){
   msgEl.textContent = text;
   msgEl.style.display = "block";
 }
+
 function clearMsg(){
   msgEl.style.display = "none";
   msgEl.textContent = "";
+}
+
+function showModalMsg(text){
+  modalMsgEl.textContent = text;
+  modalMsgEl.style.display = "block";
+}
+
+function clearModalMsg(){
+  modalMsgEl.style.display = "none";
+  modalMsgEl.textContent = "";
 }
 
 function renderUnavailableState(message){
@@ -524,54 +768,59 @@ function renderUnavailableState(message){
   `;
 }
 
-function focusPlateInput(){
-  if (!plateEl) return;
-  plateEl.scrollIntoView({ behavior: "smooth", block: "center" });
-  plateEl.focus({ preventScroll: true });
+function isModalOpen(){
+  return !plateModalEl.hidden;
 }
 
-function updateSelectedInfo(){
-  if (!state || !selectedId){
-    selInfoEl.innerHTML = t("selectFirst");
-    btnEl.disabled = true;
-    return;
-  }
-  const c = state[selectedId];
-  selInfoEl.innerHTML = `${t("selected")}: <b>Container ${selectedId}</b> · ${t("slot")}: <b>${timeText(c)}</b>`;
-  btnEl.disabled = !isSelectableForDriver(c);
+function updateRegisterButtonState(){
+  btnEl.disabled = !(state && selectedId && isSelectableForDriver(state[selectedId]));
+}
+
+function syncModalDetails(){
+  const current = selectedId && state ? state[selectedId] : null;
+  document.getElementById("modalContainerValue").textContent = current ? `Container ${selectedId}` : "-";
+  document.getElementById("modalSlotValue").textContent = current ? timeText(current) : "--:--";
+  updateRegisterButtonState();
+}
+
+function focusPlateInput(){
+  window.requestAnimationFrame(() => {
+    plateEl.focus({ preventScroll: true });
+    plateEl.select();
+  });
 }
 
 function renderAll(){
+  if (!state) return;
   gridEl.innerHTML = "";
 
-  for (let i = 1; i <= 8; i++){
-    const c = state[i];
-    const selectable = isSelectableForDriver(c);
+  for (let i = 1; i <= 8; i += 1){
+    const container = state[i];
+    const selectable = isSelectableForDriver(container);
     const disabled = !selectable;
-    const time = timeText(c);
-    const reg = registeredTime(c.registeredAt);
+    const time = timeText(container);
+    const reg = registeredTime(container.registeredAt);
 
     let headNote = "";
-    if (!hasTime(c)) headNote = t("noSlot");
-    else if (!isFree(c)) headNote = t("occupied");
+    if (!hasTime(container)) headNote = t("noSlot");
+    else if (!isFree(container)) headNote = t("occupied");
     else headNote = t("free");
 
     const slot = document.createElement("div");
     slot.className = "slot" + (disabled ? " disabled" : "") + (selectedId === i ? " selected" : "");
     slot.id = "slot-" + i;
-
     slot.innerHTML = `
       <div class="slotTop">
         <div class="slotName">Container ${i}</div>
         <div style="color: var(--muted); font-size: 12px;">${headNote}</div>
       </div>
       <div class="slotBody">
-        <div class="timeBig">⏱ ${time}</div>
+        <div class="timeBig">&#9201; ${time}</div>
         <div class="timeSmallHint">${t("slotTime")}</div>
 
         <div class="statusRow">
           <div>${t("status")}</div>
-          <div class="statusText">${statusText(c.status)}</div>
+          <div class="statusText">${statusText(container.status)}</div>
         </div>
 
         <div class="regRow">
@@ -579,8 +828,7 @@ function renderAll(){
           <div class="regValue">${reg}</div>
         </div>
 
-
-        <div class="bar"><div class="fill ${statusTone(c.status)}"></div></div>
+        <div class="bar"><div class="fill ${statusTone(container.status)}"></div></div>
       </div>
     `;
 
@@ -588,31 +836,60 @@ function renderAll(){
       clearMsg();
 
       if (disabled){
-        if (!hasTime(c)) showMsg(t("msgNoTime"));
+        if (!hasTime(container)) showMsg(t("msgNoTime"));
         else showMsg(t("msgOccupied"));
         return;
       }
 
-      selectedId = (selectedId === i) ? null : i;
-      renderAll();
-      updateSelectedInfo();
-      if (selectedId) focusPlateInput();
+      if (selectedId === i && isModalOpen()) {
+        closePlateModal();
+        return;
+      }
+
+      openPlateModal(i);
     });
 
     gridEl.appendChild(slot);
   }
 }
 
+function openPlateModal(id){
+  if (!state || !state[id]) return;
+  selectedId = id;
+  clearMsg();
+  clearModalMsg();
+  plateEl.value = "";
+  plateModalEl.hidden = false;
+  plateModalEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modalOpen");
+  renderAll();
+  syncModalDetails();
+  focusPlateInput();
+}
+
+function closePlateModal(options = {}){
+  const keepSelection = !!options.keepSelection;
+  plateModalEl.hidden = true;
+  plateModalEl.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modalOpen");
+  clearModalMsg();
+  plateEl.value = "";
+  if (!keepSelection) selectedId = null;
+  if (state) renderAll();
+  syncModalDetails();
+}
+
 function applyOne(id, data){
   state[id] = data;
 
   if (selectedId === id && !isSelectableForDriver(data)){
-    selectedId = null;
+    closePlateModal();
     showMsg(t("msgUnavailable"));
+    return;
   }
 
   renderAll();
-  updateSelectedInfo();
+  syncModalDetails();
 }
 
 function applyStaticTranslations(){
@@ -623,20 +900,29 @@ function applyStaticTranslations(){
   document.getElementById("legend-red").textContent = t("legendRed");
   document.getElementById("legend-orange").textContent = t("legendOrange");
   document.getElementById("legend-green").textContent = t("legendGreen");
+  document.getElementById("modalEyebrow").textContent = t("modalEyebrow");
+  document.getElementById("modalTitle").textContent = t("modalTitle");
+  document.getElementById("modalLead").textContent = t("modalLead");
+  document.getElementById("modalContainerLabel").textContent = t("modalContainerLabel");
+  document.getElementById("modalSlotLabel").textContent = t("modalSlotLabel");
   document.getElementById("plateLabel").textContent = t("plateLabel");
   plateEl.placeholder = t("platePlaceholder");
+  document.getElementById("modalHint").textContent = t("modalHint");
   btnEl.textContent = t("registerBtn");
+  cancelBtnEl.textContent = t("cancelBtn");
   document.getElementById("noteText").textContent = t("note");
   document.getElementById("langToggle").textContent = t("toggle");
   document.getElementById("settingsToggle").setAttribute("aria-label", t("settingsAria"));
   document.getElementById("darkmodeToggle").textContent = t("darkmodeToggle");
+  modalCloseBtnEl.setAttribute("aria-label", t("cancelBtn"));
+  syncModalDetails();
 }
 
-socket.on("init", (s) => {
-  state = s;
+socket.on("init", (serverState) => {
+  state = serverState;
   applyStaticTranslations();
   renderAll();
-  updateSelectedInfo();
+  syncModalDetails();
 });
 
 socket.on("statusChanged", ({ id, data }) => {
@@ -645,6 +931,7 @@ socket.on("statusChanged", ({ id, data }) => {
 });
 
 socket.on("connect_error", () => {
+  if (isModalOpen()) closePlateModal();
   renderUnavailableState(t("unavailableState"));
   showMsg(t("moduleDisconnected"));
 });
@@ -655,7 +942,7 @@ document.getElementById("langToggle").addEventListener("click", () => {
   applyStaticTranslations();
   if (state) {
     renderAll();
-    updateSelectedInfo();
+    syncModalDetails();
   }
 });
 
@@ -679,29 +966,56 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") toggleSettingsMenu(false);
+  if (event.key !== "Escape") return;
+  if (isModalOpen()) {
+    closePlateModal();
+    return;
+  }
+  toggleSettingsMenu(false);
 });
 
-btnEl.addEventListener("click", () => {
+plateEl.addEventListener("input", () => {
+  const cursor = plateEl.selectionStart;
+  plateEl.value = plateEl.value.toUpperCase();
+  if (typeof cursor === "number") plateEl.setSelectionRange(cursor, cursor);
+});
+
+cancelBtnEl.addEventListener("click", () => {
+  closePlateModal();
+});
+
+modalCloseBtnEl.addEventListener("click", () => {
+  closePlateModal();
+});
+
+plateModalEl.addEventListener("click", (event) => {
+  if (event.target === plateModalEl) closePlateModal();
+});
+
+plateFormEl.addEventListener("submit", (event) => {
+  event.preventDefault();
   clearMsg();
+  clearModalMsg();
 
   if (!state || !selectedId){
-    showMsg(t("msgSelectFirst"));
+    showModalMsg(t("msgSelectFirst"));
     return;
   }
 
-  const c = state[selectedId];
-  if (!isSelectableForDriver(c)){
-    showMsg(t("msgNotSelectable"));
+  const container = state[selectedId];
+  if (!isSelectableForDriver(container)){
+    showModalMsg(t("msgNotSelectable"));
     return;
   }
 
-  const plate = plateEl.value.trim();
+  const plate = normalizePlate(plateEl.value);
   if (!plate){
-    showMsg(t("msgEnterPlate"));
+    showModalMsg(t("msgEnterPlate"));
     return;
   }
 
+  plateEl.value = plate;
+  updateRegisterButtonState();
   btnEl.disabled = true;
   socket.emit("driverRegister", { id: selectedId, plate });
 });
@@ -710,14 +1024,15 @@ applyStaticTranslations();
 void initializeTheme();
 
 socket.on("driverRegisterResult", ({ ok, message }) => {
-  btnEl.disabled = false;
-  showMsg(message);
+  updateRegisterButtonState();
 
   if (ok){
-    // nach erfolgreicher Anmeldung nur den eigenen gebuchten Slot in der Viewer-Ansicht anzeigen
-    const target = `./viewer.html?slot=${selectedId}&plate=${encodeURIComponent(plateEl.value.trim().toUpperCase())}`;
+    const target = `./viewer.html?slot=${selectedId}&plate=${encodeURIComponent(normalizePlate(plateEl.value))}`;
     window.location.href = target;
+    return;
   }
+
+  showModalMsg(message);
 });
 </script>
 </body>
