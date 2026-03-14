@@ -1137,6 +1137,7 @@ body.darkmode .site-copyright {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 18px 20px;
   min-height: 110px;
   border-radius: 14px;
   border: 1px solid #dbe3f0;
@@ -1151,9 +1152,52 @@ body.darkmode .site-copyright {
 
 .module-button--stacked {
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   text-align: center;
   line-height: 1.2;
+}
+
+.module-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.module-button__icon svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.module-button__title,
+.module-button__subtitle,
+.module-button__loading {
+  display: block;
+  text-align: center;
+}
+
+.module-button__title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.module-button__subtitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.module-button__loading {
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .module-button:hover {
@@ -1180,7 +1224,24 @@ body.darkmode .site-copyright {
   }
 
   .module-button {
-    min-height: 84px;
+    min-height: 96px;
+    padding: 16px;
+  }
+
+  .module-button__icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .module-button__icon svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .module-button__title,
+  .module-button__subtitle,
+  .module-button__loading {
+    font-size: 16px;
   }
 }
 body.darkmode .module-button {
