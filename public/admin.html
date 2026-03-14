@@ -30,7 +30,14 @@
 
 <main class="dashboard-main admin-main">
   <section class="dashboard-header admin-header">
-    <div class="dashboard-title-row"><b>Administration</b> <span class="pill" id="me">-</span></div>
+    <div class="dashboard-title-row">
+      <div class="admin-title-block">
+        <div class="admin-eyebrow">Admin Center</div>
+        <b>Administration</b>
+      </div>
+      <span class="pill" id="me">-</span>
+    </div>
+    <p class="admin-header-copy">Verwalte Rollen, Rechte, Stammdaten und Benutzer in einer klareren Arbeitsoberflaeche.</p>
     <div class="tabs admin-tabs">
       <button data-tab="roles" class="active nav-button"><span class="nav-icon">🔐</span>Rollen & Rechte</button>
       <button data-tab="master" class="nav-button"><span class="nav-icon">🏷️</span>Stammdaten</button>
@@ -39,37 +46,104 @@
     </div>
   </section>
 
-  <div class="card admin-card">
-    <h3 style="margin-top:0;">Belegdruck</h3>
-    <div class="row">
-      <div>
-        <button class="primary" id="printReceiptDriverBtn">Fahrer Palettenschein</button>
+  <section class="admin-overview-grid">
+    <div class="card admin-card admin-spotlight-card">
+      <div class="admin-spotlight-copy">
+        <span class="section-eyebrow">Uebersicht</span>
+        <h2>Rechte schneller verstehen und sauber pflegen</h2>
+        <p>Die wichtigsten Bereiche sind oben gebuendelt. In der Rollenansicht siehst du sofort, welche Rolle aktiv ist und wie breit die Freigaben verteilt sind.</p>
       </div>
-      <div>
+      <div class="admin-metric-grid">
+        <div class="admin-metric-card">
+          <span>Rollen</span>
+          <strong id="adminRoleCount">0</strong>
+          <small>Konfigurierte Business-Rollen</small>
+        </div>
+        <div class="admin-metric-card">
+          <span>Benutzer</span>
+          <strong id="adminUserCount">0</strong>
+          <small>Aktive Konten im System</small>
+        </div>
+        <div class="admin-metric-card">
+          <span>Abteilungen</span>
+          <strong id="adminDepartmentCount">0</strong>
+          <small>Fuer Standorte und Prozesse</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="card admin-card admin-quick-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Schnellaktionen</span>
+          <h3>Belegdruck</h3>
+        </div>
+      </div>
+      <div class="quick-action-grid">
+        <button class="primary" id="printReceiptDriverBtn">Fahrer Palettenschein</button>
         <button class="secondary" id="printReceiptWarehouseBtn">Lager Palettenschein</button>
       </div>
+      <p id="printReceiptMsg"></p>
     </div>
-    <p id="printReceiptMsg"></p>
-  </div>
+  </section>
 
   <section id="tab-roles">
-    <div class="card admin-card">
-      <h3 style="margin-top:0;">Neue Rolle anlegen</h3>
-      <div class="row role-create-row">
-        <div>
-          <label for="roleName">Rollenname</label>
-          <input id="roleName" placeholder="z.B. Dispo">
+    <div class="roles-top-grid">
+      <div class="card admin-card role-create-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Neue Rolle</span>
+            <h3>Rolle anlegen</h3>
+          </div>
         </div>
-        <div>
-          <button class="primary" id="createRoleBtn">Rolle anlegen</button>
+        <div class="row role-create-row">
+          <div>
+            <label for="roleName">Rollenname</label>
+            <input id="roleName" placeholder="z.B. Dispo">
+          </div>
+          <div>
+            <button class="primary" id="createRoleBtn">Rolle anlegen</button>
+          </div>
         </div>
+        <p class="muted role-create-hint">Neue Rollen starten mit einem soliden Standard und koennen danach fein angepasst werden.</p>
+        <p id="roleMsg"></p>
       </div>
-      <p id="roleMsg"></p>
+
+      <div class="card admin-card role-summary-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Aktive Rolle</span>
+            <h3 id="activeRoleName">Noch keine Rolle gewaehlt</h3>
+          </div>
+        </div>
+        <div class="role-summary-grid">
+          <div class="role-summary-stat">
+            <span>Aktive Rechte</span>
+            <strong id="rolePermissionCount">0</strong>
+            <small>Von <span id="rolePermissionTotal">0</span> verfuegbaren Rechten</small>
+          </div>
+          <div class="role-summary-stat">
+            <span>Aktive Bereiche</span>
+            <strong id="roleCategoryCount">0</strong>
+            <small>Gruppen mit mindestens einem Recht</small>
+          </div>
+          <div class="role-summary-stat">
+            <span>Zugriffsprofil</span>
+            <strong id="roleAccessMode">Standard</strong>
+            <small id="roleAccessHint">Gezielter Zugriff auf freigegebene Funktionen</small>
+          </div>
+        </div>
+        <div class="role-summary-note" id="roleSummaryNote">Waehle eine Rolle aus, um die Berechtigungen zu pruefen oder anzupassen.</div>
+      </div>
     </div>
 
-    <div class="card admin-card">
+    <div class="card admin-card rights-admin-card">
       <div class="admin-card-head">
-        <h3>Rechte Verwaltung</h3>
+        <div>
+          <span class="section-eyebrow">Rechte Verwaltung</span>
+          <h3>Rollen und Rechte</h3>
+          <p class="admin-section-copy">Suche Rechte gezielt, blende nur aktive Eintraege ein und speichere Aenderungen direkt pro Rolle.</p>
+        </div>
         <button class="secondary" id="reloadRolesBtn">Neu laden</button>
       </div>
 
@@ -86,7 +160,33 @@
         </div>
       </div>
 
-      <div class="permGrid modern-perm-grid">
+      <div class="rights-filter-bar">
+        <div class="rights-filter-field">
+          <label for="permissionSearch">Rechte suchen</label>
+          <input id="permissionSearch" type="search" placeholder="z.B. Historie, Export, Container">
+        </div>
+        <label class="rights-toggle-chip" for="permissionShowEnabledOnly">
+          <input type="checkbox" id="permissionShowEnabledOnly">
+          <span>Nur aktive Rechte anzeigen</span>
+        </label>
+      </div>
+
+      <div class="rights-layout">
+        <aside class="rights-sidebar">
+          <div class="rights-sidebar-card">
+            <span class="section-eyebrow">Kurzprofil</span>
+            <h4 id="sidebarRoleName">Noch keine Rolle</h4>
+            <p id="sidebarRoleHint">Nach Auswahl einer Rolle siehst du hier sofort, wie breit die Freigaben verteilt sind.</p>
+            <div class="rights-sidebar-chip-row">
+              <span class="rights-sidebar-chip"><strong id="sidebarPermissionCount">0</strong> Rechte aktiv</span>
+              <span class="rights-sidebar-chip"><strong id="sidebarCategoryCount">0</strong> Bereiche aktiv</span>
+            </div>
+            <div class="rights-sidebar-state" id="sidebarAccessState">Standardzugriff</div>
+            <div class="rights-group-list" id="permissionCategoryList"></div>
+          </div>
+        </aside>
+
+      <div class="permGrid modern-perm-grid permissions-grid">
         <div class="permBox">
           <b>Buchungen</b>
           <label><input type="checkbox" id="p_bookings_create"> Anlegen</label>
@@ -154,6 +254,7 @@
         </div>
 
 
+      </div>
       </div>
 
       <p id="roleEditMsg"></p>
