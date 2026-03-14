@@ -579,7 +579,7 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
         </section>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn--danger" data-delete-booking>Buchung loeschen</button>
+        <button type="button" class="btn btn--danger" data-delete-booking>Buchung l\u00f6schen</button>
         <button type="button" class="btn" data-close>Schliessen</button>
       </div>
     </div>
@@ -654,12 +654,13 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     }
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
-      if (!window.confirm(`Buchung "${currentBooking.title}" wirklich loeschen?`)) return;
+      const confirmationMessage = `M\u00f6chten Sie die Buchung "${currentBooking.title}" wirklich l\u00f6schen?\n\nDieser Vorgang entfernt die Buchung dauerhaft und kann nicht r\u00fcckg\u00e4ngig gemacht werden.`;
+      if (!window.confirm(confirmationMessage)) return;
       onBookingDelete(currentBooking.id)
         .then(() => close())
         .catch((error) => {
           console.error(error);
-          window.alert(error.message || "Buchung konnte nicht geloescht werden.");
+          window.alert(error.message || "Buchung konnte nicht gel\u00f6scht werden.");
         });
       return;
     }
