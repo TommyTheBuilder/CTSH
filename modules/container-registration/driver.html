@@ -332,17 +332,7 @@ body.dark .sub { color: rgba(255,255,255,.85); }
 </main>
 
 <script>
-const driverPageUrl = new URL(window.location.href);
-const driverLegacyToken = String(driverPageUrl.searchParams.get("portalToken") || "").trim();
-if (driverLegacyToken) {
-  localStorage.setItem("token", driverLegacyToken);
-  driverPageUrl.searchParams.delete("portalToken");
-  history.replaceState({}, document.title, `${driverPageUrl.pathname}${driverPageUrl.search}${driverPageUrl.hash}`);
-}
-const driverSocketToken = String(driverLegacyToken || localStorage.getItem("token") || "").trim();
-const socket = io("/container-registration", {
-  auth: driverSocketToken ? { token: driverSocketToken } : {}
-});
+const socket = io("/container-registration");
 let state = null;
 let selectedId = null;
 
@@ -603,7 +593,7 @@ socket.on("statusChanged", ({ id, data }) => {
 });
 
 socket.on("connect_error", () => {
-  renderUnavailableState("Portal-Sitzung fehlt oder ist abgelaufen. Bitte die Container-Anmeldung ueber das Portal neu oeffnen.");
+  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
   showMsg("Container-Modul nicht verbunden.");
 });
 

@@ -109,7 +109,7 @@ main{ padding-top: 12px; }
   z-index: 30;
   background: #F1F5F9;
 }
-.hidden { display: none !important; }
+.settingsMenu.open { display: block; }
 .menuItem { width: 100%; display: block; text-align: left; border: 0; margin: 0; padding: 11px 14px; font-size: 14px; cursor: pointer; }
 .menuItem.darkSection { background: #1F2937; color: #fff; font-weight: 700; }
 .menuItem.lightSection { background: #F1F5F9; color: #0F172A; border-bottom: 1px solid #E2E8F0; }
@@ -448,7 +448,7 @@ body.dark .toast{
     <div class="headerActions">
       <div class="settingsWrap">
         <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
-        <div class="settingsMenu hidden" id="settingsMenu" role="menu">
+        <div class="settingsMenu" id="settingsMenu" role="menu">
           <a class="menuItem menuItemLink darkSection" href="./admin.html">Admin</a>
           <button class="menuItem lightSection" type="button" id="changePasswordBtn">Passwort ändern</button>
           <button class="menuItem lightSection" type="button" id="openContainerLoginBtn">Container Anmeldung</button>
@@ -483,7 +483,7 @@ body.dark .toast{
   <div class="wrap">
     <div id="authBlock" class="block" style="display:none">
       <div style="font-weight:950; font-size:16px;">Kein Admin-Zugriff</div>
-      <div class="note">Öffne die Seite über den zentralen Login, damit ein gültiger Session-Cookie oder token-Parameter vorhanden ist.</div>
+      <div class="note">Öffne die Seite mit einer gültigen Portal-Anmeldung und den dafür freigeschalteten Rechten.</div>
     </div>
 
     <div id="grid" class="grid" style="display:none"></div>
@@ -527,38 +527,12 @@ body.dark .toast{
 <div id="toast" class="toast"></div>
 
 <script>
-const urlParams = new URLSearchParams(window.location.search);
-const portalToken = urlParams.get('portalToken') || urlParams.get('token') || sessionStorage.getItem('portalToken');
-
-if (portalToken) {
-    sessionStorage.setItem('portalToken', portalToken);
-    // Bereinigt die URL, damit das Token verschwindet
-    window.history.replaceState({}, document.title, window.location.pathname);
-}
-
-const socket = io("/container-registration", {
-  auth: { token: portalToken },
-  query: { portalToken: portalToken },
-  withCredentials: true
-});
+const socket = io("/container-registration");
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
 let isAuthed = false;
 let currentUser = "";
 let themeStorageKey = "admin-theme";
-let ssoRedirectInFlight = false;
-
-function setAdminAccessState(allowed, message = "") {
-  isAuthed = !!allowed;
-  document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
-  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
-  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
-
-  const note = document.querySelector("#authBlock .note");
-  if (note && message) {
-    note.textContent = message;
-  }
-}
 
 function applyTheme(theme){
   const isDark = theme === "dark";
@@ -571,8 +545,8 @@ function applyTheme(theme){
 function toggleSettingsMenu(force) {
   const menu = document.getElementById("settingsMenu");
   const btn = document.getElementById("settingsToggle");
-  const shouldOpen = typeof force === "boolean" ? force : menu.classList.contains("hidden");
-  menu.classList.toggle("hidden", !shouldOpen);
+  const shouldOpen = typeof force === "boolean" ? force : !menu.classList.contains("open");
+  menu.classList.toggle("open", shouldOpen);
   btn.setAttribute("aria-expanded", String(shouldOpen));
 }
 
@@ -625,32 +599,6 @@ function showToast(msg){
   t.style.display = "block";
   clearTimeout(showToast._to);
   showToast._to = setTimeout(()=> t.style.display="none", 2200);
-}
-
-async function openSsoTarget(endpoint) {
-  if (ssoRedirectInFlight) return;
-  ssoRedirectInFlight = true;
-  toggleSettingsMenu(false);
-
-  const loginBtn = document.getElementById("openContainerLoginBtn");
-  if (loginBtn) loginBtn.disabled = true;
-
-  try {
-    const response = await fetch(endpoint, { method: "GET", credentials: "include" });
-    const data = await response.json();
-
-    if (!response.ok || !data?.url) {
-      showToast(data?.error?.message || "Weiterleitung fehlgeschlagen.");
-      return;
-    }
-
-    window.location.href = data.url;
-  } catch (_error) {
-    showToast("Netzwerkfehler bei der Weiterleitung.");
-  } finally {
-    ssoRedirectInFlight = false;
-    if (loginBtn) loginBtn.disabled = false;
-  }
 }
 
 function renderAll(){
@@ -907,8 +855,15 @@ socket.on("init", (state) => {
 });
 
 socket.on("adminAuthResult", ({ ok, user: authUser }) => {
+  isAuthed = !!ok;
   currentUser = String(authUser || "").trim();
-  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte die Container-Anmeldung ueber das Portal oeffnen.");
+  document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
+  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
+  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
+  const authNote = document.querySelector("#authBlock .note");
+  if (authNote && !isAuthed) {
+    authNote.textContent = "Kein Admin-Zugriff. Bitte prüfe die im Adminbereich gesetzten Rechte.";
+  }
 
   if (isAuthed && currentUser) {
     const nextThemeKey = resolveThemeStorageKey(currentUser);
@@ -929,14 +884,21 @@ socket.on("adminAuthResult", ({ ok, user: authUser }) => {
   }
 });
 
-socket.on("connect_error", () => {
-  setAdminAccessState(false, "Portal-Sitzung fehlt oder ist abgelaufen. Bitte die Container-Anmeldung ueber das Portal neu oeffnen.");
-  showToast("Container-Modul nicht verbunden");
-});
-
 socket.on("statusChanged", ({ id, data }) => {
   if (!isAuthed) return;
   applyOne(id, data);
+});
+
+socket.on("connect_error", () => {
+  isAuthed = false;
+  document.getElementById("authBlock").style.display = "block";
+  document.getElementById("grid").style.display = "none";
+  document.getElementById("historyPanel").style.display = "none";
+  const authNote = document.querySelector("#authBlock .note");
+  if (authNote) {
+    authNote.textContent = "Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.";
+  }
+  showToast("Container-Modul nicht verbunden");
 });
 
 // Buttons
@@ -964,9 +926,7 @@ const settingsToggleBtn = document.getElementById("settingsToggle");
 if (settingsToggleBtn) {
   settingsToggleBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    const menu = document.getElementById("settingsMenu");
-    menu.classList.toggle('hidden');
-    settingsToggleBtn.setAttribute("aria-expanded", String(!menu.classList.contains("hidden")));
+    toggleSettingsMenu();
   });
 }
 
@@ -997,7 +957,6 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     console.warn("Logout endpoint nicht erreichbar:", error);
   }
   localStorage.removeItem(themeStorageKey);
-  localStorage.removeItem("token");
   toggleSettingsMenu(false);
   window.location.href = "/";
 });

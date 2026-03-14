@@ -192,7 +192,7 @@ function bindSettingsMenu() {
       closeSettingsMenu();
       containerRegistrationBtn.disabled = true;
       try {
-        const r = await api("/api/sso/container-session", { method: "GET", headers: {} });
+        const r = await api("/api/container-registration-session", { method: "GET", headers: {} });
         const data = await readJsonSafe(r);
         if (!r.ok || !data?.url) {
           alert(data?.error || "Container Anmeldung ist aktuell nicht verfügbar.");
