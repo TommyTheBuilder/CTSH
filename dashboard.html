@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body>
+<header class="topbar topbar-modern admin-topbar">
+  <div class="system-logo-wrap">
+    <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
+    <a href="dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
+    <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
+  </div>
+  <div class="row topbar-actions" style="align-items:center;">
+    <div class="settings-menu-wrap" id="settingsMenuWrap">
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">⚙️</button>
+      <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="openAdminBtn" role="menuitem" style="display:none;">Administration</button>
+        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+        <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
+      </div>
+    </div>
+    <div id="themeToggleMount" style="display:none;"></div>
+  </div>
+</header>
+
+<main class="dashboard-main module-dashboard-main">
+  <section class="dashboard-header admin-header">
+    <div class="dashboard-title-row"><b>Modul-Dashboard</b> <span class="pill" id="me">-</span></div>
+    <p class="muted" style="margin:8px 0 0;">Bitte wählen Sie ein Modul aus.</p>
+  </section>
+
+  <section class="card module-dashboard-card">
+    <div class="module-grid">
+      <a class="module-button module-button--stacked" href="/app.html" aria-label="Paletten Buchungen">
+        <span class="module-button__icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" focusable="false">
+            <rect x="10" y="16" width="44" height="8" rx="2"></rect>
+            <rect x="12" y="28" width="12" height="14" rx="2"></rect>
+            <rect x="26" y="28" width="12" height="14" rx="2"></rect>
+            <rect x="40" y="28" width="12" height="14" rx="2"></rect>
+            <rect x="10" y="46" width="44" height="4" rx="2"></rect>
+            <rect x="16" y="50" width="4" height="6" rx="1"></rect>
+            <rect x="30" y="50" width="4" height="6" rx="1"></rect>
+            <rect x="44" y="50" width="4" height="6" rx="1"></rect>
+          </svg>
+        </span>
+        <span class="module-button__title">Paletten Buchungen</span>
+      </a>
+      <a class="module-button module-button--stacked" id="containerAdminLink" href="/container-registration" style="display:none;" aria-label="Container Anmeldung">
+        <span class="module-button__icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" focusable="false">
+            <rect x="8" y="18" width="48" height="28" rx="4"></rect>
+            <line x1="18" y1="22" x2="18" y2="42"></line>
+            <line x1="26" y1="22" x2="26" y2="42"></line>
+            <line x1="34" y1="22" x2="34" y2="42"></line>
+            <line x1="42" y1="22" x2="42" y2="42"></line>
+            <line x1="50" y1="22" x2="50" y2="42"></line>
+            <line x1="12" y1="50" x2="52" y2="50"></line>
+          </svg>
+        </span>
+        <span class="module-button__title">Container Anmeldung</span>
+      </a>
+      <a class="module-button module-button--stacked" id="containerPlanningLink" href="/modules/container-planning/index.html" style="display:none;">
+        <span class="module-button__icon" aria-hidden="true">
+          <svg viewBox="0 0 80 64" focusable="false">
+            <rect x="6" y="16" width="28" height="18" rx="3"></rect>
+            <rect x="36" y="20" width="16" height="14" rx="2"></rect>
+            <rect x="52" y="22" width="10" height="12" rx="2"></rect>
+            <rect x="63" y="25" width="9" height="9" rx="2"></rect>
+            <line x1="8" y1="38" x2="72" y2="38"></line>
+            <circle cx="18" cy="44" r="5"></circle>
+            <circle cx="44" cy="44" r="5"></circle>
+            <circle cx="66" cy="44" r="5"></circle>
+            <line x1="34" y1="26" x2="36" y2="26"></line>
+          </svg>
+        </span>
+        <span class="module-button__title">Container und LKW</span>
+        <span class="module-button__subtitle">Planung</span>
+      </a>
+    </div>
+    <p id="moduleMsg" style="margin:12px 0 0;"></p>
+  </section>
+</main>
+
+<div class="modalBack" id="passwordModalBack" aria-hidden="true">
+  <div class="modal" style="max-width:520px; width:100%; box-shadow:0 18px 45px rgba(15,23,42,.3); border:1px solid #e5e7eb;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h3 style="margin:0;">Passwort ändern</h3>
+      <button class="secondary" type="button" id="closePasswordModalBtn" style="width:auto;">✕</button>
+    </div>
+    <div class="row">
+      <div>
+        <label>Aktuelles Passwort</label>
+        <input id="currentPassword" type="password" autocomplete="new-password" placeholder="Aktuelles Passwort">
+      </div>
+      <div>
+        <label>Neues Passwort</label>
+        <input id="newPassword" type="password" autocomplete="new-password" placeholder="Mindestens 8 Zeichen">
+      </div>
+      <div>
+        <label>Neues Passwort wiederholen</label>
+        <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Passwort wiederholen">
+      </div>
+    </div>
+    <p id="passwordModalMsg" style="margin:10px 0 0;"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:10px;">
+      <button class="secondary" type="button" id="cancelPasswordBtn" style="min-width:140px;">Abbrechen</button>
+      <button class="primary" id="savePasswordBtn" type="button">Passwort speichern</button>
+    </div>
+  </div>
+</div>
+
+<footer class="site-copyright">© 2026 / CTSH Systems</footer>
+<script src="/public/theme.js"></script>
+<script src="/public/dashboard.js"></script>
+</body>
+</html>
