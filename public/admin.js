@@ -242,6 +242,10 @@ $("backBtn")?.addEventListener("click", () => {
   closeSettingsMenu();
   window.location.href = "/app.html";
 });
+$("dashboardBtn")?.addEventListener("click", () => {
+  closeSettingsMenu();
+  window.location.href = "/public/dashboard.html";
+});
 
 // ---------------- Loaders ----------------
 async function loadMe() {
