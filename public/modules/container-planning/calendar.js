@@ -36,6 +36,8 @@ const bookingModal = createBookingModal({
   }
 });
 
+const confirmDialog = createConfirmDialog();
+
 const detailsModal = createBookingDetailsModal({
   onBookingUpdate(updated) {
     const index = bookings.findIndex((booking) => booking.id === updated.id);
@@ -56,6 +58,7 @@ const detailsModal = createBookingDetailsModal({
 });
 
 document.body.append(bookingModal.overlay);
+document.body.append(confirmDialog.overlay);
 document.body.append(detailsModal.overlay);
 
 initApp();
@@ -289,15 +292,16 @@ function renderGrid() {
 }
 
 function createBookingCard(booking, { compact = false } = {}) {
+  const containerLabel = formatOptionalText(booking.container);
   const card = document.createElement("div");
   card.className = `booking-card ${compact ? "booking-card--compact" : ""}`.trim();
   card.draggable = true;
   card.dataset.type = booking.type;
   card.innerHTML = compact
-    ? `<strong>${escapeHtml(booking.title)}</strong>Container: ${escapeHtml(booking.container)}`
+    ? `<strong>${escapeHtml(booking.title)}</strong>Container: ${escapeHtml(containerLabel)}`
     : `
       <strong>${escapeHtml(booking.title)}</strong>
-      Container: ${escapeHtml(booking.container)}<br />
+      Container: ${escapeHtml(containerLabel)}<br />
       Kennzeichen: ${escapeHtml(booking.kennzeichen)}<br />
       Auftrag: ${escapeHtml(booking.auftrag)}<br />
       Lager: ${escapeHtml(booking.lager || "-")}
@@ -384,6 +388,11 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatOptionalText(value) {
+  const normalized = String(value || "").trim();
+  return normalized || "-";
 }
 
 function getColorForBookingType(type) {
@@ -499,7 +508,7 @@ function createBookingModal({ onSave }) {
       <h3>Neue Buchung erstellen</h3>
       <form id="bookingCreateForm" class="form-grid">
         <label>Titel<input name="title" required /></label>
-        <label>Containernummer<input name="container" required /></label>
+        <label><span>Containernummer <span class="field-optional">(optional)</span></span><input name="container" /></label>
         <label>Kennzeichen<input name="kennzeichen" required /></label>
         <label>Auftragsnummer<input name="auftrag" required /></label>
         <label>Lager<input name="lager" required /></label>
@@ -560,6 +569,64 @@ function createBookingModal({ onSave }) {
   return { overlay, open, close };
 }
 
+function createConfirmDialog() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogMessage">
+      <div class="confirm-modal__header">
+        <div class="confirm-modal__badge" aria-hidden="true">!</div>
+        <div>
+          <p class="confirm-modal__eyebrow">Bitte bestaetigen</p>
+          <h3 id="confirmDialogTitle">Eintrag loeschen?</h3>
+        </div>
+      </div>
+      <p class="confirm-modal__message" id="confirmDialogMessage"></p>
+      <p class="confirm-modal__hint">Dieser Vorgang kann nicht rueckgaengig gemacht werden.</p>
+      <div class="modal-actions confirm-modal__actions">
+        <button type="button" class="btn" data-confirm-cancel>Abbrechen</button>
+        <button type="button" class="btn btn--danger-solid" data-confirm-accept>Endgueltig loeschen</button>
+      </div>
+    </div>
+  `;
+
+  const titleNode = overlay.querySelector("#confirmDialogTitle");
+  const messageNode = overlay.querySelector("#confirmDialogMessage");
+  const cancelBtn = overlay.querySelector("[data-confirm-cancel]");
+  const acceptBtn = overlay.querySelector("[data-confirm-accept]");
+  let resolver = null;
+
+  function close(result) {
+    overlay.classList.remove("is-open");
+    if (resolver) resolver(result);
+    resolver = null;
+  }
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.dataset.confirmCancel !== undefined) close(false);
+    if (event.target.dataset.confirmAccept !== undefined) close(true);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!overlay.classList.contains("is-open")) return;
+    if (event.key === "Escape") close(false);
+  });
+
+  async function confirm({ title, message, confirmLabel = "Endgueltig loeschen" }) {
+    titleNode.textContent = title || "Eintrag loeschen?";
+    messageNode.textContent = message || "";
+    acceptBtn.textContent = confirmLabel;
+    overlay.classList.add("is-open");
+    queueMicrotask(() => acceptBtn.focus());
+    return new Promise((resolve) => {
+      resolver = resolve;
+      cancelBtn.blur();
+    });
+  }
+
+  return { overlay, confirm };
+}
+
 function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -596,7 +663,7 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     detailsTitle.textContent = `Buchung: ${currentBooking.title}`;
     meta.innerHTML = `
       <article><span>Titel</span><strong>${escapeHtml(currentBooking.title)}</strong></article>
-      <article><span>Container</span><strong>${escapeHtml(currentBooking.container)}</strong></article>
+      <article><span>Container</span><strong>${escapeHtml(formatOptionalText(currentBooking.container))}</strong></article>
       <article><span>Kennzeichen</span><strong>${escapeHtml(currentBooking.kennzeichen)}</strong></article>
       <article><span>Auftrag</span><strong>${escapeHtml(currentBooking.auftrag)}</strong></article>
       <article><span>Lager</span><strong>${escapeHtml(currentBooking.lager || "-")}</strong></article>
@@ -647,15 +714,18 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     currentBooking = null;
   }
 
-  overlay.addEventListener("click", (event) => {
+  overlay.addEventListener("click", async (event) => {
     if (event.target === overlay || event.target.dataset.close !== undefined) {
       close();
       return;
     }
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
-      const confirmationMessage = `M\u00f6chten Sie die Buchung "${currentBooking.title}" wirklich l\u00f6schen?\n\nDieser Vorgang entfernt die Buchung dauerhaft und kann nicht r\u00fcckg\u00e4ngig gemacht werden.`;
-      if (!window.confirm(confirmationMessage)) return;
+      const confirmed = await confirmDialog.confirm({
+        title: "Buchung endgueltig loeschen?",
+        message: `Die Buchung "${currentBooking.title}" wird dauerhaft entfernt.`
+      });
+      if (!confirmed) return;
       onBookingDelete(currentBooking.id)
         .then(() => close())
         .catch((error) => {

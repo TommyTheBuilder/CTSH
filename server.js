@@ -1150,8 +1150,8 @@ app.get("/api/modules/container-planning/bookings", authRequired, requireContain
 
 app.post("/api/modules/container-planning/bookings", authRequired, requireContainerPlanningAccess, async (req, res) => {
   const { title, containerNo, customer, warehouse, plate, orderNo, date, color } = req.body || {};
-  if (!title || !containerNo || !plate || !orderNo || !date) {
-    return res.status(400).json({ message: "Alle Buchungsfelder sind erforderlich." });
+  if (!title || !plate || !orderNo || !date) {
+    return res.status(400).json({ message: "Titel, Kennzeichen, Auftragsnummer und Datum sind erforderlich." });
   }
 
   const result = await q(
@@ -1162,7 +1162,7 @@ app.post("/api/modules/container-planning/bookings", authRequired, requireContai
                order_no AS "orderNo", booking_date::text AS date, color`,
     [
       String(title).trim(),
-      String(containerNo).trim(),
+      String(containerNo || "").trim(),
       String(customer || "-").trim() || "-",
       String(warehouse || "-").trim() || "-",
       String(plate).trim(),
