@@ -411,7 +411,9 @@ const filteredSlot = Number(queryParams.get("slot"));
 let focusedContainerId = Number.isInteger(filteredSlot) && filteredSlot >= 1 && filteredSlot <= 8 ? filteredSlot : null;
 const ALERT_REPEAT_COUNT = 3;
 const ALERT_REPEAT_INTERVAL = 0.95;
-const ALERT_VIBRATION_PATTERN = [180, 120, 180, 120, 180];
+const ALERT_VIBRATION_CYCLE = [180, 120, 180, 120, 180];
+const ALERT_VIBRATION_CYCLE_DURATION = ALERT_VIBRATION_CYCLE.reduce((total, duration) => total + duration, 0);
+const ALERT_VIBRATION_GAP = Math.max(0, Math.round((ALERT_REPEAT_INTERVAL * 1000) - ALERT_VIBRATION_CYCLE_DURATION));
 
 const I18N = {
   de: {
@@ -646,6 +648,19 @@ function scheduleChime(ctx, startAt) {
   });
 }
 
+function getAlertVibrationPattern() {
+  const pattern = [];
+
+  for (let repeat = 0; repeat < ALERT_REPEAT_COUNT; repeat += 1) {
+    pattern.push(...ALERT_VIBRATION_CYCLE);
+    if (repeat < ALERT_REPEAT_COUNT - 1 && ALERT_VIBRATION_GAP > 0) {
+      pattern.push(ALERT_VIBRATION_GAP);
+    }
+  }
+
+  return pattern;
+}
+
 async function playProfessionalAlert() {
   const ctx = await ensureAudioContext();
   if (!ctx || ctx.state !== "running") return;
@@ -666,7 +681,7 @@ async function showBackgroundNotification(id, data) {
   const body = `${t("scheduleLabel")}: ${timeText(data.time)} • ${plateText(data.plate)}`;
   const options = {
     body,
-    vibrate: ALERT_VIBRATION_PATTERN,
+    vibrate: getAlertVibrationPattern(),
     tag: `container-status-${id}`,
     renotify: true,
     requireInteraction: true,
@@ -688,7 +703,7 @@ async function showBackgroundNotification(id, data) {
 }
 
 async function triggerNotification(id, data){
-  if (navigator.vibrate) navigator.vibrate(ALERT_VIBRATION_PATTERN);
+  if (navigator.vibrate) navigator.vibrate(getAlertVibrationPattern());
   await playProfessionalAlert();
   await showBackgroundNotification(id, data);
 }
