@@ -14,7 +14,7 @@ const { requirePermission } = require("./middleware_permissions");
 const { containerPermissionRequired } = require("./middleware_container_auth");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
@@ -25,7 +25,7 @@ const MODULE_CONTAINER_REGISTRATION_DRIVER_PATH = "/modules/container-registrati
 const MODULE_CONTAINER_REGISTRATION_VIEWER_PATH = "/modules/container-registration/viewer.html";
 
 const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").trim();
-const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "").trim();
+const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "paletten-ms.de").trim();
 const AUTH_COOKIE_SAME_SITE = String(process.env.AUTH_COOKIE_SAME_SITE || "None").trim();
 const AUTH_COOKIE_MAX_AGE_SECONDS = Number(process.env.AUTH_COOKIE_MAX_AGE_SECONDS || 12 * 60 * 60);
 
