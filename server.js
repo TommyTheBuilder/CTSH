@@ -126,6 +126,7 @@ function corsOriginResolver(origin, callback) {
   const allowedOrigins = getAllowedOrigins();
   if (allowedOrigins === "*") return callback(null, true);
   if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+  console.warn("[CORS] Blocked origin:", origin, "Allowed origins:", allowedOrigins.join(", "));
   return callback(new Error("Not allowed by CORS"));
 }
 
@@ -181,10 +182,10 @@ app.use("/modules", express.static(path.join(__dirname, "public/modules")));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const httpServer = require("http").createServer(app);
-const allowedOrigins = getAllowedOrigins();
 const io = require("socket.io")(httpServer, {
   cors: {
-    origin: allowedOrigins === "*" ? true : allowedOrigins
+    origin: corsOriginResolver,
+    credentials: true
   }
 });
 
