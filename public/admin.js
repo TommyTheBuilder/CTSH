@@ -67,15 +67,15 @@ function applyModuleNaming() {
 const PERMISSION_CARD_META = {
   bookings: {
     eyebrow: "Operativ",
-    description: "Rechte fuer Erfassung, Einsicht und Belegbearbeitung."
+    description: "Rechte für Erfassung, Einsicht und Belegbearbeitung."
   },
-  "BestÃ¤nde": {
+  "Bestände": {
     eyebrow: "Reporting",
     description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
   },
-  "VorgÃ¤nge": {
+  "Vorgänge": {
     eyebrow: "Workflow",
-    description: "Rechte fuer den kompletten Lebenszyklus von Faellen."
+    description: "Rechte für den kompletten Lebenszyklus von Fällen."
   },
   master: {
     eyebrow: "Grunddaten",
@@ -91,7 +91,7 @@ const PERMISSION_CARD_META = {
   },
   filters: {
     eyebrow: "Navigation",
-    description: "Erweitert Auswahlmoeglichkeiten ueber zugewiesene Standorte hinaus."
+    description: "Erweitert Auswahlmöglichkeiten über zugewiesene Standorte hinaus."
   },
   integrations: {
     eyebrow: "Module",
@@ -106,7 +106,7 @@ PERMISSION_CARD_META.stock = {
 
 PERMISSION_CARD_META.cases = {
   eyebrow: "Workflow",
-  description: "Rechte fuer den kompletten Lebenszyklus von Faellen."
+  description: "Rechte für den kompletten Lebenszyklus von Fällen."
 };
 
 function enhancePermissionCards() {
@@ -119,7 +119,7 @@ function enhancePermissionCards() {
     const metaKey = firstCheckboxId.split("_")[1] || "";
     const meta = PERMISSION_CARD_META[metaKey] || {
       eyebrow: "Bereich",
-      description: "Berechtigungen fuer diesen Bereich."
+      description: "Berechtigungen für diesen Bereich."
     };
 
     box.dataset.permGroup = box.dataset.permGroup || rawTitle;
