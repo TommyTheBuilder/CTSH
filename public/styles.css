@@ -1553,9 +1553,9 @@ body.darkmode .site-copyright {
   max-width: none;
   text-align: left;
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
-  gap: 22px;
-  padding: 32px;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 24px 32px;
   border-radius: 30px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(239, 246, 255, 0.78));
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -1576,7 +1576,7 @@ body.darkmode .site-copyright {
 .module-hero__copy {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 
 .module-hero__eyebrow {
@@ -1595,7 +1595,7 @@ body.darkmode .site-copyright {
 
 .module-dashboard-main .dashboard-title-row {
   justify-content: flex-start;
-  align-items: flex-end;
+  align-items: center;
   gap: 14px;
   margin: 0;
   font-size: clamp(38px, 4.5vw, 64px);
@@ -1762,10 +1762,10 @@ body.darkmode .site-copyright {
 
 .module-dashboard-card__head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 24px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .module-section-kicker {
@@ -2006,8 +2006,19 @@ body.darkmode .site-copyright {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
 }
 
+.module-side-panel__card--feed {
+  height: 100%;
+}
+
+.module-side-panel__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
 .module-side-panel__card h3 {
-  margin: 12px 0 10px;
+  margin: 0;
   color: #0f172a;
   font-size: 24px;
   line-height: 1.15;
@@ -2046,6 +2057,67 @@ body.darkmode .site-copyright {
   color: #ffffff;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+.module-feed {
+  display: grid;
+  gap: 12px;
+}
+
+.module-feed__item {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.module-feed__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.module-feed__app {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.module-feed__time {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.module-feed__title {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.module-feed__meta {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.module-feed__empty {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.04);
+  color: #64748b;
+  line-height: 1.55;
 }
 
 .module-status-message {
@@ -2103,6 +2175,10 @@ body.dark .module-stat-card__meta,
 body.darkmode .module-stat-card__meta,
 body.dark .module-dashboard-card__intro,
 body.darkmode .module-dashboard-card__intro,
+body.dark .module-feed__meta,
+body.darkmode .module-feed__meta,
+body.dark .module-feed__time,
+body.darkmode .module-feed__time,
 body.dark .module-spotlight-list__item span,
 body.darkmode .module-spotlight-list__item span,
 body.dark .module-side-panel__card p,
@@ -2158,6 +2234,8 @@ body.dark .module-dashboard-card__head h2,
 body.darkmode .module-dashboard-card__head h2,
 body.dark .module-side-panel__card h3,
 body.darkmode .module-side-panel__card h3,
+body.dark .module-feed__title,
+body.darkmode .module-feed__title,
 body.dark .module-spotlight-list__item strong,
 body.darkmode .module-spotlight-list__item strong,
 body.dark .module-side-panel__item strong,
@@ -2176,6 +2254,18 @@ body.dark .module-side-panel__item,
 body.darkmode .module-side-panel__item {
   background: rgba(15, 23, 42, 0.5);
   border-color: rgba(148, 163, 184, 0.16);
+}
+
+body.dark .module-feed__item,
+body.darkmode .module-feed__item {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+body.dark .module-feed__empty,
+body.darkmode .module-feed__empty {
+  background: rgba(15, 23, 42, 0.4);
+  color: #cbd5e1;
 }
 
 body.dark .module-side-panel__marker,
@@ -2308,6 +2398,11 @@ body.darkmode .module-spotlight-list__icon {
 
   .module-side-panel__card h3 {
     font-size: 22px;
+  }
+
+  .module-feed__top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .module-spotlight-list__item,

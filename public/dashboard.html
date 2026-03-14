@@ -30,61 +30,12 @@
 <main class="dashboard-main module-dashboard-main">
   <section class="dashboard-header admin-header module-hero">
     <div class="module-hero__copy">
-      <span class="module-hero__eyebrow">CTSH Operations Hub</span>
+      <span class="module-hero__eyebrow">CTSH Hub</span>
       <div class="dashboard-title-row">
-        <b id="dashboardGreeting">Willkommen im Dashboard</b>
+        <b id="dashboardGreeting">Willkommen</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead">
-        Starten Sie direkt in Ihre freigegebenen Arbeitsbereiche, behalten Sie den Zugriff im Blick und springen Sie ohne Umwege in Buchungen, Anmeldung oder Planung.
-      </p>
-      <div class="module-hero__stats">
-        <article class="module-stat-card">
-          <span class="module-stat-card__label">Verf&uuml;gbare Module</span>
-          <strong class="module-stat-card__value" id="moduleCount">0</strong>
-          <span class="module-stat-card__meta">Wird anhand Ihrer Berechtigungen automatisch aktualisiert</span>
-        </article>
-        <article class="module-stat-card">
-          <span class="module-stat-card__label">Zugriffsstatus</span>
-          <strong class="module-stat-card__value" id="moduleAccessState">Pr&uuml;fung l&auml;uft</strong>
-          <span class="module-stat-card__meta">Freigeschaltete Bereiche erscheinen direkt im Dashboard</span>
-        </article>
-      </div>
     </div>
-
-    <aside class="module-hero__panel" aria-label="Dashboard-Highlights">
-      <article class="module-spotlight module-spotlight--accent">
-        <span class="module-spotlight__label">Heute</span>
-        <strong class="module-spotlight__value" id="dashboardDate">-</strong>
-        <p class="module-spotlight__text">
-          Ihr zentraler Einstiegspunkt f&uuml;r Lager, Container und operative Planung.
-        </p>
-      </article>
-
-      <div class="module-spotlight-list">
-        <div class="module-spotlight-list__item">
-          <span class="module-spotlight-list__icon">01</span>
-          <div>
-            <strong>Direkter Zugriff</strong>
-            <span>Gro&szlig;e Schnellzugriffe f&uuml;r die wichtigsten Anwendungen im Alltag.</span>
-          </div>
-        </div>
-        <div class="module-spotlight-list__item">
-          <span class="module-spotlight-list__icon">02</span>
-          <div>
-            <strong>Empfohlener Start</strong>
-            <span id="dashboardPrimaryModule">Das erste verf&uuml;gbare Modul wird nach dem Laden hervorgehoben.</span>
-          </div>
-        </div>
-        <div class="module-spotlight-list__item">
-          <span class="module-spotlight-list__icon">03</span>
-          <div>
-            <strong>Rechtegesteuert</strong>
-            <span>Die Anzeige passt sich automatisch an Ihre Rolle und Integrationen an.</span>
-          </div>
-        </div>
-      </div>
-    </aside>
   </section>
 
   <section class="card module-dashboard-card">
@@ -93,9 +44,6 @@
         <span class="module-section-kicker">Arbeitsbereiche</span>
         <h2>W&auml;hlen Sie Ihren Bereich</h2>
       </div>
-      <p class="module-dashboard-card__intro">
-        Die Module sind als gro&szlig;e Arbeitskarten aufbereitet und f&uuml;llen das Dashboard jetzt deutlich st&auml;rker aus. Sichtbarkeit und Freigabe richten sich nach Ihren Rechten.
-      </p>
     </div>
 
     <div class="module-dashboard-layout">
@@ -209,38 +157,16 @@
         </a>
       </div>
 
-      <aside class="module-side-panel" aria-label="Hinweise zum Dashboard">
-        <article class="module-side-panel__card">
-          <span class="module-section-kicker">Schnellinfo</span>
-          <h3>Ihr Dashboard reagiert auf Rollen und Integrationen</h3>
-          <p>
-            Freigeschaltete Anwendungen erscheinen automatisch. Nicht verf&uuml;gbare Bereiche bleiben ausgeblendet, damit die Startseite klar und fokussiert bleibt.
-          </p>
+      <aside class="module-side-panel" aria-label="Live-Feed">
+        <article class="module-side-panel__card module-side-panel__card--feed">
+          <div class="module-side-panel__head">
+            <span class="module-section-kicker">Schnellinfo</span>
+            <h3>Live-Feed</h3>
+          </div>
+          <div class="module-feed" id="dashboardLiveFeed" role="log" aria-live="polite">
+            <div class="module-feed__empty">Live-Vorg&auml;nge werden geladen...</div>
+          </div>
         </article>
-
-        <div class="module-side-panel__list">
-          <div class="module-side-panel__item">
-            <span class="module-side-panel__marker">A</span>
-            <div>
-              <strong>Gro&szlig;z&uuml;giger aufgebaut</strong>
-              <span>Mehr Fl&auml;che f&uuml;r Inhalte, klare Hierarchie und schnellere Orientierung.</span>
-            </div>
-          </div>
-          <div class="module-side-panel__item">
-            <span class="module-side-panel__marker">B</span>
-            <div>
-              <strong>Moderne Kartenstruktur</strong>
-              <span>Jedes Modul bekommt jetzt einen eigenen visuellen Schwerpunkt mit Kurzbeschreibung.</span>
-            </div>
-          </div>
-          <div class="module-side-panel__item">
-            <span class="module-side-panel__marker">C</span>
-            <div>
-              <strong>Einstellungen im Kopfbereich</strong>
-              <span>Passwort, Administration, Theme und Logout bleiben weiterhin mit einem Klick erreichbar.</span>
-            </div>
-          </div>
-        </div>
       </aside>
     </div>
 
