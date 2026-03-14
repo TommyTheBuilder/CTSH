@@ -15,35 +15,32 @@ const { containerPermissionRequired } = require("./middleware_container_auth");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
-const ALWAYS_ALLOWED_ORIGINS = [
-  "https://571188521.swh.strato-hosting.eu",
-  "http://571188521.swh.strato-hosting.eu"
-];
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const CONTAINER_APP_URL = String(process.env.CONTAINER_APP_URL || "https://container.paletten-ms.de/admin.html").trim();
-const CONTAINER_PLANNING_APP_URL = String(process.env.CONTAINER_PLANNING_APP_URL || "https://containerplanung.paletten-ms.de").trim();
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
 const MODULE_CONTAINER_REGISTRATION_ADMIN_PATH = "/modules/container-registration/admin.html";
 const MODULE_CONTAINER_REGISTRATION_DRIVER_PATH = "/modules/container-registration/driver.html";
 const MODULE_CONTAINER_REGISTRATION_VIEWER_PATH = "/modules/container-registration/viewer.html";
 
 const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").trim();
-const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || ".paletten-ms.de").trim();
+const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "").trim();
 const AUTH_COOKIE_SAME_SITE = String(process.env.AUTH_COOKIE_SAME_SITE || "None").trim();
 const AUTH_COOKIE_MAX_AGE_SECONDS = Number(process.env.AUTH_COOKIE_MAX_AGE_SECONDS || 12 * 60 * 60);
 
 function buildAuthCookieOptions() {
-  return {
+  const options = {
     httpOnly: true,
     secure: true,
     sameSite: AUTH_COOKIE_SAME_SITE,
-    domain: AUTH_COOKIE_DOMAIN,
     path: "/",
     maxAge: AUTH_COOKIE_MAX_AGE_SECONDS * 1000
   };
+  if (AUTH_COOKIE_DOMAIN) {
+    options.domain = AUTH_COOKIE_DOMAIN;
+  }
+  return options;
 }
 
 function setAuthCookie(res, token) {
@@ -106,10 +103,7 @@ function requireModulePageAccess(permissionResolver) {
 
 function getAllowedOrigins() {
   if (CORS_ORIGIN === "*") return "*";
-  return Array.from(new Set([
-    ...CORS_ORIGIN.split(",").map((x) => x.trim()).filter(Boolean),
-    ...ALWAYS_ALLOWED_ORIGINS
-  ]));
+  return Array.from(new Set(CORS_ORIGIN.split(",").map((x) => x.trim()).filter(Boolean)));
 }
 
 function corsOriginResolver(origin, callback) {
