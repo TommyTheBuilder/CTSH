@@ -966,7 +966,11 @@ document.getElementById("dashboardLink").addEventListener("click", () => {
 
 document.getElementById("openContainerLoginBtn").addEventListener("click", () => {
   toggleSettingsMenu(false);
-  window.location.href = "./driver.html";
+  const driverUrl = new URL("./driver.html", window.location.href);
+  if (adminPortalToken) {
+    driverUrl.searchParams.set("portalToken", adminPortalToken);
+  }
+  window.location.href = `${driverUrl.pathname}${driverUrl.search}${driverUrl.hash}`;
 });
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {
