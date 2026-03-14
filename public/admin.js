@@ -56,6 +56,14 @@ function api(path, opts = {}) {
   });
 }
 function $(id) { return document.getElementById(id); }
+
+function applyModuleNaming() {
+  const containerPlanningPermission = $("p_integrations_container_planning");
+  const permissionLabel = containerPlanningPermission?.parentElement;
+  if (permissionLabel) {
+    permissionLabel.lastChild.textContent = " Container und LKW Planung öffnen";
+  }
+}
 function setMsg(id, text, ok = false) {
   const el = $(id);
   if (!el) return;
@@ -1176,6 +1184,7 @@ $("saveUserBtn")?.addEventListener("click", async () => {
     bindTabs();
     bindSettingsMenu();
     bindPasswordModal();
+    applyModuleNaming();
     await loadMe();
     await loadPerms();
 

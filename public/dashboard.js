@@ -290,7 +290,7 @@ $("logoutBtn")?.addEventListener("click", () => {
   await bindModuleLink(
     "containerPlanningLink",
     "/api/container-planning-session",
-    "Container Planung wird geoeffnet ...",
-    "Container Planung ist aktuell nicht verfuegbar."
+    "Container und LKW Planung wird geoeffnet ...",
+    "Container und LKW Planung ist aktuell nicht verfuegbar."
   );
 })();
