@@ -398,17 +398,7 @@ body.dark .rampUrl { color: #bbf7d0; }
 </main>
 
 <script>
-const viewerPageUrl = new URL(window.location.href);
-const viewerLegacyToken = String(viewerPageUrl.searchParams.get("portalToken") || "").trim();
-if (viewerLegacyToken) {
-  localStorage.setItem("token", viewerLegacyToken);
-  viewerPageUrl.searchParams.delete("portalToken");
-  history.replaceState({}, document.title, `${viewerPageUrl.pathname}${viewerPageUrl.search}${viewerPageUrl.hash}`);
-}
-const viewerSocketToken = String(viewerLegacyToken || localStorage.getItem("token") || "").trim();
-const socket = io("/container-registration", {
-  auth: viewerSocketToken ? { token: viewerSocketToken } : {}
-});
+const socket = io("/container-registration");
 let audioContext = null;
 let currentLang = localStorage.getItem("viewerLang") || "de";
 let currentState = null;
@@ -659,7 +649,7 @@ socket.on("statusChanged", ({ id, data }) => {
 });
 
 socket.on("connect_error", () => {
-  renderUnavailableState("Portal-Sitzung fehlt oder ist abgelaufen. Bitte die Container-Ansicht ueber das Portal neu oeffnen.");
+  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
 });
 
 applyTheme(localStorage.getItem("viewer-theme") || "light");

@@ -283,7 +283,7 @@ $("logoutBtn")?.addEventListener("click", () => {
 
   await bindModuleLink(
     "containerAdminLink",
-    "/api/sso/container-session",
+    "/api/container-registration-session",
     "Container Anmeldung wird geoeffnet ...",
     "Container Anmeldung ist aktuell nicht verfuegbar."
   );

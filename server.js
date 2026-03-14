@@ -11,7 +11,6 @@ const crypto = require("crypto");
 const { pool } = require("./db_pg");
 const { authRequired, adminRequired, JWT_SECRET } = require("./middleware_auth");
 const { requirePermission } = require("./middleware_permissions");
-const { containerPermissionRequired } = require("./middleware_container_auth");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
@@ -54,44 +53,49 @@ function clearAuthCookie(res) {
   res.clearCookie(AUTH_COOKIE_NAME, clearOptions);
 }
 
-function getRequestToken(req) {
-  const header = String(req.headers.authorization || "");
-  const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (headerToken) return headerToken;
+function getRequestToken(req, options = {}) {
+  const {
+    allowHeader = true,
+    allowQuery = true,
+    allowCookie = true
+  } = options;
 
-  const queryToken = String(req.query?.portalToken || req.query?.token || "").trim();
-  if (queryToken) return queryToken;
+  if (allowHeader) {
+    const header = String(req.headers.authorization || "");
+    const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (headerToken) return headerToken;
+  }
 
-  const cookieHeader = String(req.headers.cookie || "");
-  const cookieMatch = cookieHeader.match(new RegExp(`(?:^|;\\s*)${AUTH_COOKIE_NAME}=([^;]+)`));
-  return cookieMatch?.[1] ? decodeURIComponent(cookieMatch[1]) : "";
+  if (allowQuery) {
+    const queryToken = String(req.query?.portalToken || req.query?.token || "").trim();
+    if (queryToken) return queryToken;
+  }
+
+  if (allowCookie) {
+    const cookieHeader = String(req.headers.cookie || "");
+    const cookieMatch = cookieHeader.match(new RegExp(`(?:^|;\\s*)${AUTH_COOKIE_NAME}=([^;]+)`));
+    if (cookieMatch?.[1]) {
+      return decodeURIComponent(cookieMatch[1]);
+    }
+  }
+
+  return "";
 }
 
-function getAuthenticatedPortalUser(req) {
-  const token = getRequestToken(req);
+function getAuthenticatedPortalUser(req, options) {
+  const token = getRequestToken(req, options);
   if (!token) return null;
 
   try {
     return jwt.verify(token, JWT_SECRET);
-  } catch (_err1) {
-    try {
-      const claims = jwt.verify(token, SHARED_AUTH_SECRET);
-      return {
-        id: claims.id,
-        username: claims.username,
-        role: claims.role || "admin",
-        role_id: claims.role_id || null,
-        location_id: claims.location_id || null
-      };
-    } catch (_err2) {
-      return null;
-    }
+  } catch {
+    return null;
   }
 }
 
 function requireModulePageAccess(permissionResolver) {
   return async (req, res, next) => {
-    const user = getAuthenticatedPortalUser(req);
+    const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
     if (!user) {
       return res.redirect("/login.html");
     }
@@ -139,7 +143,7 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 app.use("/modules", async (req, res, next) => {
   if (!req.path.endsWith(".html")) return next();
 
-  const user = getAuthenticatedPortalUser(req);
+  const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
   if (!user) return res.redirect("/login.html");
 
   try {
@@ -333,7 +337,7 @@ function hasContainerViewerPermission(perms) {
 }
 
 function hasContainerAdminPermission(user, perms) {
-  return !!(user?.role === "admin" || perms?.admin?.full_access || perms?.integrations?.container_admin);
+  return !!(perms?.admin?.full_access || perms?.integrations?.container_admin);
 }
 
 function buildContainerSessionToken(payload) {
@@ -833,27 +837,28 @@ app.get("/api/my-permissions", authRequired, async (req, res) => {
   res.json(perms);
 });
 
-app.get("/api/sso/container-session", containerPermissionRequired, async (req, res) => {
-  const perms = await getMyPermissions(req.containerUser);
+async function createContainerRegistrationSession(req, res) {
+  const perms = await getMyPermissions(req.user);
   const canOpenContainerRegistration = hasContainerRegistrationPermission(perms);
 
   if (!canOpenContainerRegistration) {
     return res.status(403).json({ error: "No Permissions" });
   }
 
-  const portalToken = getRequestToken(req);
-  const targetUrl = hasContainerAdminPermission(req.containerUser, perms)
+  const targetUrl = hasContainerAdminPermission(req.user, perms)
     ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
     : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
-  const separator = targetUrl.includes("?") ? "&" : "?";
 
   return res.json({
     session: null,
     token: null,
-    user: req.containerUser.username,
-    url: portalToken ? `${targetUrl}${separator}portalToken=${encodeURIComponent(portalToken)}` : targetUrl
+    user: req.user.username,
+    url: targetUrl
   });
-});
+}
+
+app.get("/api/container-registration-session", authRequired, createContainerRegistrationSession);
+app.get("/api/sso/container-session", authRequired, createContainerRegistrationSession);
 
 
 async function createContainerPlanningSession(req, res) {
@@ -880,8 +885,11 @@ app.get("/api/sso/container-planning-session", authRequired, createContainerPlan
 app.get("/container-planning", requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (_req, res) => {
   res.redirect(MODULE_CONTAINER_PLANNING_PATH);
 });
-app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (_req, res) => {
-  res.redirect(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH);
+app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
+  const targetUrl = hasContainerAdminPermission(req.user, req.portalPermissions)
+    ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
+    : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
+  res.redirect(targetUrl);
 });
 app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-planning", "index.html"));
@@ -1209,17 +1217,12 @@ app.get("/api/modules/container-registration/admin-history.csv", authRequired, r
 });
 
 containerRegistrationNamespace.use(async (socket, next) => {
-  const authObj = socket.handshake.auth || {};
-  const queryObj = socket.handshake.query || {};
-  const tokenFromAuth = authObj.token || authObj.portalToken || queryObj.portalToken || queryObj.token;
   const fakeReq = {
     headers: {
-      authorization: tokenFromAuth ? `Bearer ${tokenFromAuth}` : "",
       cookie: socket.handshake.headers.cookie || ""
-    },
-    query: queryObj
+    }
   };
-  const user = getAuthenticatedPortalUser(fakeReq);
+  const user = getAuthenticatedPortalUser(fakeReq, { allowHeader: false, allowQuery: false, allowCookie: true });
   if (!user) return next(new Error("UNAUTHENTICATED"));
 
   try {

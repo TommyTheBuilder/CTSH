@@ -332,16 +332,7 @@ body.dark .sub { color: rgba(255,255,255,.85); }
 </main>
 
 <script>
-const driverPageUrl = new URL(window.location.href);
-const driverQueryToken = String(driverPageUrl.searchParams.get("portalToken") || localStorage.getItem("token") || "").trim();
-if (driverQueryToken) {
-  localStorage.setItem("token", driverQueryToken);
-  driverPageUrl.searchParams.delete("portalToken");
-  history.replaceState({}, document.title, `${driverPageUrl.pathname}${driverPageUrl.search}${driverPageUrl.hash}`);
-}
-const socket = io("/container-registration", {
-  auth: driverQueryToken ? { token: driverQueryToken } : {}
-});
+const socket = io("/container-registration");
 let state = null;
 let selectedId = null;
 
@@ -593,6 +584,11 @@ socket.on("init", (s) => {
 socket.on("statusChanged", ({ id, data }) => {
   if (!state) return;
   applyOne(Number(id), data);
+});
+
+socket.on("connect_error", () => {
+  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
+  showMsg("Container-Modul nicht verbunden.");
 });
 
 document.getElementById("langToggle").addEventListener("click", () => {
