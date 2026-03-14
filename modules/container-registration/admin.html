@@ -6,14 +6,9 @@
 <title>Admin – Container Board</title>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-  function resolveThemeStorageKey(user) {
-    const safeUser = String(user || "").trim().toLowerCase();
-    return safeUser ? `admin-theme:${safeUser}` : "admin-theme";
-  }
-
   const __design = new URLSearchParams(location.search).get("design");
   document.documentElement.dataset.design = __design === "2" ? "2" : "1";
-  const savedTheme = localStorage.getItem(resolveThemeStorageKey(""));
+  const savedTheme = localStorage.getItem("themePreference");
   if (savedTheme === "dark") {
     document.documentElement.classList.add("theme-dark");
   }
@@ -527,13 +522,12 @@ body.dark .toast{
 
 <div id="toast" class="toast"></div>
 
+<script src="/public/shared-theme.js"></script>
 <script>
 const socket = io("/container-registration");
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
 let isAuthed = false;
-let currentUser = "";
-let themeStorageKey = "admin-theme";
 
 function setAdminAccessState(allowed, message = "") {
   isAuthed = !!allowed;
@@ -551,8 +545,18 @@ function applyTheme(theme){
   const isDark = theme === "dark";
   document.body.classList.toggle("dark", isDark);
   document.documentElement.classList.toggle("theme-dark", isDark);
-  localStorage.setItem(themeStorageKey, isDark ? "dark" : "light");
+}
 
+async function initializeTheme() {
+  if (window.CtshTheme?.resolveInitialTheme) {
+    await window.CtshTheme.resolveInitialTheme({
+      bodyClass: "dark",
+      htmlClass: "theme-dark"
+    });
+    return;
+  }
+
+  applyTheme("light");
 }
 
 function toggleSettingsMenu(force) {
@@ -563,9 +567,7 @@ function toggleSettingsMenu(force) {
   btn.setAttribute("aria-expanded", String(shouldOpen));
 }
 
-themeStorageKey = resolveThemeStorageKey("");
-const storedTheme = localStorage.getItem(themeStorageKey) || (document.documentElement.classList.contains("theme-dark") ? "dark" : "light");
-applyTheme(storedTheme);
+void initializeTheme();
 
 const dashboardLinkEl = document.getElementById("dashboardLink");
 if (dashboardLinkEl) {
@@ -880,18 +882,7 @@ socket.on("init", (state) => {
 });
 
 socket.on("adminAuthResult", ({ ok, user: authUser }) => {
-  currentUser = String(authUser || "").trim();
   setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte pruefe die im Adminbereich gesetzten Rechte.");
-
-  if (isAuthed && currentUser) {
-    const nextThemeKey = resolveThemeStorageKey(currentUser);
-    if (nextThemeKey !== themeStorageKey) {
-      const fallbackTheme = localStorage.getItem(themeStorageKey) || "light";
-      themeStorageKey = nextThemeKey;
-      const userTheme = localStorage.getItem(themeStorageKey) || fallbackTheme;
-      applyTheme(userTheme);
-    }
-  }
 
   if (isAuthed){
     renderAll();
@@ -938,9 +929,12 @@ document.getElementById("settingsToggle").addEventListener("click", (event) => {
   toggleSettingsMenu();
 });
 
-document.getElementById("darkmodeToggle").addEventListener("click", () => {
+document.getElementById("darkmodeToggle").addEventListener("click", async () => {
   const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
   applyTheme(nextTheme);
+  if (window.CtshTheme?.persistTheme) {
+    await window.CtshTheme.persistTheme(nextTheme);
+  }
   toggleSettingsMenu(false);
 });
 
@@ -967,7 +961,6 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   } catch (error) {
     console.warn("Logout endpoint nicht erreichbar:", error);
   }
-  localStorage.removeItem(themeStorageKey);
   toggleSettingsMenu(false);
   window.location.href = "/";
 });

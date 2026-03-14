@@ -91,7 +91,7 @@ h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: #fff; }
   display:flex;
   gap: 10px;
   flex-wrap: wrap;
-  color: #fff;
+  color: var(--white);
   font-size: 12px;
 }
 .langToggle{
@@ -331,6 +331,7 @@ body.dark .sub { color: rgba(255,255,255,.85); }
   </div>
 </main>
 
+<script src="/public/shared-theme.js"></script>
 <script>
 const socket = io("/container-registration");
 let state = null;
@@ -346,7 +347,15 @@ let currentLang = localStorage.getItem("driverLang") || "de";
 function applyTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("dark", isDark);
-  localStorage.setItem("driver-theme", isDark ? "dark" : "light");
+}
+
+async function initializeTheme() {
+  if (window.CtshTheme?.resolveInitialTheme) {
+    await window.CtshTheme.resolveInitialTheme({ bodyClass: "dark" });
+    return;
+  }
+
+  applyTheme("light");
 }
 
 function toggleSettingsMenu(force) {
@@ -606,9 +615,12 @@ document.getElementById("settingsToggle").addEventListener("click", (event) => {
   toggleSettingsMenu();
 });
 
-document.getElementById("darkmodeToggle").addEventListener("click", () => {
+document.getElementById("darkmodeToggle").addEventListener("click", async () => {
   const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
   applyTheme(nextTheme);
+  if (window.CtshTheme?.persistTheme) {
+    await window.CtshTheme.persistTheme(nextTheme);
+  }
   toggleSettingsMenu(false);
 });
 
@@ -646,7 +658,7 @@ btnEl.addEventListener("click", () => {
 });
 
 applyStaticTranslations();
-applyTheme(localStorage.getItem("driver-theme") || "light");
+void initializeTheme();
 
 socket.on("driverRegisterResult", ({ ok, message }) => {
   btnEl.disabled = false;
