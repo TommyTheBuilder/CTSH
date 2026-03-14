@@ -92,8 +92,11 @@ body.theme-dark {
 
 #rangeLabel { min-width: 220px; text-align: center; margin: 0; font-size: 1rem; }
 
-.gear-menu { position: relative; }
-.gear-menu__dropdown {
+.gear-menu,
+.language-menu { position: relative; }
+
+.gear-menu__dropdown,
+.language-menu__dropdown {
   position: absolute;
   top: 46px;
   right: 0;
@@ -106,8 +109,11 @@ body.theme-dark {
   display: none;
   z-index: 12;
 }
-.gear-menu.is-open .gear-menu__dropdown { display: block; }
-.gear-menu__item {
+.gear-menu.is-open .gear-menu__dropdown,
+.language-menu.is-open .language-menu__dropdown { display: block; }
+
+.gear-menu__item,
+.language-menu__item {
   width: 100%;
   background: transparent;
   color: var(--text);
@@ -117,7 +123,14 @@ body.theme-dark {
   padding: 0.55rem 0.6rem;
   cursor: pointer;
 }
-.gear-menu__item:hover { background: rgba(37, 99, 235, 0.08); }
+.gear-menu__item:hover,
+.language-menu__item:hover { background: rgba(37, 99, 235, 0.08); }
+
+.language-menu__item.is-active {
+  background: rgba(37, 99, 235, 0.14);
+  color: #1d4ed8;
+}
+
 .gear-menu__item--danger { color: #dc2626; }
 
 .calendar-panel {

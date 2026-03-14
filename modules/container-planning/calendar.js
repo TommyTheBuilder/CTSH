@@ -296,14 +296,17 @@ function createBookingCard(booking, { compact = false } = {}) {
   card.className = `booking-card ${compact ? "booking-card--compact" : ""}`.trim();
   card.draggable = true;
   card.dataset.type = booking.type;
+  const detailLines = [
+    hasDisplayValue(booking.container) ? `Container: ${escapeHtml(booking.container)}` : "",
+    hasDisplayValue(booking.kennzeichen) ? `Kennzeichen: ${escapeHtml(booking.kennzeichen)}` : "",
+    hasDisplayValue(booking.auftrag) ? `Auftrag: ${escapeHtml(booking.auftrag)}` : "",
+    hasDisplayValue(booking.lager) ? `Lager: ${escapeHtml(booking.lager)}` : ""
+  ].filter(Boolean);
   card.innerHTML = compact
-    ? `<strong>${escapeHtml(booking.title)}</strong>Container: ${escapeHtml(booking.container)}`
+    ? `<strong>${escapeHtml(booking.title)}</strong>${detailLines[0] ? `<span>${detailLines[0]}</span>` : ""}`
     : `
       <strong>${escapeHtml(booking.title)}</strong>
-      Container: ${escapeHtml(booking.container)}<br />
-      Kennzeichen: ${escapeHtml(booking.kennzeichen)}<br />
-      Auftrag: ${escapeHtml(booking.auftrag)}<br />
-      Lager: ${escapeHtml(booking.lager || "-")}
+      ${detailLines.join("<br />")}
     `;
 
   card.addEventListener("click", (event) => {
@@ -387,6 +390,10 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function hasDisplayValue(value) {
+  return String(value ?? "").trim() !== "";
 }
 
 function getColorForBookingType(type) {
@@ -598,15 +605,19 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
   function renderDetails() {
     if (!currentBooking) return;
     detailsTitle.textContent = `Buchung: ${currentBooking.title}`;
-    meta.innerHTML = `
-      <article><span>Titel</span><strong>${escapeHtml(currentBooking.title)}</strong></article>
-      <article><span>Container</span><strong>${escapeHtml(currentBooking.container)}</strong></article>
-      <article><span>Kennzeichen</span><strong>${escapeHtml(currentBooking.kennzeichen)}</strong></article>
-      <article><span>Auftrag</span><strong>${escapeHtml(currentBooking.auftrag)}</strong></article>
-      <article><span>Lager</span><strong>${escapeHtml(currentBooking.lager || "-")}</strong></article>
-      <article><span>Datum</span><strong>${escapeHtml(currentBooking.date)}</strong></article>
-      <article><span>Typ</span><strong>${escapeHtml(getBookingTypeLabel(currentBooking.type))}</strong></article>
-    `;
+    const metaEntries = [
+      { label: "Titel", value: currentBooking.title },
+      { label: "Container", value: currentBooking.container },
+      { label: "Kennzeichen", value: currentBooking.kennzeichen },
+      { label: "Auftrag", value: currentBooking.auftrag },
+      { label: "Lager", value: currentBooking.lager },
+      { label: "Datum", value: currentBooking.date },
+      { label: "Typ", value: getBookingTypeLabel(currentBooking.type) }
+    ].filter((entry) => hasDisplayValue(entry.value));
+
+    meta.innerHTML = metaEntries
+      .map((entry) => `<article><span>${escapeHtml(entry.label)}</span><strong>${escapeHtml(entry.value)}</strong></article>`)
+      .join("");
 
     attachmentList.innerHTML = "";
     if (!(currentBooking.attachments || []).length) {
