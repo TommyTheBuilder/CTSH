@@ -135,7 +135,7 @@ body.dark {
   --shadow: 0 22px 44px rgba(0,0,0,.35);
 }
 
-.wrap{ max-width:1240px; margin:0 auto; padding:16px 18px; }
+.wrap{ max-width:1480px; margin:0 auto; padding:16px 18px; }
 .top{ display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; }
 h1{ margin:0; font-size:20px; letter-spacing:.4px; }
 .sub{ margin:6px 0 0; color:var(--muted); font-size:13px; }
@@ -255,6 +255,12 @@ main .wrap{
 .sectionShell{
   padding: 18px;
 }
+.sectionShell--flush{
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
 .sectionHeader{
   display:flex;
   justify-content:space-between;
@@ -277,8 +283,8 @@ main .wrap{
 
 .grid{
   display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
 }
 
 .card{
@@ -665,49 +671,7 @@ body.dark .sectionBadge{
       <div class="note">Öffne die Seite über den zentralen Login, damit ein gültiger Session-Cookie oder token-Parameter vorhanden ist.</div>
     </div>
 
-    <section id="overviewPanel" class="overviewPanel" style="display:none;">
-      <div class="overviewHero">
-        <div class="sectionEyebrow">Container Modul</div>
-        <h2 class="sectionTitle">Live-&Uuml;bersicht f&uuml;r die Admin-Steuerung</h2>
-        <p class="sectionText">Die Ansicht orientiert sich jetzt st&auml;rker am Paletten-Modul: hellere Fl&auml;chen, klarere Karten und eine schnellere Orientierung f&uuml;r Statuswechsel, Terminpflege und Historie.</p>
-      </div>
-      <div class="statCard">
-        <span class="statLabel">Gesamt</span>
-        <strong id="stat-total">0</strong>
-        <small>Container-Slots</small>
-      </div>
-      <div class="statCard">
-        <span class="statLabel">Slot erstellt</span>
-        <strong id="stat-open">0</strong>
-        <small>ohne Anmeldung</small>
-      </div>
-      <div class="statCard">
-        <span class="statLabel">In Bearbeitung</span>
-        <strong id="stat-active">0</strong>
-        <small>angemeldet oder an der Rampe</small>
-      </div>
-      <div class="statCard">
-        <span class="statLabel">Zoll wartet</span>
-        <strong id="stat-waiting">0</strong>
-        <small>Freigabe ausstehend</small>
-      </div>
-      <div class="statCard">
-        <span class="statLabel">Freigegeben</span>
-        <strong id="stat-released">0</strong>
-        <small>Zollfreigabe erteilt</small>
-      </div>
-    </section>
-
-    <section id="controlSection" class="sectionShell" style="display:none;">
-      <div class="sectionHeader">
-        <div>
-          <div class="sectionEyebrow">Live-Steuerung</div>
-          <h2 class="sectionTitle">Container Status im Zugriff</h2>
-          <p class="sectionText">Jeder Container bleibt als eigene Karte sichtbar. Termin anpassen, Status setzen und bei Bedarf direkt zur&uuml;cksetzen.</p>
-        </div>
-        <div class="sectionBadge" id="slotSummary">0 Slots verbunden</div>
-      </div>
-
+    <section id="controlSection" class="sectionShell sectionShell--flush" style="display:none;">
       <div id="grid" class="grid" style="display:none"></div>
     </section>
 
@@ -764,7 +728,6 @@ let isAuthed = false;
 function setAdminAccessState(allowed, message = "") {
   isAuthed = !!allowed;
   document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
-  document.getElementById("overviewPanel").style.display = isAuthed ? "grid" : "none";
   document.getElementById("controlSection").style.display = isAuthed ? "block" : "none";
   document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
   document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
@@ -774,9 +737,6 @@ function setAdminAccessState(allowed, message = "") {
     note.textContent = message;
   }
 
-  if (!isAuthed) {
-    updateOverview();
-  }
 }
 
 function applyTheme(theme){
@@ -839,46 +799,6 @@ function cardClass(status){
   const normalized = normalizedStatus(status);
   return ["state-" + normalized, normalized !== "slot_created" ? "is-highlight" : ""].filter(Boolean).join(" ");
 }
-function updateOverview(){
-  const entries = [];
-  for(let i=1;i<=8;i++){
-    if (current[i]) entries.push(current[i]);
-  }
-
-  const counts = {
-    total: entries.length,
-    open: 0,
-    active: 0,
-    waiting: 0,
-    released: 0
-  };
-
-  for (const entry of entries){
-    const normalized = normalizedStatus(entry.status);
-    if (normalized === "slot_created") counts.open += 1;
-    else if (normalized === "waiting_customs") counts.waiting += 1;
-    else if (normalized === "customs_released") counts.released += 1;
-    else counts.active += 1;
-  }
-
-  const values = {
-    "stat-total": counts.total,
-    "stat-open": counts.open,
-    "stat-active": counts.active,
-    "stat-waiting": counts.waiting,
-    "stat-released": counts.released
-  };
-
-  Object.entries(values).forEach(([id, value]) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = String(value);
-  });
-
-  const slotSummary = document.getElementById("slotSummary");
-  if (slotSummary) {
-    slotSummary.textContent = counts.total ? `${counts.total} Slots verbunden` : "Keine Slots geladen";
-  }
-}
 function registeredTime(iso){
   if (!iso) return "--:--";
   const d = new Date(iso);
@@ -895,14 +815,12 @@ function showToast(msg){
 
 function renderUnavailableState(message){
   const authBlock = document.getElementById("authBlock");
-  const overviewPanel = document.getElementById("overviewPanel");
   const controlSection = document.getElementById("controlSection");
   const grid = document.getElementById("grid");
   const historyPanel = document.getElementById("historyPanel");
   const authNote = document.querySelector("#authBlock .note");
 
   if (authBlock) authBlock.style.display = "block";
-  if (overviewPanel) overviewPanel.style.display = "none";
   if (controlSection) controlSection.style.display = "none";
   if (grid) grid.style.display = "none";
   if (historyPanel) historyPanel.style.display = "none";
@@ -998,7 +916,6 @@ function renderAll(){
     });
   }
 
-  updateOverview();
 }
 
 function applyOne(id, data){
@@ -1038,7 +955,6 @@ function applyOne(id, data){
     btnCustomsOk.classList.toggle("greenActive", normalizedStatus(data.status) === "customs_released");
   }
 
-  updateOverview();
 }
 
 // ===== Historie UI (abgeschlossene Buchungen + Detailverlauf) =====
