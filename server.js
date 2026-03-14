@@ -132,7 +132,18 @@ function corsOriginResolver(origin, callback) {
 const app = express();
 app.set("trust proxy", true);
 app.disable("x-powered-by");
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'", "'unsafe-inline'"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "img-src": ["'self'", "data:", "blob:"],
+      "connect-src": ["'self'", "ws:", "wss:"]
+    }
+  }
+}));
 app.use(cors({ origin: corsOriginResolver, credentials: true }));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 app.get("/", (req, res) => res.redirect("/login.html"));

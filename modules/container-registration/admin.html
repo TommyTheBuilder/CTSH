@@ -614,6 +614,18 @@ function showToast(msg){
   showToast._to = setTimeout(()=> t.style.display="none", 2200);
 }
 
+function renderUnavailableState(message){
+  const authBlock = document.getElementById("authBlock");
+  const grid = document.getElementById("grid");
+  const historyPanel = document.getElementById("historyPanel");
+  const authNote = document.querySelector("#authBlock .note");
+
+  if (authBlock) authBlock.style.display = "block";
+  if (grid) grid.style.display = "none";
+  if (historyPanel) historyPanel.style.display = "none";
+  if (authNote) authNote.textContent = message;
+}
+
 function renderAll(){
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
