@@ -32,7 +32,9 @@ body {
   margin: 0;
   font-family: Arial, sans-serif;
   color: var(--text-main);
-  background: var(--body-bg);
+  background:
+    radial-gradient(circle at top center, rgba(37,99,235,.08), transparent 26%),
+    linear-gradient(180deg, #f7f9fc 0%, #edf2f7 100%);
 }
 
 body.dark {
@@ -44,6 +46,11 @@ body.dark {
   --text-muted: #CBD5E1;
   --table-head-bg: #0F172A;
   --table-head-text: #E2E8F0;
+}
+body.dark{
+  background:
+    radial-gradient(circle at top center, rgba(59,130,246,.16), transparent 24%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
 }
 
 header {
@@ -129,7 +136,8 @@ header {
   box-shadow: 0 10px 24px rgba(15,23,42,.25);
   display: none;
   z-index: 30;
-  background: #F1F5F9;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
 }
 
 .settingsMenu.open { display: block; }
@@ -152,33 +160,36 @@ header {
 }
 
 .menuItem.lightSection {
-  background: #F1F5F9;
-  color: #0F172A;
-  border-bottom: 1px solid #E2E8F0;
+  background: var(--panel-bg);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .menuItem.lightSection:last-of-type { border-bottom: 0; }
 .menuItemLink { text-decoration: none; }
 
 .toolbar {
-  max-width: 1120px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 14px 20px;
+  padding: 18px 20px 14px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 12px;
-  flex-wrap: wrap;
+  text-align: center;
 }
 
-.titleBlock h1 { margin: 0; font-size: 20px; }
-.titleBlock .sub { margin: 4px 0 0; color: rgba(255,255,255,.85); font-size: 13px; }
+.titleBlock { max-width: 760px; }
+.titleBlock h1 { margin: 0; font-size: 24px; }
+.titleBlock .sub { margin: 6px 0 0; color: rgba(255,255,255,.85); font-size: 14px; }
 
 .legend {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .badge {
@@ -211,46 +222,56 @@ header {
 }
 
 .wrap {
-  max-width: 1120px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 18px 20px 24px;
+  padding: 26px 20px 34px;
+  display: flex;
+  justify-content: center;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-@media (min-width: 860px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 360px));
+  justify-content: center;
+  gap: 22px;
 }
 
 .card {
-  border-radius: 14px;
+  border-radius: 20px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  box-shadow: var(--panel-shadow);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
   overflow: hidden;
+  border-top-width: 4px;
 }
 
-.card.status-red { border-color: rgba(239,68,68,.35); }
-.card.status-orange { border-color: rgba(245,158,11,.45); }
-.card.status-blue { border-color: rgba(59,130,246,.45); }
-.card.status-violet { border-color: rgba(139,92,246,.45); }
-.card.status-green { border-color: rgba(34,197,94,.35); }
+.card.status-red { border-color: rgba(239,68,68,.30); border-top-color: rgba(239,68,68,.65); }
+.card.status-orange { border-color: rgba(245,158,11,.34); border-top-color: rgba(245,158,11,.72); }
+.card.status-blue { border-color: rgba(59,130,246,.34); border-top-color: rgba(59,130,246,.72); }
+.card.status-violet { border-color: rgba(139,92,246,.32); border-top-color: rgba(139,92,246,.70); }
+.card.status-green { border-color: rgba(34,197,94,.30); border-top-color: rgba(34,197,94,.68); }
 
 .cardTop {
-  padding: 12px 14px;
+  padding: 18px 20px 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
   border-bottom: 1px solid var(--panel-border);
   background: var(--table-head-bg);
   color: var(--table-head-text);
 }
 
-.name { font-weight: 700; letter-spacing: .3px; }
+.slotLabel {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.name { font-weight: 800; letter-spacing: .3px; font-size: 22px; }
 .pills { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
 .pill {
@@ -269,12 +290,12 @@ header {
 .pill.tone-green { background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.35); color: var(--white); }
 
 .statusArea {
-  padding: 16px 14px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   align-items: center;
-  min-height: 170px;
+  min-height: 220px;
 }
 
 .regBox {
@@ -288,9 +309,9 @@ header {
   width: 100%;
   text-align: center;
   font-weight: 900;
-  font-size: clamp(22px, 3vw, 34px);
+  font-size: clamp(28px, 3.4vw, 40px);
   letter-spacing: 3px;
-  padding: 12px 10px;
+  padding: 16px 12px;
   border-radius: 12px;
   border: 1px solid var(--panel-border);
   background: #FFFFFF;
@@ -305,17 +326,17 @@ body.dark .bigPlate {
 
 .metaRow {
   width: 100%;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   color: var(--text-muted);
   font-size: 12px;
-  flex-wrap: wrap;
+  text-align: center;
 }
 
 .bar {
   width: 100%;
-  height: 10px;
+  height: 12px;
   border-radius: 999px;
   background: #E2E8F0;
   overflow: hidden;
@@ -348,12 +369,35 @@ body.dark .rampUrl { color: #bbf7d0; }
 
 .emptyState {
   grid-column: 1 / -1;
-  border-radius: 14px;
+  border-radius: 18px;
   border: 1px dashed var(--panel-border);
   background: var(--panel-bg);
   color: var(--text-muted);
-  padding: 24px 16px;
+  padding: 28px 22px;
   text-align: center;
+}
+
+@media (max-width: 780px) {
+  .headerBar {
+    padding: 10px 16px;
+  }
+  .wrap {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .cardTop {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pills {
+    justify-content: flex-start;
+  }
+  .metaRow {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 </head>
@@ -548,7 +592,10 @@ function renderAll(state){
 
     card.innerHTML = `
       <div class="cardTop">
-        <div class="name">Container ${i}</div>
+        <div>
+          <div class="slotLabel">Slot ${String(i).padStart(2, "0")}</div>
+          <div class="name">Container ${i}</div>
+        </div>
         <div class="pills">
           <div class="pill tone-${statusTone(c.status)}" id="pill-${i}">${statusText(c.status)}</div>
           <div class="pill" id="time-${i}">⏱ Termin ${time}</div>
