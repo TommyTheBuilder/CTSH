@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin – Container Board</title>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  function resolveThemeStorageKey(user) {
+    const safeUser = String(user || "").trim().toLowerCase();
+    return safeUser ? `admin-theme:${safeUser}` : "admin-theme";
+  }
+
+  const __design = new URLSearchParams(location.search).get("design");
+  document.documentElement.dataset.design = __design === "2" ? "2" : "1";
+  const savedTheme = localStorage.getItem(resolveThemeStorageKey(""));
+  if (savedTheme === "dark") {
+    document.documentElement.classList.add("theme-dark");
+  }
+</script>
+
+<style>
+:root{
+  --bg:#F3F4F6;
+  --muted:#475569;
+  --white:#111827;
+  --green:#22c55e;
+  --orange:#f59e0b;
+  --red:#ef4444;
+  --blue:#3b82f6;
+  --violet:#8b5cf6;
+  --stroke:#E2E8F0;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --radius: 18px;
+  --header-bg: #0f2f67;
+  --brand-blue: #2563EB;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color:var(--white);
+  background: var(--bg);
+}
+header{
+  position: sticky;
+  top: 0;
+  width: 100%;
+  background-color: #1e3a8a;
+  border-bottom: 0;
+  z-index: 100;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .35);
+}
+
+header h1,
+header .sub,
+header .legend,
+header .badge,
+header .smallBtn{
+  color: #F8FAFC;
+}
+
+header .sub{
+  color: #F8FAFC;
+}
+
+header .badge,
+header .smallBtn{
+  border-color: rgba(248,250,252,.5);
+}
+
+main{ padding-top: 12px; }
+
+.headerBar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+}
+
+.logoLink { display: inline-flex; align-items: center; }
+.logoImage { height: 42px; width: auto; object-fit: contain; }
+
+.headerActions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.iconBtn, .navBtn {
+  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.iconBtn { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
+.navBtn { height: 40px; padding: 0 14px; text-decoration: none; display: inline-flex; align-items: center; }
+.navBtn.primary { background: var(--brand-blue); border-color: var(--brand-blue); }
+
+.settingsWrap { position: relative; }
+.settingsMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 240px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15,23,42,.25);
+  display: none;
+  z-index: 30;
+  background: #F1F5F9;
+}
+.settingsMenu.open { display: block; }
+.menuItem { width: 100%; display: block; text-align: left; border: 0; margin: 0; padding: 11px 14px; font-size: 14px; cursor: pointer; }
+.menuItem.darkSection { background: #1F2937; color: #fff; font-weight: 700; }
+.menuItem.lightSection { background: #F1F5F9; color: #0F172A; border-bottom: 1px solid #E2E8F0; }
+.menuItemLink { text-decoration: none; }
+.top{ display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+
+body.dark {
+  --bg:#0b1220;
+  --muted:#a7b3d1;
+  --white:#f6f8ff;
+  --stroke:rgba(255,255,255,.08);
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+.wrap{ max-width:1100px; margin:0 auto; padding:16px 18px; }
+.top{ display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+h1{ margin:0; font-size:20px; letter-spacing:.4px; }
+.sub{ margin:6px 0 0; color:var(--muted); font-size:13px; }
+
+.legend{
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  justify-content:flex-end;
+  color: var(--muted); font-size: 13px;
+}
+.badge{
+  display:flex; align-items:center; gap:8px;
+  padding: 8px 10px; border-radius:999px;
+  border:1px solid var(--stroke);
+  background: rgba(255,255,255,.03);
+}
+.dot{width:10px;height:10px;border-radius:999px}
+.dot.red{background:var(--red)}
+.dot.orange{background:var(--orange)}
+.dot.green{background:var(--green)}
+.dot.blue{background:var(--blue)}
+.dot.violet{background:var(--violet)}
+
+.topActions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-left:auto; justify-content:flex-end; }
+.smallBtn{
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.06);
+  color: var(--white);
+  cursor:pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+.smallBtn:hover{ background: rgba(255,255,255,.10); }
+.themeToggle{
+  min-width: 46px;
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  gap:6px;
+}
+.linkBtn{ text-decoration:none; display:inline-flex; align-items:center; }
+
+main .wrap{ padding-top:18px; padding-bottom:22px; }
+
+.grid{
+  display:grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+@media (min-width: 860px){
+  .grid{ grid-template-columns: repeat(4, 1fr); }
+}
+
+.card{
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+  overflow:hidden;
+}
+.card.is-highlight{
+  border-color: rgba(59,130,246,.65);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.22), var(--shadow);
+}
+
+.cardTop{
+  padding: 12px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:1px solid var(--stroke);
+}
+.name{ font-weight: 950; letter-spacing:.3px; }
+
+.statusTag{
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border:1px solid var(--stroke);
+  background: rgba(255,255,255,.04);
+  color: var(--muted);
+  font-weight: 900;
+}
+.tag-red{ background: rgba(239,68,68,.18); border-color: rgba(239,68,68,.35); color: var(--white); }
+.tag-orange{ background: rgba(245,158,11,.20); border-color: rgba(245,158,11,.45); color: var(--white); }
+.tag-green{ background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.35); color: var(--white); }
+.tag-blue{ background: rgba(59,130,246,.20); border-color: rgba(59,130,246,.45); color: var(--white); }
+.tag-violet{ background: rgba(139,92,246,.20); border-color: rgba(139,92,246,.45); color: var(--white); }
+
+.controls{
+  padding: 14px;
+  display:flex;
+  flex-direction:column;
+  gap: 12px;
+}
+label{
+  font-size: 12px;
+  color: var(--muted);
+  display:block;
+  margin-bottom:6px;
+}
+.readonly{
+  width:100%;
+  font-size: 18px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.04);
+  color: var(--white);
+}
+.regBox{
+  width:100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.04);
+  color: var(--muted);
+  font-weight: 900;
+}
+.regBox.is-active{
+  border-color: rgba(245,158,11,.45);
+  background: rgba(245,158,11,.14);
+  color: var(--white);
+}
+
+input[type="time"]{
+  width:100%;
+  font-size: 18px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.06);
+  color: var(--white);
+  outline:none;
+}
+.row{ display:flex; gap:10px; }
+.btn{
+  flex:1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.06);
+  color: var(--white);
+  font-weight: 950;
+  cursor: pointer;
+}
+.btn:hover{ background: rgba(255,255,255,.10); }
+.btn.redActive{ background: rgba(239,68,68,.25); border-color: rgba(239,68,68,.35); }
+.btn.orangeActive{ background: rgba(245,158,11,.25); border-color: rgba(245,158,11,.45); }
+.btn.blueActive{ background: rgba(59,130,246,.25); border-color: rgba(59,130,246,.45); }
+.btn.violetActive{ background: rgba(139,92,246,.25); border-color: rgba(139,92,246,.45); }
+.btn.greenActive{ background: rgba(34,197,94,.25); border-color: rgba(34,197,94,.35); }
+.note{ font-size: 12px; color: var(--muted); }
+
+
+.block{
+  max-width: 520px;
+  margin: 18px auto 0;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.04);
+}
+
+.toast{
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  background: rgba(17,26,46,.92);
+  border: 1px solid var(--stroke);
+  color: var(--white);
+  padding: 10px 12px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display:none;
+  font-size: 13px;
+}
+
+/* ===== Historie Panel ===== */
+.panel{
+  margin-top: 16px;
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  background: rgba(255,255,255,.03);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.panelHead{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.panelTitle{ font-weight: 950; }
+.panelBody{ padding: 12px 14px; }
+.historyControls{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+select{
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.06);
+  color: var(--white);
+}
+.table{
+  width:100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.table th, .table td{
+  text-align:left;
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: var(--white);
+  vertical-align: top;
+}
+.table th{ color: var(--muted); font-weight: 900; }
+.muted{ color: var(--muted); }
+
+body.dark,
+html[data-design="2"] body.dark{
+  background: #121826;
+  color: #F8FAFC;
+}
+body.dark header,
+html.theme-dark header,
+html[data-design="2"].theme-dark header{
+  background: #1e3a8a;
+  border-bottom-color: #334155;
+}
+body.dark .card,
+body.dark .panel,
+body.dark .block{
+  background: #1E2536;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+body.dark .cardTop,
+body.dark .panelHead,
+body.dark .table th,
+body.dark .table td{
+  border-bottom: 1px solid #334155;
+}
+body.dark .table th{
+  background: #0F172A;
+  color: #94A3B8;
+}
+body.dark .table td{
+  background: #1E2536;
+}
+body.dark .smallBtn,
+body.dark .btn,
+body.dark .linkBtn{
+  background: #1E2536;
+  color: #fff;
+  border: 1px solid #334155;
+}
+body.dark .smallBtn:hover,
+body.dark .btn:hover,
+body.dark .linkBtn:hover{
+  background: #273247;
+}
+body.dark .btn.redActive{
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+  border-color: #EF4444;
+}
+body.dark .btn.orangeActive{
+  background: rgba(245, 158, 11, 0.2);
+  color: #F59E0B;
+  border-color: #F59E0B;
+}
+body.dark .btn.blueActive{
+  background: rgba(59, 130, 246, 0.2);
+  color: #60A5FA;
+  border-color: #60A5FA;
+}
+body.dark .btn.violetActive{
+  background: rgba(139, 92, 246, 0.2);
+  color: #A78BFA;
+  border-color: #A78BFA;
+}
+body.dark .btn.greenActive{
+  background: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+  border-color: #10B981;
+}
+body.dark input[type="time"],
+body.dark select,
+body.dark .readonly,
+body.dark .regBox{
+  background: #0F172A;
+  border: 1px solid #334155;
+  color: #F8FAFC;
+}
+body.dark .statusTag,
+body.dark .badge,
+body.dark .toast{
+  border-color: #334155;
+}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="headerBar">
+    <a href="./viewer.html" class="logoLink" aria-label="ICS Home">
+      <img src="./logo.png" alt="ICS Logo" class="logoImage" />
+    </a>
+
+    <div class="headerActions">
+      <div class="settingsWrap">
+        <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
+        <div class="settingsMenu" id="settingsMenu" role="menu">
+          <a class="menuItem menuItemLink darkSection" href="./admin.html">Admin</a>
+          <button class="menuItem lightSection" type="button" id="changePasswordBtn">Passwort ändern</button>
+          <button class="menuItem lightSection" type="button" id="openContainerLoginBtn">Container Anmeldung</button>
+          <button class="menuItem lightSection" type="button" id="openContainerPlanningBtn">Container Planung</button>
+          <button class="menuItem lightSection" type="button" id="darkmodeToggle">Darkmode umschalten</button>
+          <a class="menuItem menuItemLink lightSection" id="dashboardLink" href="/public/dashboard.html">Modul-Dashboard</a>
+          <button class="menuItem darkSection" type="button" id="logoutBtn">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap top">
+    <div>
+      <h1>Admin Steuerung</h1>
+      <div class="sub">Statusfolge: Slot erstellt → Angemeldet → An die Rampe → Warten auf Zollfreigabe → Zollfreigabe erteilt · Historie zeigt abgeschlossene Buchungen mit Detailverlauf</div>
+    </div>
+
+    <div class="topActions">
+      <button class="smallBtn" id="resetAllBtn">Alle zurücksetzen</button>
+      <div class="legend">
+        <div class="badge"><span class="dot red"></span>Slot erstellt</div>
+        <div class="badge"><span class="dot orange"></span>Angemeldet</div>
+        <div class="badge"><span class="dot blue"></span>An die Rampe</div>
+        <div class="badge"><span class="dot violet"></span>Warten auf Zollfreigabe</div>
+        <div class="badge"><span class="dot green"></span>Zollfreigabe erteilt</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="authBlock" class="block" style="display:none">
+      <div style="font-weight:950; font-size:16px;">Kein Admin-Zugriff</div>
+      <div class="note">Öffne die Seite über den zentralen Login, damit ein gültiger Session-Cookie oder token-Parameter vorhanden ist.</div>
+    </div>
+
+    <div id="grid" class="grid" style="display:none"></div>
+
+    <!-- Historie -->
+    <div id="historyPanel" class="panel" style="display:none;">
+      <div class="panelHead">
+        <div class="panelTitle">Historie</div>
+        <div class="historyControls">
+          <select id="histLimit">
+            <option value="100">Letzte 100</option>
+            <option value="200" selected>Letzte 200</option>
+            <option value="500">Letzte 500</option>
+            <option value="1000">Letzte 1000</option>
+          </select>
+          <button class="smallBtn" id="histRefresh">Aktualisieren</button>
+          <button class="smallBtn" id="histCSV">CSV Download</button>
+          <button class="smallBtn" id="histClear">Historie löschen</button>
+        </div>
+      </div>
+      <div class="panelBody">
+        <div class="muted">Tip: CSV Download funktioniert nur mit aktivem Admin-Login.</div>
+
+        <table class="table" id="histTable">
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Status</th>
+              <th>Container</th>
+              <th>Kennzeichen</th>
+              <th>Buchung</th>
+            </tr>
+          </thead>
+          <tbody id="histBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const pageParams = new URLSearchParams(window.location.search);
+const adminQueryToken = String(pageParams.get("token") || "").trim();
+const socket = io("/container-registration");
+const DASHBOARD_URL = "/public/dashboard.html";
+let current = {};
+let isAuthed = false;
+let currentUser = "";
+let themeStorageKey = "admin-theme";
+let ssoRedirectInFlight = false;
+
+function applyTheme(theme){
+  const isDark = theme === "dark";
+  document.body.classList.toggle("dark", isDark);
+  document.documentElement.classList.toggle("theme-dark", isDark);
+  localStorage.setItem(themeStorageKey, isDark ? "dark" : "light");
+
+}
+
+function toggleSettingsMenu(force) {
+  const menu = document.getElementById("settingsMenu");
+  const btn = document.getElementById("settingsToggle");
+  const shouldOpen = typeof force === "boolean" ? force : !menu.classList.contains("open");
+  menu.classList.toggle("open", shouldOpen);
+  btn.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+themeStorageKey = resolveThemeStorageKey("");
+const storedTheme = localStorage.getItem(themeStorageKey) || (document.documentElement.classList.contains("theme-dark") ? "dark" : "light");
+applyTheme(storedTheme);
+
+const dashboardLinkEl = document.getElementById("dashboardLink");
+if (dashboardLinkEl) {
+  dashboardLinkEl.href = DASHBOARD_URL;
+}
+
+function normalizedStatus(status){
+  if (status === "green") return "to_ramp";
+  if (status === "orange") return "registered";
+  if (status === "red") return "slot_created";
+  return status;
+}
+
+function statusText(status){
+  const normalized = normalizedStatus(status);
+  if (normalized === "customs_released") return "Zollfreigabe erteilt";
+  if (normalized === "waiting_customs") return "Warten auf Zollfreigabe";
+  if (normalized === "to_ramp") return "An die Rampe";
+  if (normalized === "registered") return "Angemeldet";
+  return "Slot erstellt";
+}
+function tagClass(status){
+  const normalized = normalizedStatus(status);
+  if (normalized === "customs_released") return "tag-green";
+  if (normalized === "waiting_customs") return "tag-violet";
+  if (normalized === "to_ramp") return "tag-blue";
+  if (normalized === "registered") return "tag-orange";
+  return "tag-red";
+}
+function cardClass(status){
+  const normalized = normalizedStatus(status);
+  if (normalized !== "slot_created") return "is-highlight";
+  return "";
+}
+function registeredTime(iso){
+  if (!iso) return "--:--";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(showToast._to);
+  showToast._to = setTimeout(()=> t.style.display="none", 2200);
+}
+
+async function openSsoTarget(endpoint) {
+  if (ssoRedirectInFlight) return;
+  ssoRedirectInFlight = true;
+  toggleSettingsMenu(false);
+
+  const loginBtn = document.getElementById("openContainerLoginBtn");
+  const planningBtn = document.getElementById("openContainerPlanningBtn");
+  if (loginBtn) loginBtn.disabled = true;
+  if (planningBtn) planningBtn.disabled = true;
+
+  try {
+    const response = await fetch(endpoint, { method: "GET", credentials: "include" });
+    const data = await response.json();
+
+    if (!response.ok || !data?.url) {
+      showToast(data?.error?.message || "Weiterleitung fehlgeschlagen.");
+      return;
+    }
+
+    window.location.href = data.url;
+  } catch (_error) {
+    showToast("Netzwerkfehler bei der Weiterleitung.");
+  } finally {
+    ssoRedirectInFlight = false;
+    if (loginBtn) loginBtn.disabled = false;
+    if (planningBtn) planningBtn.disabled = false;
+  }
+}
+
+function renderAll(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  for(let i=1;i<=8;i++){
+    const c = current[i];
+    const reg = registeredTime(c.registeredAt);
+
+    const card = document.createElement("div");
+    card.className = "card " + cardClass(c.status);
+    card.id = "card-"+i;
+
+    card.innerHTML = `
+      <div class="cardTop">
+        <div class="name">Container ${i}</div>
+        <div class="statusTag ${tagClass(c.status)}" id="tag-${i}">${statusText(c.status)}</div>
+      </div>
+
+      <div class="controls">
+        <div class="regBox ${normalizedStatus(c.status) !== "slot_created" ? "is-active" : ""}" id="regBox-${i}">🕒 Angemeldet um: <span id="reg-${i}">${reg}</span></div>
+
+        <div>
+          <label>Kennzeichen (vom Fahrer)</label>
+          <div class="readonly" id="plate-${i}">${c.plate && c.plate.trim() ? c.plate : "---"}</div>
+          <div class="note">Bei Anmeldung wird Status automatisch <b>Orange</b>.</div>
+        </div>
+
+        <div>
+          <label>Termin (Uhrzeit)</label>
+          <input type="time" id="time-${i}" value="${c.time || ""}" />
+          <div class="note">Änderung wird sofort gespeichert.</div>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <button class="btn ${normalizedStatus(c.status)==="slot_created" ? "redActive" : ""}" id="btn-slot-${i}">1 · Slot erstellt</button>
+          <button class="btn ${normalizedStatus(c.status)==="registered" ? "orangeActive" : ""}" id="btn-registered-${i}">2 · Angemeldet</button>
+        </div>
+        <div class="row" style="flex-wrap:wrap;">
+          <button class="btn ${normalizedStatus(c.status)==="to_ramp" ? "blueActive" : ""}" id="btn-ramp-${i}">3 · An die Rampe</button>
+          <button class="btn ${normalizedStatus(c.status)==="waiting_customs" ? "violetActive" : ""}" id="btn-customs-wait-${i}">4 · Warten auf Zollfreigabe</button>
+        </div>
+        <div class="row">
+          <button class="btn ${normalizedStatus(c.status)==="customs_released" ? "greenActive" : ""}" id="btn-customs-ok-${i}">5 · Zollfreigabe erteilt</button>
+        </div>
+
+
+        <button class="smallBtn" id="reset-${i}" style="width:100%;">Container zurücksetzen</button>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    // Zeit ändern (debounce)
+    const timeEl = document.getElementById("time-"+i);
+    let timeTimer = null;
+    timeEl.addEventListener("input", (e) => {
+      clearTimeout(timeTimer);
+      timeTimer = setTimeout(() => {
+        socket.emit("adminSetTime", { id: i, time: e.target.value });
+      }, 200);
+    });
+
+    // Status Buttons (1 bis 5)
+    document.getElementById("btn-slot-"+i).addEventListener("click", () => {
+      socket.emit("adminSetStatus", { id: i, status: "slot_created" });
+    });
+    document.getElementById("btn-registered-"+i).addEventListener("click", () => {
+      socket.emit("adminSetStatus", { id: i, status: "registered" });
+    });
+    document.getElementById("btn-ramp-"+i).addEventListener("click", () => {
+      socket.emit("adminSetStatus", { id: i, status: "to_ramp" });
+    });
+    document.getElementById("btn-customs-wait-"+i).addEventListener("click", () => {
+      socket.emit("adminSetStatus", { id: i, status: "waiting_customs" });
+    });
+    document.getElementById("btn-customs-ok-"+i).addEventListener("click", () => {
+      socket.emit("adminSetStatus", { id: i, status: "customs_released" });
+    });
+
+    // Container Reset
+    document.getElementById("reset-"+i).addEventListener("click", () => {
+      if (confirm(`Container ${i} wirklich zurücksetzen?`)) {
+        socket.emit("adminResetContainer", { id: i });
+      }
+    });
+  }
+}
+
+function applyOne(id, data){
+  current[id] = data;
+
+  const card = document.getElementById("card-"+id);
+  if (card) card.className = "card " + cardClass(data.status);
+
+  const tag = document.getElementById("tag-"+id);
+  if (tag){
+    tag.textContent = statusText(data.status);
+    tag.className = "statusTag " + tagClass(data.status);
+  }
+
+  const plate = document.getElementById("plate-"+id);
+  if (plate) plate.textContent = data.plate && data.plate.trim() ? data.plate : "---";
+
+  const reg = document.getElementById("reg-"+id);
+  if (reg) reg.textContent = registeredTime(data.registeredAt);
+
+  const regBox = document.getElementById("regBox-"+id);
+  if (regBox) regBox.classList.toggle("is-active", normalizedStatus(data.status) !== "slot_created");
+
+  const t = document.getElementById("time-"+id);
+  if (t && document.activeElement !== t) t.value = data.time || "";
+
+  const btnSlot = document.getElementById("btn-slot-"+id);
+  const btnRegistered = document.getElementById("btn-registered-"+id);
+  const btnRamp = document.getElementById("btn-ramp-"+id);
+  const btnCustomsWait = document.getElementById("btn-customs-wait-"+id);
+  const btnCustomsOk = document.getElementById("btn-customs-ok-"+id);
+  if (btnSlot && btnRegistered && btnRamp && btnCustomsWait && btnCustomsOk){
+    btnSlot.classList.toggle("redActive", normalizedStatus(data.status) === "slot_created");
+    btnRegistered.classList.toggle("orangeActive", normalizedStatus(data.status) === "registered");
+    btnRamp.classList.toggle("blueActive", normalizedStatus(data.status) === "to_ramp");
+    btnCustomsWait.classList.toggle("violetActive", normalizedStatus(data.status) === "waiting_customs");
+    btnCustomsOk.classList.toggle("greenActive", normalizedStatus(data.status) === "customs_released");
+  }
+
+}
+
+// ===== Historie UI (abgeschlossene Buchungen + Detailverlauf) =====
+const TYPE_LABELS = {
+  "admin_reset_container": "Abgeschlossen"
+};
+const TIMELINE_LABELS = {
+  "driver_register": "Kennzeichen registriert",
+  "admin_set_status": "Status geändert",
+  "admin_set_time": "Termin geändert",
+  "admin_reset_container": "Buchung abgeschlossen"
+};
+const bookingTimelineCache = new Map();
+
+function bookingNoOf(entry){
+  const n = Number(entry?.details?.bookingNo);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function fmtDateTime(iso){
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString([], {
+    year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit", second:"2-digit"
+  });
+}
+
+function renderTimeline(entries){
+  if (!entries || entries.length === 0) return '<div class="muted">Keine Einzelbuchungen gefunden.</div>';
+  const lines = entries.map((e) => {
+    const label = TIMELINE_LABELS[e.type] || e.type;
+    const detail = [];
+    if (e.details?.from || e.details?.to) detail.push(`${statusText(e.details.from) || "?"} → ${statusText(e.details.to) || "?"}`);
+    if (e.details?.timeSlot) detail.push(`Termin: ${e.details.timeSlot}`);
+    return `<li><b>${fmtDateTime(e.at)}</b> · ${label}${detail.length ? ` <span class="muted">(${detail.join(" · ")})</span>` : ""}</li>`;
+  }).join("");
+
+  return `<ul style="margin:6px 0 0 18px; padding:0;">${lines}</ul>`;
+}
+
+function renderHistory(entries){
+  const body = document.getElementById("histBody");
+  body.innerHTML = "";
+
+  const filtered = (entries || []).filter(e => {
+    if (!e || !e.type) return false;
+    return !!TYPE_LABELS[e.type];
+  });
+
+  for (const e of filtered){
+    const bookingNo = bookingNoOf(e);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtDateTime(e.at)}</td>
+      <td>${TYPE_LABELS[e.type] || e.type}</td>
+      <td>${e.containerId || ""}</td>
+      <td>${e.plate || ""}</td>
+      <td>${bookingNo ? `<button class="smallBtn" data-open-booking="${bookingNo}">#${bookingNo} öffnen</button>` : '<span class="muted">-</span>'}</td>
+    `;
+    body.appendChild(tr);
+
+    if (bookingNo){
+      const detailTr = document.createElement("tr");
+      detailTr.id = `booking-row-${bookingNo}`;
+      detailTr.style.display = "none";
+      detailTr.innerHTML = `<td colspan="5" class="muted" id="booking-detail-${bookingNo}">Lade Verlauf...</td>`;
+      body.appendChild(detailTr);
+    }
+  }
+
+  if (filtered.length === 0){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="5" class="muted">Keine passenden Einträge vorhanden.</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function refreshHistory(){
+  const limit = Number(document.getElementById("histLimit").value || 200);
+  socket.emit("adminGetHistory", { limit });
+}
+
+socket.on("adminHistory", ({ entries }) => {
+  bookingTimelineCache.clear();
+  renderHistory(entries || []);
+});
+
+socket.on("adminBookingTimeline", ({ bookingNo, entries }) => {
+  const no = Number(bookingNo);
+  if (!Number.isInteger(no) || no <= 0) return;
+  bookingTimelineCache.set(no, entries || []);
+
+  const detailCell = document.getElementById(`booking-detail-${no}`);
+  if (detailCell) detailCell.innerHTML = renderTimeline(entries || []);
+});
+
+document.getElementById("histBody").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-open-booking]");
+  if (!btn) return;
+
+  const bookingNo = Number(btn.getAttribute("data-open-booking"));
+  if (!Number.isInteger(bookingNo) || bookingNo <= 0) return;
+
+  const detailRow = document.getElementById(`booking-row-${bookingNo}`);
+  const detailCell = document.getElementById(`booking-detail-${bookingNo}`);
+  if (!detailRow || !detailCell) return;
+
+  const willOpen = detailRow.style.display === "none";
+  detailRow.style.display = willOpen ? "table-row" : "none";
+  btn.textContent = willOpen ? `#${bookingNo} schließen` : `#${bookingNo} öffnen`;
+
+  if (!willOpen) return;
+  if (bookingTimelineCache.has(bookingNo)) {
+    detailCell.innerHTML = renderTimeline(bookingTimelineCache.get(bookingNo));
+    return;
+  }
+
+  detailCell.textContent = "Lade Verlauf...";
+  socket.emit("adminGetBookingTimeline", { bookingNo });
+});
+
+// ===== Auth + Init =====
+socket.on("init", (state) => {
+  current = state;
+  socket.emit("adminAuth", { token: adminQueryToken });
+});
+
+socket.on("adminAuthResult", ({ ok, user: authUser }) => {
+  isAuthed = !!ok;
+  currentUser = String(authUser || "").trim();
+  document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
+  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
+  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
+
+  if (isAuthed && currentUser) {
+    const nextThemeKey = resolveThemeStorageKey(currentUser);
+    if (nextThemeKey !== themeStorageKey) {
+      const fallbackTheme = localStorage.getItem(themeStorageKey) || "light";
+      themeStorageKey = nextThemeKey;
+      const userTheme = localStorage.getItem(themeStorageKey) || fallbackTheme;
+      applyTheme(userTheme);
+    }
+  }
+
+  if (isAuthed){
+    renderAll();
+    refreshHistory();
+    showToast(authUser ? `Admin aktiviert (${authUser})` : "Admin aktiviert");
+  } else {
+    showToast("Kein Admin-Zugriff");
+  }
+});
+
+socket.on("statusChanged", ({ id, data }) => {
+  if (!isAuthed) return;
+  applyOne(id, data);
+});
+
+// Buttons
+document.getElementById("resetAllBtn").addEventListener("click", () => {
+  if (!isAuthed) return;
+  if (confirm("Alle Container wirklich zurücksetzen?")) socket.emit("resetAll");
+});
+
+document.getElementById("histRefresh").addEventListener("click", () => {
+  if (!isAuthed) return;
+  refreshHistory();
+});
+
+document.getElementById("histCSV").addEventListener("click", () => {
+  if (!isAuthed) return;
+  window.location.href = "/admin-history.csv";
+});
+
+document.getElementById("histClear").addEventListener("click", () => {
+  if (!isAuthed) return;
+  if (confirm("Historie wirklich löschen?")) socket.emit("adminClearHistory");
+});
+
+document.getElementById("settingsToggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleSettingsMenu();
+});
+
+document.getElementById("darkmodeToggle").addEventListener("click", () => {
+  const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
+  applyTheme(nextTheme);
+  toggleSettingsMenu(false);
+});
+
+document.getElementById("changePasswordBtn").addEventListener("click", () => {
+  toggleSettingsMenu(false);
+  window.location.href = "/public/dashboard.html";
+});
+
+document.getElementById("dashboardLink").addEventListener("click", () => {
+  toggleSettingsMenu(false);
+});
+
+document.getElementById("openContainerLoginBtn").addEventListener("click", () => {
+  window.location.href = "./driver.html";
+});
+
+document.getElementById("openContainerPlanningBtn").addEventListener("click", () => {
+  window.location.href = "../container-planning/index.html";
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    await fetch("/api/logout", { method: "POST", credentials: "include" });
+  } catch (error) {
+    console.warn("Logout endpoint nicht erreichbar:", error);
+  }
+  localStorage.removeItem(themeStorageKey);
+  toggleSettingsMenu(false);
+  window.location.href = "/";
+});
+
+document.addEventListener("click", (event) => {
+  const wrap = document.querySelector(".settingsWrap");
+  if (!wrap.contains(event.target)) toggleSettingsMenu(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") toggleSettingsMenu(false);
+});
+</script>
+</body>
+</html>

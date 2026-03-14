@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fahrer Anmeldung</title>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const __design = new URLSearchParams(location.search).get("design");
+  document.documentElement.dataset.design = __design === "2" ? "2" : "1";
+</script>
+
+<style>
+:root{
+  --bg:#F3F4F6;
+  --muted:#475569;
+  --white:#111827;
+  --stroke:#E2E8F0;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --radius: 18px;
+  --header-bg: #0f2f67;
+  --brand-blue: #2563EB;
+
+  --red:#ef4444;
+  --orange:#f59e0b;
+  --green:#22c55e;
+  --card: #ffffff;
+  --card2: #ffffff;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height: 100vh;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color:var(--white);
+  background: var(--bg);
+}
+header{
+  position: sticky;
+  top: 0;
+  width: 100%;
+  background-color: var(--header-bg);
+  border-bottom: 0;
+  z-index: 100;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .35);
+}
+
+.headerBar { width: 100%; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:10px 20px; }
+.logoLink { display:inline-flex; align-items:center; }
+.logoImage { height:42px; width:auto; object-fit:contain; }
+.headerActions { display:flex; align-items:center; gap:10px; margin-left:auto; }
+.iconBtn,.navBtn { border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14); color:#fff; border-radius:10px; cursor:pointer; font-weight:700; }
+.iconBtn { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; font-size:18px; }
+.navBtn { height:40px; padding:0 14px; text-decoration:none; display:inline-flex; align-items:center; }
+.navBtn.primary { background:var(--brand-blue); border-color:var(--brand-blue); }
+
+.settingsWrap { position: relative; }
+.settingsMenu { position:absolute; right:0; top:calc(100% + 8px); min-width:240px; border-radius:12px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,.25); display:none; z-index:30; background:#F1F5F9; }
+.settingsMenu.open { display:block; }
+.menuItem { width:100%; display:block; text-align:left; border:0; margin:0; padding:11px 14px; font-size:14px; cursor:pointer; }
+.menuItem.darkSection { background:#1F2937; color:#fff; font-weight:700; }
+.menuItem.lightSection { background:#F1F5F9; color:#0F172A; border-bottom:1px solid #E2E8F0; }
+.menuItemLink { text-decoration:none; }
+
+body.dark {
+  --bg:#0b1220;
+  --muted:#a7b3d1;
+  --white:#f6f8ff;
+  --stroke:rgba(255,255,255,.10);
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+  --card: rgba(255,255,255,.05);
+  --card2: rgba(255,255,255,.02);
+}
+
+.wrap{
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 14px 16px;
+}
+.top{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: #fff; }
+.sub{ margin:6px 0 0; color: rgba(255,255,255,.85); font-size: 13px; }
+
+.legend{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #fff;
+  font-size: 12px;
+}
+.langToggle{
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, var(--card), var(--card2));
+  color: var(--white);
+  border-radius: 14px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+.badge{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, var(--card), var(--card2));
+  box-shadow: var(--shadow);
+}
+.dot{ width:10px; height:10px; border-radius: 999px; }
+.dot.red{ background: var(--red); }
+.dot.orange{ background: var(--orange); }
+.dot.green{ background: var(--green); }
+
+main .wrap{ padding-top: 16px; padding-bottom: 22px; }
+
+.grid{
+  display:grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (min-width: 860px){
+  .grid{ grid-template-columns: repeat(4, 1fr); }
+}
+
+.slot{
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, var(--card), var(--card2));
+  box-shadow: var(--shadow);
+  overflow:hidden;
+  cursor: pointer;
+  user-select: none;
+  transition: transform .08s ease, opacity .08s ease;
+}
+.slot:active{ transform: scale(.99); }
+.slot.disabled{ opacity: .55; cursor: not-allowed; }
+.slot.selected{ outline: 3px solid rgba(255,255,255,.35); outline-offset: 2px; }
+
+.slotTop{
+  padding: 10px 12px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.slotName{ font-weight: 900; letter-spacing:.2px; }
+
+.timeBig{
+  margin-top: 10px;
+  width: 100%;
+  text-align: center;
+  font-weight: 950;
+  font-size: 28px;
+  letter-spacing: 2px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.90);
+  color: #0b1220;
+}
+.timeSmallHint{
+  text-align: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.slotBody{
+  padding: 12px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 170px;
+  justify-content: center;
+}
+
+.statusRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+.statusText{ font-weight: 900; color: var(--white); }
+
+.regRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+.regValue{ font-weight: 900; color: var(--white); }
+
+.bar{
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  overflow:hidden;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.fill{ height: 100%; width: 100%; }
+.fill.red{ background: var(--red); }
+.fill.orange{ background: var(--orange); }
+.fill.green{ background: var(--green); }
+
+
+.formCard{
+  margin-top: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+label{ display:block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+input{
+  width: 100%;
+  font-size: 18px;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: var(--white);
+  outline: none;
+}
+.btn{
+  margin-top: 10px;
+  width:100%;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.10);
+  color: var(--white);
+  font-weight: 950;
+  cursor: pointer;
+  font-size: 16px;
+}
+.btn:hover{ background: rgba(255,255,255,.14); }
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.msg{
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  display:none;
+  font-size: 14px;
+}
+.small{
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.selectedInfo{
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.selectedInfo b{ color: var(--white); }
+
+body.dark h1,
+body.dark .legend { color: #fff; }
+
+body.dark .sub { color: rgba(255,255,255,.85); }
+</style>
+</head>
+
+<body>
+<header>
+  <div class="headerBar">
+    <a href="./viewer.html" class="logoLink" aria-label="ICS Home">
+      <img src="./logo.png" alt="ICS Logo" class="logoImage" />
+    </a>
+
+    <div class="headerActions">
+      <div class="settingsWrap">
+        <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
+        <div class="settingsMenu" id="settingsMenu" role="menu">
+          <button class="menuItem darkSection" type="button" id="darkmodeToggle">Darkmode umschalten</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap top">
+    <div>
+      <h1 id="title">Fahrer Anmeldung</h1>
+      <div class="sub" id="subtitle">Nur Container mit Termin-Uhrzeit sind auswählbar.</div>
+    </div>
+    <div class="legend">
+      <button id="langToggle" class="langToggle" type="button">English</button>
+      <div class="badge"><span class="dot red"></span><span id="legend-red">Frei</span></div>
+      <div class="badge"><span class="dot orange"></span><span id="legend-orange">Angemeldet</span></div>
+      <div class="badge"><span class="dot green"></span><span id="legend-green">An die Rampe</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="grid" class="grid"></div>
+
+    <div class="formCard">
+      <div class="selectedInfo" id="selInfo">Bitte zuerst einen Container auswählen.</div>
+
+      <div style="margin-top:10px;">
+        <label id="plateLabel">Kennzeichen</label>
+        <input id="plate" placeholder="z.B. B-AB 1234" autocomplete="off" />
+      </div>
+
+      <button class="btn" id="sendBtn" disabled>Anmelden</button>
+
+      <div id="msg" class="msg"></div>
+
+      <div class="small" id="noteText">
+        Hinweis: Container ohne Termin-Uhrzeit sind nicht auswählbar.
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const socket = io("/container-registration");
+let state = null;
+let selectedId = null;
+
+const gridEl = document.getElementById("grid");
+const plateEl = document.getElementById("plate");
+const msgEl = document.getElementById("msg");
+const btnEl = document.getElementById("sendBtn");
+const selInfoEl = document.getElementById("selInfo");
+let currentLang = localStorage.getItem("driverLang") || "de";
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("dark", isDark);
+  localStorage.setItem("driver-theme", isDark ? "dark" : "light");
+}
+
+function toggleSettingsMenu(force) {
+  const menu = document.getElementById("settingsMenu");
+  const btn = document.getElementById("settingsToggle");
+  const shouldOpen = typeof force === "boolean" ? force : !menu.classList.contains("open");
+  menu.classList.toggle("open", shouldOpen);
+  btn.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+const I18N = {
+  de: {
+    title: "Fahrer Anmeldung",
+    subtitle: "Nur Container mit Termin-Uhrzeit sind auswählbar.",
+    legendRed: "Frei",
+    legendOrange: "Angemeldet",
+    legendGreen: "An die Rampe",
+    statusRed: "Warten",
+    statusOrange: "Angemeldet",
+    statusGreen: "An die Rampe",
+    free: "frei",
+    occupied: "belegt",
+    noSlot: "kein Termin",
+    slotTime: "Termin-Uhrzeit",
+    status: "Status",
+    checkedIn: "Angemeldet",
+    selectFirst: "Bitte zuerst einen <b>Container</b> auswählen.",
+    selected: "Ausgewählt",
+    slot: "Termin",
+    plateLabel: "Kennzeichen",
+    platePlaceholder: "z.B. B-AB 1234",
+    registerBtn: "Anmelden",
+    note: "Hinweis: Container ohne Termin-Uhrzeit sind nicht auswählbar.",
+    msgNoTime: "Dieser Container hat noch keinen Termin. Bitte einen Container mit Uhrzeit wählen.",
+    msgOccupied: "Dieser Container ist bereits belegt. Bitte einen anderen wählen.",
+    msgUnavailable: "Dein ausgewählter Container ist nicht mehr verfügbar. Bitte neu auswählen.",
+    msgSelectFirst: "Bitte zuerst einen Container auswählen.",
+    msgNotSelectable: "Dieser Container ist nicht auswählbar. Bitte einen anderen wählen.",
+    msgEnterPlate: "Bitte Kennzeichen eingeben.",
+    toggle: "English"
+  },
+  en: {
+    title: "Driver Check-in",
+    subtitle: "Only containers with a scheduled time can be selected.",
+    legendRed: "Free",
+    legendOrange: "Checked in",
+    legendGreen: "Go to ramp",
+    statusRed: "Waiting",
+    statusOrange: "Checked in",
+    statusGreen: "Go to ramp",
+    free: "free",
+    occupied: "occupied",
+    noSlot: "no slot",
+    slotTime: "Scheduled time",
+    status: "Status",
+    checkedIn: "Checked in",
+    selectFirst: "Please select a <b>container</b> first.",
+    selected: "Selected",
+    slot: "Slot",
+    plateLabel: "License plate",
+    platePlaceholder: "e.g. B-AB 1234",
+    registerBtn: "Check in",
+    note: "Note: Containers without a scheduled time cannot be selected.",
+    msgNoTime: "This container has no scheduled time yet. Please choose one with a time.",
+    msgOccupied: "This container is already occupied. Please choose another one.",
+    msgUnavailable: "Your selected container is no longer available. Please select again.",
+    msgSelectFirst: "Please select a container first.",
+    msgNotSelectable: "This container cannot be selected. Please choose another one.",
+    msgEnterPlate: "Please enter a license plate.",
+    toggle: "Deutsch"
+  }
+};
+
+function t(key){
+  return I18N[currentLang]?.[key] || I18N.de[key] || key;
+}
+
+function statusText(status){
+  if (status === "customs_released") return t("statusGreen");
+  if (status === "waiting_customs") return "Warten auf Zollfreigabe";
+  if (status === "to_ramp") return t("statusGreen");
+  if (status === "registered") return t("statusOrange");
+  if (status === "green") return t("statusGreen");
+  if (status === "orange") return t("statusOrange");
+  return t("statusRed");
+}
+function hasTime(c){ return !!(c.time && c.time.trim()); }
+function timeText(c){ return hasTime(c) ? c.time.trim() : "--:--"; }
+
+
+// frei = Slot erstellt + kein Kennzeichen
+function isFree(c){
+  return (c.status === "slot_created" || c.status === "red") && (!c.plate || !c.plate.trim());
+}
+
+function statusTone(status){
+  if (status === "registered" || status === "orange") return "orange";
+  if (status === "to_ramp" || status === "waiting_customs" || status === "customs_released" || status === "green") return "green";
+  return "red";
+}
+
+// wählbar: Termin gesetzt + frei
+function isSelectableForDriver(c){
+  return hasTime(c) && isFree(c);
+}
+
+// Anzeige HH:MM der Anmeldung
+function registeredTime(iso){
+  if (!iso) return "--:--";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+}
+
+function showMsg(text){
+  msgEl.textContent = text;
+  msgEl.style.display = "block";
+}
+function clearMsg(){
+  msgEl.style.display = "none";
+  msgEl.textContent = "";
+}
+
+function focusPlateInput(){
+  if (!plateEl) return;
+  plateEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  plateEl.focus({ preventScroll: true });
+}
+
+function updateSelectedInfo(){
+  if (!state || !selectedId){
+    selInfoEl.innerHTML = t("selectFirst");
+    btnEl.disabled = true;
+    return;
+  }
+  const c = state[selectedId];
+  selInfoEl.innerHTML = `${t("selected")}: <b>Container ${selectedId}</b> · ${t("slot")}: <b>${timeText(c)}</b>`;
+  btnEl.disabled = !isSelectableForDriver(c);
+}
+
+function renderAll(){
+  gridEl.innerHTML = "";
+
+  for (let i = 1; i <= 8; i++){
+    const c = state[i];
+    const selectable = isSelectableForDriver(c);
+    const disabled = !selectable;
+    const time = timeText(c);
+    const reg = registeredTime(c.registeredAt);
+
+    let headNote = "";
+    if (!hasTime(c)) headNote = t("noSlot");
+    else if (!isFree(c)) headNote = t("occupied");
+    else headNote = t("free");
+
+    const slot = document.createElement("div");
+    slot.className = "slot" + (disabled ? " disabled" : "") + (selectedId === i ? " selected" : "");
+    slot.id = "slot-" + i;
+
+    slot.innerHTML = `
+      <div class="slotTop">
+        <div class="slotName">Container ${i}</div>
+        <div style="color: var(--muted); font-size: 12px;">${headNote}</div>
+      </div>
+      <div class="slotBody">
+        <div class="timeBig">⏱ ${time}</div>
+        <div class="timeSmallHint">${t("slotTime")}</div>
+
+        <div class="statusRow">
+          <div>${t("status")}</div>
+          <div class="statusText">${statusText(c.status)}</div>
+        </div>
+
+        <div class="regRow">
+          <div>${t("checkedIn")}</div>
+          <div class="regValue">${reg}</div>
+        </div>
+
+
+        <div class="bar"><div class="fill ${statusTone(c.status)}"></div></div>
+      </div>
+    `;
+
+    slot.addEventListener("click", () => {
+      clearMsg();
+
+      if (disabled){
+        if (!hasTime(c)) showMsg(t("msgNoTime"));
+        else showMsg(t("msgOccupied"));
+        return;
+      }
+
+      selectedId = (selectedId === i) ? null : i;
+      renderAll();
+      updateSelectedInfo();
+      if (selectedId) focusPlateInput();
+    });
+
+    gridEl.appendChild(slot);
+  }
+}
+
+function applyOne(id, data){
+  state[id] = data;
+
+  if (selectedId === id && !isSelectableForDriver(data)){
+    selectedId = null;
+    showMsg(t("msgUnavailable"));
+  }
+
+  renderAll();
+  updateSelectedInfo();
+}
+
+function applyStaticTranslations(){
+  document.getElementById("title").textContent = t("title");
+  document.getElementById("subtitle").textContent = t("subtitle");
+  document.getElementById("legend-red").textContent = t("legendRed");
+  document.getElementById("legend-orange").textContent = t("legendOrange");
+  document.getElementById("legend-green").textContent = t("legendGreen");
+  document.getElementById("plateLabel").textContent = t("plateLabel");
+  plateEl.placeholder = t("platePlaceholder");
+  btnEl.textContent = t("registerBtn");
+  document.getElementById("noteText").textContent = t("note");
+  document.getElementById("langToggle").textContent = t("toggle");
+}
+
+socket.on("init", (s) => {
+  state = s;
+  applyStaticTranslations();
+  renderAll();
+  updateSelectedInfo();
+});
+
+socket.on("statusChanged", ({ id, data }) => {
+  if (!state) return;
+  applyOne(Number(id), data);
+});
+
+document.getElementById("langToggle").addEventListener("click", () => {
+  currentLang = currentLang === "de" ? "en" : "de";
+  localStorage.setItem("driverLang", currentLang);
+  applyStaticTranslations();
+  if (state) {
+    renderAll();
+    updateSelectedInfo();
+  }
+});
+
+document.getElementById("settingsToggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleSettingsMenu();
+});
+
+document.getElementById("darkmodeToggle").addEventListener("click", () => {
+  const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
+  applyTheme(nextTheme);
+  toggleSettingsMenu(false);
+});
+
+document.addEventListener("click", (event) => {
+  const wrap = document.querySelector(".settingsWrap");
+  if (!wrap.contains(event.target)) toggleSettingsMenu(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") toggleSettingsMenu(false);
+});
+
+btnEl.addEventListener("click", () => {
+  clearMsg();
+
+  if (!state || !selectedId){
+    showMsg(t("msgSelectFirst"));
+    return;
+  }
+
+  const c = state[selectedId];
+  if (!isSelectableForDriver(c)){
+    showMsg(t("msgNotSelectable"));
+    return;
+  }
+
+  const plate = plateEl.value.trim();
+  if (!plate){
+    showMsg(t("msgEnterPlate"));
+    return;
+  }
+
+  btnEl.disabled = true;
+  socket.emit("driverRegister", { id: selectedId, plate });
+});
+
+applyStaticTranslations();
+applyTheme(localStorage.getItem("driver-theme") || "light");
+
+socket.on("driverRegisterResult", ({ ok, message }) => {
+  btnEl.disabled = false;
+  showMsg(message);
+
+  if (ok){
+    // nach erfolgreicher Anmeldung nur den eigenen gebuchten Slot in der Viewer-Ansicht anzeigen
+    const target = `./viewer.html?slot=${selectedId}&plate=${encodeURIComponent(plateEl.value.trim().toUpperCase())}`;
+    window.location.href = target;
+  }
+});
+</script>
+</body>
+</html>
