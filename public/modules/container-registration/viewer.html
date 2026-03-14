@@ -448,12 +448,13 @@ let audioContext = null;
 let notificationRegistration = null;
 let alertsPrimed = false;
 const VIEWER_LANG_KEY = "viewerLang";
+const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
 let currentLang = getInitialLanguage();
 let currentState = null;
 const queryParams = new URLSearchParams(window.location.search);
-const filteredPlate = normalizePlate(queryParams.get("plate"));
-const filteredSlot = Number(queryParams.get("slot"));
-let focusedContainerId = Number.isInteger(filteredSlot) && filteredSlot >= 1 && filteredSlot <= 8 ? filteredSlot : null;
+const resolvedViewerFilter = resolveViewerFilter();
+let filteredPlate = resolvedViewerFilter.plate;
+let focusedContainerId = resolvedViewerFilter.slot;
 const ALERT_REPEAT_COUNT = 3;
 const ALERT_REPEAT_INTERVAL = 0.95;
 const ALERT_VIBRATION_CYCLE = [180, 120, 180, 120, 180];
@@ -595,6 +596,97 @@ function statusTone(status){
 function timeText(t){ return (t && t.trim()) ? t.trim() : "--:--"; }
 function plateText(p){ return (p && p.trim()) ? p.trim() : "---"; }
 function normalizePlate(value){ return String(value || "").trim().toUpperCase(); }
+
+function normalizeSlot(value) {
+  const numericValue = Number(value);
+  if (!Number.isInteger(numericValue) || numericValue < 1 || numericValue > 8) return null;
+  return numericValue;
+}
+
+function parseViewerFilter(rawValue) {
+  let value = rawValue;
+  if (!value) return { slot: null, plate: "" };
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return { slot: null, plate: "" };
+    }
+  }
+
+  return {
+    slot: normalizeSlot(value?.slot),
+    plate: normalizePlate(value?.plate)
+  };
+}
+
+function hasViewerFilter(filter) {
+  return filter?.slot !== null || !!filter?.plate;
+}
+
+function storeViewerFilter(filter) {
+  const normalizedFilter = parseViewerFilter(filter);
+  if (!hasViewerFilter(normalizedFilter)) return;
+
+  try {
+    localStorage.setItem(VIEWER_FILTER_KEY, JSON.stringify(normalizedFilter));
+  } catch (error) {
+    console.warn("Viewer-Filter konnte nicht gespeichert werden:", error);
+  }
+}
+
+function loadStoredViewerFilter() {
+  try {
+    return parseViewerFilter(localStorage.getItem(VIEWER_FILTER_KEY));
+  } catch {
+    return { slot: null, plate: "" };
+  }
+}
+
+function buildViewerSearch(filter) {
+  const normalizedFilter = parseViewerFilter(filter);
+  const params = new URLSearchParams();
+
+  if (normalizedFilter.slot !== null) params.set("slot", String(normalizedFilter.slot));
+  if (normalizedFilter.plate) params.set("plate", normalizedFilter.plate);
+
+  const search = params.toString();
+  return search ? `?${search}` : "";
+}
+
+function resolveViewerFilter() {
+  const queryFilter = {
+    slot: normalizeSlot(queryParams.get("slot")),
+    plate: normalizePlate(queryParams.get("plate"))
+  };
+
+  if (hasViewerFilter(queryFilter)) {
+    storeViewerFilter(queryFilter);
+    return queryFilter;
+  }
+
+  const queryRequestedFilter = queryParams.has("slot") || queryParams.has("plate");
+  if (!queryRequestedFilter) {
+    return queryFilter;
+  }
+
+  const storedFilter = loadStoredViewerFilter();
+  if (!hasViewerFilter(storedFilter)) {
+    return queryFilter;
+  }
+
+  const targetSearch = buildViewerSearch(storedFilter);
+  if (targetSearch && window.location.search !== targetSearch) {
+    window.history.replaceState(null, "", `${window.location.pathname}${targetSearch}`);
+  }
+
+  return storedFilter;
+}
+
+function hasPersonalViewerMode() {
+  return focusedContainerId !== null || !!filteredPlate;
+}
 
 function isOwnedContainer(id, container) {
   const normalizedId = Number(id);
@@ -906,7 +998,7 @@ socket.on("statusChanged", ({ id, data }) => {
   if (cardEl && shouldShowUpdatedCard) applyOne(numericId, data);
   else renderAll(currentState);
 
-  if (shouldShowUpdatedCard && isOwnedContainer(numericId, data)) {
+  if (hasPersonalViewerMode() && shouldShowUpdatedCard && isOwnedContainer(numericId, data)) {
     void triggerNotification(numericId, data);
   }
 });

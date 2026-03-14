@@ -556,6 +556,7 @@ body.dark .modalEyebrow{
 const socket = io("/container-registration");
 let state = null;
 let selectedId = null;
+let pendingViewerFilter = null;
 
 const gridEl = document.getElementById("grid");
 const plateModalEl = document.getElementById("plateModal");
@@ -567,6 +568,7 @@ const btnEl = document.getElementById("sendBtn");
 const cancelBtnEl = document.getElementById("cancelBtn");
 const modalCloseBtnEl = document.getElementById("modalCloseBtn");
 const DRIVER_LANG_KEY = "driverLang";
+const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
 let currentLang = getInitialLanguage();
 
 function applyTheme(theme) {
@@ -738,6 +740,34 @@ function registeredTime(iso){
 
 function normalizePlate(value){
   return String(value || "").toUpperCase().replace(/[\s-]+/g, "").trim();
+}
+
+function buildViewerTarget(filter) {
+  const slot = Number(filter?.slot);
+  const plate = normalizePlate(filter?.plate);
+  const params = new URLSearchParams();
+
+  if (Number.isInteger(slot) && slot >= 1 && slot <= 8) {
+    params.set("slot", String(slot));
+  }
+  if (plate) {
+    params.set("plate", plate);
+  }
+
+  const search = params.toString();
+  return search ? `./viewer.html?${search}` : "./viewer.html";
+}
+
+function persistViewerFilter(filter) {
+  const slot = Number(filter?.slot);
+  const plate = normalizePlate(filter?.plate);
+  if (!Number.isInteger(slot) || slot < 1 || slot > 8) return;
+
+  try {
+    localStorage.setItem(VIEWER_FILTER_KEY, JSON.stringify({ slot, plate }));
+  } catch (error) {
+    console.warn("Viewer-Filter konnte nicht gespeichert werden:", error);
+  }
 }
 
 function showMsg(text){
@@ -1015,6 +1045,7 @@ plateFormEl.addEventListener("submit", (event) => {
   }
 
   plateEl.value = plate;
+  pendingViewerFilter = { slot: selectedId, plate };
   updateRegisterButtonState();
   btnEl.disabled = true;
   socket.emit("driverRegister", { id: selectedId, plate });
@@ -1027,11 +1058,14 @@ socket.on("driverRegisterResult", ({ ok, message }) => {
   updateRegisterButtonState();
 
   if (ok){
-    const target = `./viewer.html?slot=${selectedId}&plate=${encodeURIComponent(normalizePlate(plateEl.value))}`;
+    const target = buildViewerTarget(pendingViewerFilter);
+    persistViewerFilter(pendingViewerFilter);
+    pendingViewerFilter = null;
     window.location.href = target;
     return;
   }
 
+  pendingViewerFilter = null;
   showModalMsg(message);
 });
 </script>

@@ -3,6 +3,60 @@ let currentPermissions = {};
 
 function $(id) { return document.getElementById(id); }
 
+function formatDashboardDate(date = new Date()) {
+  return new Intl.DateTimeFormat("de-DE", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
+
+function updateDashboardHero() {
+  const hours = new Date().getHours();
+  let greeting = "Guten Morgen";
+  if (hours >= 18) greeting = "Guten Abend";
+  else if (hours >= 12) greeting = "Guten Tag";
+
+  const greetingEl = $("dashboardGreeting");
+  const dateEl = $("dashboardDate");
+
+  if (greetingEl) greetingEl.textContent = `${greeting}, willkommen im Dashboard`;
+  if (dateEl) dateEl.textContent = formatDashboardDate();
+}
+
+function getVisibleModuleLinks() {
+  return Array.from(document.querySelectorAll(".module-grid .module-button")).filter((link) => {
+    if (link.hidden) return false;
+    if (link.style.display === "none") return false;
+    return window.getComputedStyle(link).display !== "none";
+  });
+}
+
+function refreshModuleSummary() {
+  const visibleLinks = getVisibleModuleLinks();
+  const count = visibleLinks.length;
+  const countEl = $("moduleCount");
+  const stateEl = $("moduleAccessState");
+  const primaryEl = $("dashboardPrimaryModule");
+  const msgEl = $("moduleMsg");
+  const firstLink = visibleLinks[0];
+  const firstName = firstLink?.dataset?.moduleName || "Kein Modul verfuegbar";
+  const firstSummary = firstLink?.dataset?.moduleSummary || "Aktuell ist kein Bereich fuer dieses Konto freigeschaltet.";
+
+  if (countEl) countEl.textContent = String(count);
+  if (stateEl) stateEl.textContent = count > 0 ? `${count} Bereich${count === 1 ? "" : "e"} aktiv` : "Keine Freigabe";
+  if (primaryEl) primaryEl.textContent = count > 0 ? `${firstName}: ${firstSummary}` : firstSummary;
+
+  if (msgEl && (!msgEl.dataset.messageType || msgEl.dataset.messageType === "summary")) {
+    msgEl.dataset.messageType = "summary";
+    msgEl.style.color = "";
+    msgEl.textContent = count > 0
+      ? `${count} Modul${count === 1 ? "" : "e"} stehen bereit.`
+      : "Aktuell ist kein Modul fuer dieses Konto freigeschaltet.";
+  }
+}
+
 function sanitizeDashboardUrl() {
   const url = new URL(window.location.href);
   const hadSsoToken = url.searchParams.has("ssoToken");
@@ -60,6 +114,7 @@ function api(path, opts = {}) {
 function setMsg(elId, text, ok = false) {
   const el = $(elId);
   if (!el) return;
+  el.dataset.messageType = text ? (ok ? "success" : "error") : "";
   el.style.color = ok ? "#0a7a2f" : "#b00020";
   el.textContent = text || "";
 }
@@ -260,6 +315,7 @@ async function loadMeAndPermissions() {
   if ($("openAdminBtn")) $("openAdminBtn").style.display = canOpenAdmin ? "" : "none";
   if ($("containerAdminLink")) $("containerAdminLink").style.display = canUseContainerRegistration ? "" : "none";
   if ($("containerPlanningLink")) $("containerPlanningLink").style.display = canUseContainerPlanning ? "" : "none";
+  refreshModuleSummary();
 
   return true;
 }
@@ -272,6 +328,8 @@ $("logoutBtn")?.addEventListener("click", () => {
 (async () => {
   bindSettingsMenu();
   bindPasswordModal();
+  updateDashboardHero();
+  refreshModuleSummary();
 
   await trySsoIntake();
 
