@@ -15,9 +15,9 @@
   </div>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="settings-menu-wrap" id="settingsMenuWrap">
-      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">⚙️</button>
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen &ouml;ffnen">&#9881;</button>
       <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
-        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort &auml;ndern</button>
         <button class="secondary" id="openAdminBtn" role="menuitem" style="display:none;">Administration</button>
         <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
         <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
@@ -28,96 +28,231 @@
 </header>
 
 <main class="dashboard-main module-dashboard-main">
-  <section class="dashboard-header admin-header">
-    <div class="dashboard-title-row"><b>Modul-Dashboard</b> <span class="pill" id="me">-</span></div>
-    <p class="muted" style="margin:8px 0 0;">Bitte wählen Sie ein Modul aus.</p>
+  <section class="dashboard-header admin-header module-hero">
+    <div class="module-hero__copy">
+      <span class="module-hero__eyebrow">CTSH Operations Hub</span>
+      <div class="dashboard-title-row">
+        <b id="dashboardGreeting">Willkommen im Dashboard</b>
+        <span class="pill" id="me">-</span>
+      </div>
+      <p class="module-hero__lead">
+        Starten Sie direkt in Ihre freigegebenen Arbeitsbereiche, behalten Sie den Zugriff im Blick und springen Sie ohne Umwege in Buchungen, Anmeldung oder Planung.
+      </p>
+      <div class="module-hero__stats">
+        <article class="module-stat-card">
+          <span class="module-stat-card__label">Verf&uuml;gbare Module</span>
+          <strong class="module-stat-card__value" id="moduleCount">0</strong>
+          <span class="module-stat-card__meta">Wird anhand Ihrer Berechtigungen automatisch aktualisiert</span>
+        </article>
+        <article class="module-stat-card">
+          <span class="module-stat-card__label">Zugriffsstatus</span>
+          <strong class="module-stat-card__value" id="moduleAccessState">Pr&uuml;fung l&auml;uft</strong>
+          <span class="module-stat-card__meta">Freigeschaltete Bereiche erscheinen direkt im Dashboard</span>
+        </article>
+      </div>
+    </div>
+
+    <aside class="module-hero__panel" aria-label="Dashboard-Highlights">
+      <article class="module-spotlight module-spotlight--accent">
+        <span class="module-spotlight__label">Heute</span>
+        <strong class="module-spotlight__value" id="dashboardDate">-</strong>
+        <p class="module-spotlight__text">
+          Ihr zentraler Einstiegspunkt f&uuml;r Lager, Container und operative Planung.
+        </p>
+      </article>
+
+      <div class="module-spotlight-list">
+        <div class="module-spotlight-list__item">
+          <span class="module-spotlight-list__icon">01</span>
+          <div>
+            <strong>Direkter Zugriff</strong>
+            <span>Gro&szlig;e Schnellzugriffe f&uuml;r die wichtigsten Anwendungen im Alltag.</span>
+          </div>
+        </div>
+        <div class="module-spotlight-list__item">
+          <span class="module-spotlight-list__icon">02</span>
+          <div>
+            <strong>Empfohlener Start</strong>
+            <span id="dashboardPrimaryModule">Das erste verf&uuml;gbare Modul wird nach dem Laden hervorgehoben.</span>
+          </div>
+        </div>
+        <div class="module-spotlight-list__item">
+          <span class="module-spotlight-list__icon">03</span>
+          <div>
+            <strong>Rechtegesteuert</strong>
+            <span>Die Anzeige passt sich automatisch an Ihre Rolle und Integrationen an.</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </section>
 
   <section class="card module-dashboard-card">
-    <div class="module-grid">
-      <a class="module-button module-button--stacked" href="/app.html" aria-label="Paletten Buchungen">
-        <span class="module-button__icon module-button__icon--square" aria-hidden="true">
-          <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
-            <rect x="13" y="8" width="38" height="48" rx="1.5" fill="#FFE2A0" stroke="#0B0B12" stroke-width="3"></rect>
-            <rect x="19" y="12" width="6" height="40" fill="#FFC24D"></rect>
-            <rect x="31" y="12" width="6" height="40" fill="#FFC24D"></rect>
-            <rect x="43" y="12" width="6" height="40" fill="#FFC24D"></rect>
-            <rect x="25" y="19" width="6" height="9" fill="#FFFFFF"></rect>
-            <rect x="37" y="19" width="6" height="9" fill="#FFFFFF"></rect>
-            <rect x="25" y="34" width="6" height="9" fill="#FFFFFF"></rect>
-            <rect x="37" y="34" width="6" height="9" fill="#FFFFFF"></rect>
-            <circle cx="18" cy="17" r="1.8" fill="#0B0B12"></circle>
-            <circle cx="46" cy="17" r="1.8" fill="#0B0B12"></circle>
-            <circle cx="18" cy="49" r="1.8" fill="#0B0B12"></circle>
-            <circle cx="46" cy="49" r="1.8" fill="#0B0B12"></circle>
-          </svg>
-        </span>
-        <span class="module-button__title">Paletten Buchungen</span>
-      </a>
-      <a class="module-button module-button--stacked" id="containerAdminLink" href="/container-registration" style="display:none;" aria-label="Container Anmeldung">
-        <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
-          <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
-            <defs>
-              <linearGradient id="registrationTruckGradient" x1="31" y1="30" x2="71" y2="30" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#FFB34A"></stop>
-                <stop offset="1" stop-color="#FFD369"></stop>
-              </linearGradient>
-            </defs>
-            <path d="M12 45V30h11l6-7h17v22z" fill="#FF5A7F" stroke="#09090F" stroke-width="3" stroke-linejoin="round"></path>
-            <rect x="31" y="17" width="40" height="26" fill="url(#registrationTruckGradient)" stroke="#09090F" stroke-width="3"></rect>
-            <rect x="38" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
-            <rect x="46" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
-            <rect x="54" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
-            <rect x="62" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
-            <rect x="16" y="44" width="58" height="5" fill="#FF5A7F" stroke="#09090F" stroke-width="3"></rect>
-            <rect x="18" y="26" width="10" height="6" fill="#9BEEFF"></rect>
-            <path d="M13 37h8" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
-            <path d="M73 44h6" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
-            <circle cx="24" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
-            <circle cx="45" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
-            <circle cx="76" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
-          </svg>
-        </span>
-        <span class="module-button__title">Container Anmeldung</span>
-      </a>
-      <a class="module-button module-button--stacked" id="containerPlanningLink" href="/modules/container-planning/index.html" style="display:none;">
-        <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
-          <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
-            <path d="M12 43V27h12l6-7h18v23z" fill="#3D8CFF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
-            <rect x="31" y="13" width="47" height="30" rx="2" fill="#FF4457" stroke="#11111A" stroke-width="3"></rect>
-            <rect x="19" y="23" width="9" height="6" fill="#EAF3FF"></rect>
-            <rect x="39" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
-            <rect x="47" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
-            <rect x="55" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
-            <rect x="63" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
-            <rect x="21" y="43" width="51" height="6" fill="#6F6F76" stroke="#11111A" stroke-width="3"></rect>
-            <path d="M70 43l8 6h6" fill="none" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
-            <circle cx="18" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
-            <circle cx="35" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
-            <circle cx="56" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
-            <circle cx="71" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
-            <circle cx="18" cy="51" r="2.2" fill="#8D95A3"></circle>
-            <circle cx="35" cy="51" r="2.2" fill="#8D95A3"></circle>
-            <circle cx="56" cy="51" r="2.2" fill="#8D95A3"></circle>
-            <circle cx="71" cy="51" r="2.2" fill="#8D95A3"></circle>
-            <path d="M16 13c0-5 4-9 9-9" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
-            <path d="M16 7c0-9 7-16 16-16" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
-            <path d="M16 1c0-13 10-23 23-23" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
-          </svg>
-        </span>
-        <span class="module-button__title">Container und LKW</span>
-        <span class="module-button__subtitle">Planung</span>
-      </a>
+    <div class="module-dashboard-card__head">
+      <div>
+        <span class="module-section-kicker">Arbeitsbereiche</span>
+        <h2>W&auml;hlen Sie Ihren Bereich</h2>
+      </div>
+      <p class="module-dashboard-card__intro">
+        Die Module sind als gro&szlig;e Arbeitskarten aufbereitet und f&uuml;llen das Dashboard jetzt deutlich st&auml;rker aus. Sichtbarkeit und Freigabe richten sich nach Ihren Rechten.
+      </p>
     </div>
-    <p id="moduleMsg" style="margin:12px 0 0;"></p>
+
+    <div class="module-dashboard-layout">
+      <div class="module-grid">
+        <a class="module-button module-button--stacked module-button--pallet" href="/app.html" aria-label="Paletten Buchungen" data-module-name="Paletten Buchungen" data-module-summary="Buchungen, Best&auml;nde und Vorg&auml;nge zentral steuern.">
+          <div class="module-button__top">
+            <span class="module-button__icon module-button__icon--square" aria-hidden="true">
+              <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
+                <rect x="13" y="8" width="38" height="48" rx="1.5" fill="#FFE2A0" stroke="#0B0B12" stroke-width="3"></rect>
+                <rect x="19" y="12" width="6" height="40" fill="#FFC24D"></rect>
+                <rect x="31" y="12" width="6" height="40" fill="#FFC24D"></rect>
+                <rect x="43" y="12" width="6" height="40" fill="#FFC24D"></rect>
+                <rect x="25" y="19" width="6" height="9" fill="#FFFFFF"></rect>
+                <rect x="37" y="19" width="6" height="9" fill="#FFFFFF"></rect>
+                <rect x="25" y="34" width="6" height="9" fill="#FFFFFF"></rect>
+                <rect x="37" y="34" width="6" height="9" fill="#FFFFFF"></rect>
+                <circle cx="18" cy="17" r="1.8" fill="#0B0B12"></circle>
+                <circle cx="46" cy="17" r="1.8" fill="#0B0B12"></circle>
+                <circle cx="18" cy="49" r="1.8" fill="#0B0B12"></circle>
+                <circle cx="46" cy="49" r="1.8" fill="#0B0B12"></circle>
+              </svg>
+            </span>
+            <span class="module-button__tag">Core</span>
+          </div>
+          <div class="module-button__copy">
+            <span class="module-button__eyebrow">Lager und Bewegung</span>
+            <span class="module-button__title">Paletten Buchungen</span>
+            <span class="module-button__description">Buchungen erfassen, Best&auml;nde pr&uuml;fen und Bewegungen l&uuml;ckenlos nachverfolgen.</span>
+          </div>
+          <div class="module-button__footer">
+            <span class="module-button__linktext">Modul &ouml;ffnen</span>
+            <span class="module-button__arrow" aria-hidden="true">&#8594;</span>
+          </div>
+        </a>
+
+        <a class="module-button module-button--stacked module-button--registration" id="containerAdminLink" href="/container-registration" style="display:none;" aria-label="Container Anmeldung" data-module-name="Container Anmeldung" data-module-summary="Container-Anmeldungen schnell erfassen und Zug&auml;nge koordinieren.">
+          <div class="module-button__top">
+            <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
+              <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+                <defs>
+                  <linearGradient id="registrationTruckGradient" x1="31" y1="30" x2="71" y2="30" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#FFB34A"></stop>
+                    <stop offset="1" stop-color="#FFD369"></stop>
+                  </linearGradient>
+                </defs>
+                <path d="M12 45V30h11l6-7h17v22z" fill="#FF5A7F" stroke="#09090F" stroke-width="3" stroke-linejoin="round"></path>
+                <rect x="31" y="17" width="40" height="26" fill="url(#registrationTruckGradient)" stroke="#09090F" stroke-width="3"></rect>
+                <rect x="38" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+                <rect x="46" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+                <rect x="54" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+                <rect x="62" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+                <rect x="16" y="44" width="58" height="5" fill="#FF5A7F" stroke="#09090F" stroke-width="3"></rect>
+                <rect x="18" y="26" width="10" height="6" fill="#9BEEFF"></rect>
+                <path d="M13 37h8" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
+                <path d="M73 44h6" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
+                <circle cx="24" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
+                <circle cx="45" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
+                <circle cx="76" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
+              </svg>
+            </span>
+            <span class="module-button__tag">Operations</span>
+          </div>
+          <div class="module-button__copy">
+            <span class="module-button__eyebrow">Anmeldung und Check-in</span>
+            <span class="module-button__title">Container Anmeldung</span>
+            <span class="module-button__description">Ank&uuml;nfte koordinieren, Registrierungen vorbereiten und Prozesse vor Ort beschleunigen.</span>
+          </div>
+          <div class="module-button__footer">
+            <span class="module-button__linktext">Modul &ouml;ffnen</span>
+            <span class="module-button__arrow" aria-hidden="true">&#8594;</span>
+          </div>
+        </a>
+
+        <a class="module-button module-button--stacked module-button--planning" id="containerPlanningLink" href="/modules/container-planning/index.html" style="display:none;" data-module-name="Container und LKW Planung" data-module-summary="Kapazit&auml;ten, Slots und Transporte vorausschauend abstimmen.">
+          <div class="module-button__top">
+            <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
+              <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+                <path d="M12 43V27h12l6-7h18v23z" fill="#3D8CFF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+                <rect x="31" y="13" width="47" height="30" rx="2" fill="#FF4457" stroke="#11111A" stroke-width="3"></rect>
+                <rect x="19" y="23" width="9" height="6" fill="#EAF3FF"></rect>
+                <rect x="39" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+                <rect x="47" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+                <rect x="55" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+                <rect x="63" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+                <rect x="21" y="43" width="51" height="6" fill="#6F6F76" stroke="#11111A" stroke-width="3"></rect>
+                <path d="M70 43l8 6h6" fill="none" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+                <circle cx="18" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+                <circle cx="35" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+                <circle cx="56" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+                <circle cx="71" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+                <circle cx="18" cy="51" r="2.2" fill="#8D95A3"></circle>
+                <circle cx="35" cy="51" r="2.2" fill="#8D95A3"></circle>
+                <circle cx="56" cy="51" r="2.2" fill="#8D95A3"></circle>
+                <circle cx="71" cy="51" r="2.2" fill="#8D95A3"></circle>
+                <path d="M16 13c0-5 4-9 9-9" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
+                <path d="M16 7c0-9 7-16 16-16" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
+                <path d="M16 1c0-13 10-23 23-23" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
+              </svg>
+            </span>
+            <span class="module-button__tag">Planung</span>
+          </div>
+          <div class="module-button__copy">
+            <span class="module-button__eyebrow">Disposition und Auslastung</span>
+            <span class="module-button__title">Container und LKW Planung</span>
+            <span class="module-button__description">Slots, Transporte und Ressourcen in einer gro&szlig;z&uuml;gigen Planungsansicht abstimmen.</span>
+          </div>
+          <div class="module-button__footer">
+            <span class="module-button__linktext">Modul &ouml;ffnen</span>
+            <span class="module-button__arrow" aria-hidden="true">&#8594;</span>
+          </div>
+        </a>
+      </div>
+
+      <aside class="module-side-panel" aria-label="Hinweise zum Dashboard">
+        <article class="module-side-panel__card">
+          <span class="module-section-kicker">Schnellinfo</span>
+          <h3>Ihr Dashboard reagiert auf Rollen und Integrationen</h3>
+          <p>
+            Freigeschaltete Anwendungen erscheinen automatisch. Nicht verf&uuml;gbare Bereiche bleiben ausgeblendet, damit die Startseite klar und fokussiert bleibt.
+          </p>
+        </article>
+
+        <div class="module-side-panel__list">
+          <div class="module-side-panel__item">
+            <span class="module-side-panel__marker">A</span>
+            <div>
+              <strong>Gro&szlig;z&uuml;giger aufgebaut</strong>
+              <span>Mehr Fl&auml;che f&uuml;r Inhalte, klare Hierarchie und schnellere Orientierung.</span>
+            </div>
+          </div>
+          <div class="module-side-panel__item">
+            <span class="module-side-panel__marker">B</span>
+            <div>
+              <strong>Moderne Kartenstruktur</strong>
+              <span>Jedes Modul bekommt jetzt einen eigenen visuellen Schwerpunkt mit Kurzbeschreibung.</span>
+            </div>
+          </div>
+          <div class="module-side-panel__item">
+            <span class="module-side-panel__marker">C</span>
+            <div>
+              <strong>Einstellungen im Kopfbereich</strong>
+              <span>Passwort, Administration, Theme und Logout bleiben weiterhin mit einem Klick erreichbar.</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <p id="moduleMsg" class="module-status-message" role="status" aria-live="polite"></p>
   </section>
 </main>
 
 <div class="modalBack" id="passwordModalBack" aria-hidden="true">
   <div class="modal" style="max-width:520px; width:100%; box-shadow:0 18px 45px rgba(15,23,42,.3); border:1px solid #e5e7eb;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <h3 style="margin:0;">Passwort ändern</h3>
-      <button class="secondary" type="button" id="closePasswordModalBtn" style="width:auto;">✕</button>
+      <h3 style="margin:0;">Passwort &auml;ndern</h3>
+      <button class="secondary" type="button" id="closePasswordModalBtn" style="width:auto;">&#10005;</button>
     </div>
     <div class="row">
       <div>
@@ -141,7 +276,7 @@
   </div>
 </div>
 
-<footer class="site-copyright">© 2026 / CTSH Systems</footer>
+<footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/public/theme.js"></script>
 <script src="/public/dashboard.js"></script>
 </body>

@@ -78,6 +78,10 @@ const I18N = {
     bookingCardPlate: "Kennzeichen",
     bookingCardOrder: "Auftrag",
     bookingCardWarehouse: "Lager",
+    dayStatusEmpty: "Frei",
+    dayStatusOne: "1 Buchung",
+    dayStatusMany: "{count} Buchungen",
+    dayEmptyHint: "Noch keine Planung fur diesen Tag.",
     bookingType_direct_unload: "Container Direktentladung",
     bookingType_hand_unload: "Container Handentladung",
     bookingType_truck_delivery: "LKW Anlieferung",
@@ -142,6 +146,10 @@ const I18N = {
     bookingCardPlate: "Registarska oznaka",
     bookingCardOrder: "Nalog",
     bookingCardWarehouse: "Skladiste",
+    dayStatusEmpty: "Slobodno",
+    dayStatusOne: "1 rezervacija",
+    dayStatusMany: "{count} rezervacija",
+    dayEmptyHint: "Jos nema planiranih unosa za ovaj dan.",
     bookingType_direct_unload: "Kontejner izravni istovar",
     bookingType_hand_unload: "Kontejner rucni istovar",
     bookingType_truck_delivery: "Dostava kamionom",
@@ -206,6 +214,10 @@ const I18N = {
     bookingCardPlate: "Registracija",
     bookingCardOrder: "Nalog",
     bookingCardWarehouse: "Skladiste",
+    dayStatusEmpty: "Slobodno",
+    dayStatusOne: "1 rezervacija",
+    dayStatusMany: "{count} rezervacija",
+    dayEmptyHint: "Jos nema planiranih unosa za ovaj dan.",
     bookingType_direct_unload: "Kontejner direktan istovar",
     bookingType_hand_unload: "Kontejner rucni istovar",
     bookingType_truck_delivery: "Dostava kamionom",
@@ -231,6 +243,7 @@ let refreshInFlight = null;
 let refreshQueued = false;
 let liveRefreshTimer = null;
 let currentLanguage = normalizeLanguage(localStorage.getItem(LANGUAGE_KEY) || "de");
+const mobileCalendarMedia = window.matchMedia("(max-width: 720px)");
 
 function normalizeLanguage(value) {
   const normalized = String(value || "").trim().toLowerCase().slice(0, 2);
@@ -251,6 +264,20 @@ function t(key, vars = {}) {
     (text, [name, replacement]) => text.replaceAll(`{${name}}`, String(replacement)),
     String(value)
   );
+}
+
+function isMobileCalendarViewport() {
+  return mobileCalendarMedia.matches;
+}
+
+function handleMobileCalendarViewportChange() {
+  render();
+}
+
+if (typeof mobileCalendarMedia.addEventListener === "function") {
+  mobileCalendarMedia.addEventListener("change", handleMobileCalendarViewportChange);
+} else if (typeof mobileCalendarMedia.addListener === "function") {
+  mobileCalendarMedia.addListener(handleMobileCalendarViewportChange);
 }
 
 const liveSocket = typeof window.io === "function"
@@ -541,22 +568,52 @@ function renderGrid() {
   calendarGrid.innerHTML = "";
   calendarGrid.classList.toggle("calendar-grid--day", viewMode === "day");
   weekdayHeader.classList.toggle("weekdays--day", viewMode === "day");
-  const days = viewMode === "month" ? buildMonthCells(cursorDate) : buildWeekCells(cursorDate);
+  const isMobileMonthView = viewMode === "month" && isMobileCalendarViewport();
+  const days = (viewMode === "month" ? buildMonthCells(cursorDate) : buildWeekCells(cursorDate))
+    .filter(({ isCurrentMonth }) => !isMobileMonthView || isCurrentMonth);
 
   days.forEach(({ date, isCurrentMonth }) => {
     const ymd = toYmd(date);
+    const matches = bookings.filter((item) => item.date === ymd);
+    const compact = matches.length > 1 && !isMobileCalendarViewport();
     const dayCard = document.createElement("article");
     dayCard.className = `day-card ${isCurrentMonth ? "" : "day-card--other-month"} ${isToday(date) ? "day-card--today" : ""}`.trim();
     dayCard.dataset.date = ymd;
+    dayCard.classList.toggle("day-card--has-bookings", matches.length > 0);
+
+    const header = document.createElement("div");
+    header.className = "day-card__header";
+
+    const headerMain = document.createElement("div");
+    headerMain.className = "day-card__header-main";
+
+    const weekdayNode = document.createElement("div");
+    weekdayNode.className = "day-card__weekday";
+    weekdayNode.textContent = date.toLocaleDateString(getLocale(), { weekday: "long" });
 
     const dateNode = document.createElement("div");
     dateNode.className = "day-card__date";
-    dateNode.textContent = `${date.getDate()}.${date.getMonth() + 1}.`;
-    dayCard.append(dateNode);
+    dateNode.textContent = formatDayCardDate(date);
+    headerMain.append(weekdayNode, dateNode);
 
-    const matches = bookings.filter((item) => item.date === ymd);
-    const compact = matches.length > 1;
-    matches.forEach((booking) => dayCard.append(createBookingCard(booking, { compact })));
+    const countNode = document.createElement("div");
+    countNode.className = `day-card__count ${matches.length ? "" : "is-empty"}`.trim();
+    countNode.textContent = getDayStatusLabel(matches.length);
+
+    header.append(headerMain, countNode);
+    dayCard.append(header);
+
+    const bookingsNode = document.createElement("div");
+    bookingsNode.className = "day-card__bookings";
+    if (matches.length) {
+      matches.forEach((booking) => bookingsNode.append(createBookingCard(booking, { compact })));
+    } else {
+      const emptyNode = document.createElement("p");
+      emptyNode.className = "day-card__empty";
+      emptyNode.textContent = t("dayEmptyHint");
+      bookingsNode.append(emptyNode);
+    }
+    dayCard.append(bookingsNode);
 
     dayCard.addEventListener("click", (event) => {
       if (event.target.closest(".booking-card")) return;
@@ -596,6 +653,19 @@ function renderGrid() {
 
     calendarGrid.append(dayCard);
   });
+}
+
+function formatDayCardDate(date) {
+  if (isMobileCalendarViewport()) {
+    return date.toLocaleDateString(getLocale(), { day: "2-digit", month: "long" });
+  }
+  return `${date.getDate()}.${date.getMonth() + 1}.`;
+}
+
+function getDayStatusLabel(count) {
+  if (count <= 0) return t("dayStatusEmpty");
+  if (count === 1) return t("dayStatusOne");
+  return t("dayStatusMany", { count });
 }
 
 function createBookingCard(booking, { compact = false } = {}) {
