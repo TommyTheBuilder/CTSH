@@ -206,8 +206,9 @@ async function bindModuleLink(linkId, endpoint, loadingText, unavailableText) {
     if (link.dataset.loading === "1") return;
 
     link.dataset.loading = "1";
-    const originalText = link.textContent;
-    link.textContent = loadingText;
+    const originalContent = link.innerHTML;
+    link.setAttribute("aria-busy", "true");
+    link.innerHTML = `<span class="module-button__loading">${loadingText}</span>`;
 
     try {
       const r = await api(endpoint, { method: "GET", headers: {} });
@@ -221,7 +222,8 @@ async function bindModuleLink(linkId, endpoint, loadingText, unavailableText) {
       setMsg("moduleMsg", unavailableText);
     } finally {
       link.dataset.loading = "0";
-      link.textContent = originalText;
+      link.removeAttribute("aria-busy");
+      link.innerHTML = originalContent;
     }
   });
 }
