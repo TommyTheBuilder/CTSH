@@ -64,6 +64,190 @@ function applyModuleNaming() {
     permissionLabel.lastChild.textContent = " Container und LKW Planung öffnen";
   }
 }
+const PERMISSION_CARD_META = {
+  bookings: {
+    eyebrow: "Operativ",
+    description: "Rechte fuer Erfassung, Einsicht und Belegbearbeitung."
+  },
+  "BestÃ¤nde": {
+    eyebrow: "Reporting",
+    description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
+  },
+  "VorgÃ¤nge": {
+    eyebrow: "Workflow",
+    description: "Rechte fuer den kompletten Lebenszyklus von Faellen."
+  },
+  master: {
+    eyebrow: "Grunddaten",
+    description: "Pflege von Standorten, Abteilungen und Transportpartnern."
+  },
+  users: {
+    eyebrow: "Zugriff",
+    description: "Steuert Benutzerpflege und Abteilungsfokus im Admin-Bereich."
+  },
+  roles: {
+    eyebrow: "Governance",
+    description: "Steuert Rollenpflege und optionalen Vollzugriff."
+  },
+  filters: {
+    eyebrow: "Navigation",
+    description: "Erweitert Auswahlmoeglichkeiten ueber zugewiesene Standorte hinaus."
+  },
+  integrations: {
+    eyebrow: "Module",
+    description: "Steuert direkte Zugriffe auf angebundene Container-Module."
+  }
+};
+
+function setText(id, value) {
+  const el = $(id);
+  if (el) el.textContent = value;
+}
+
+function enhancePermissionCards() {
+  document.querySelectorAll(".permBox").forEach((box) => {
+    const titleEl = box.querySelector("b");
+    if (!titleEl || box.querySelector(".permBox-head")) return;
+
+    const rawTitle = titleEl.textContent.trim();
+    const firstCheckboxId = box.querySelector('input[type="checkbox"]')?.id || "";
+    const metaKey = firstCheckboxId.split("_")[1] || "";
+    const meta = PERMISSION_CARD_META[metaKey] || {
+      eyebrow: "Bereich",
+      description: "Berechtigungen fuer diesen Bereich."
+    };
+
+    box.dataset.permGroup = box.dataset.permGroup || rawTitle;
+
+    const head = document.createElement("div");
+    head.className = "permBox-head";
+    head.innerHTML = `
+      <div>
+        <span class="section-eyebrow">${meta.eyebrow}</span>
+        <b>${rawTitle}</b>
+        <p>${meta.description}</p>
+      </div>
+      <span class="permBox-count">0/0</span>
+    `;
+
+    box.insertBefore(head, titleEl);
+    titleEl.remove();
+  });
+}
+
+function getPermissionBoxes() {
+  const boxes = document.querySelectorAll(".permissions-grid .permBox");
+  if (boxes.length) return Array.from(boxes);
+  return Array.from(document.querySelectorAll(".modern-perm-grid .permBox"));
+}
+
+function updatePermissionCardCounts() {
+  const categoryItems = [];
+
+  getPermissionBoxes().forEach((box) => {
+    const checkboxes = Array.from(box.querySelectorAll('input[type="checkbox"]'));
+    const checked = checkboxes.filter((input) => input.checked).length;
+    const total = checkboxes.length;
+    const countEl = box.querySelector(".permBox-count");
+    if (countEl) countEl.textContent = `${checked}/${total}`;
+    box.classList.toggle("is-dimmed", checked === 0);
+
+    const title = box.dataset.permGroup || box.querySelector(".permBox-head b")?.textContent?.trim() || "Bereich";
+    categoryItems.push({ title, checked, total });
+  });
+
+  const list = $("permissionCategoryList");
+  if (list) {
+    list.innerHTML = categoryItems.map((item) => `
+      <div class="rights-group-item">
+        <strong>${item.title}</strong>
+        <span>${item.checked}/${item.total}</span>
+      </div>
+    `).join("");
+  }
+
+  return categoryItems;
+}
+
+function updateRoleSummary() {
+  const select = $("roleSelect");
+  const roleName = select?.selectedOptions?.[0]?.textContent?.trim() || "Noch keine Rolle";
+  const checkboxes = getPermissionBoxes().flatMap((box) => Array.from(box.querySelectorAll('input[type="checkbox"]')));
+  const total = checkboxes.length;
+  const checked = checkboxes.filter((input) => input.checked).length;
+  const categories = updatePermissionCardCounts();
+  const activeCategories = categories.filter((item) => item.checked > 0).length;
+  const hasAdminAccess = !!$("p_admin_full_access")?.checked;
+
+  setText("activeRoleName", roleName);
+  setText("sidebarRoleName", roleName);
+  setText("rolePermissionCount", String(checked));
+  setText("rolePermissionTotal", String(total));
+  setText("sidebarPermissionCount", String(checked));
+  setText("roleCategoryCount", String(activeCategories));
+  setText("sidebarCategoryCount", String(activeCategories));
+  setText("roleAccessMode", hasAdminAccess ? "Vollzugriff" : checked === 0 ? "Kein Zugriff" : "Standard");
+  setText("roleAccessHint", hasAdminAccess
+    ? "Admin-Zugang mit vollem Zugriff auf alle Bereiche"
+    : checked === 0
+      ? "Der Rolle sind aktuell keine Rechte zugewiesen"
+      : "Gezielter Zugriff auf freigegebene Funktionen");
+  setText("roleSummaryNote", hasAdminAccess
+    ? `${roleName} hat derzeit Vollzugriff. Einzelrechte sind damit zusaetzlich freigegeben.`
+    : `${roleName} nutzt ${checked} aktive Rechte in ${activeCategories} Bereichen.`);
+  setText("sidebarRoleHint", hasAdminAccess
+    ? "Diese Rolle kann den gesamten Admin-Bereich ohne weitere Einschraenkungen oeffnen."
+    : checked === 0
+      ? "Aktuell sind keine aktiven Rechte gesetzt. Die Rolle kann damit keine Admin-Funktionen nutzen."
+      : "Die Anzeige zeigt dir, wie breit die Freigaben ueber die einzelnen Bereiche verteilt sind.");
+  setText("sidebarAccessState", hasAdminAccess ? "Vollzugriff aktiv" : checked === 0 ? "Ohne Freigaben" : "Standardzugriff");
+}
+
+function applyPermissionFilters() {
+  const term = String($("permissionSearch")?.value || "").trim().toLowerCase();
+  const onlyActive = !!$("permissionShowEnabledOnly")?.checked;
+
+  getPermissionBoxes().forEach((box) => {
+    const labels = Array.from(box.querySelectorAll("label"));
+    const title = box.querySelector(".permBox-head b")?.textContent?.trim().toLowerCase() || "";
+    const description = box.querySelector(".permBox-head p")?.textContent?.trim().toLowerCase() || "";
+    const boxMatches = !term || title.includes(term) || description.includes(term);
+
+    let visibleCount = 0;
+    labels.forEach((label) => {
+      const checkbox = label.querySelector('input[type="checkbox"]');
+      const text = label.textContent.trim().toLowerCase();
+      const matchesTerm = !term || boxMatches || text.includes(term);
+      const matchesActive = !onlyActive || !!checkbox?.checked;
+      const visible = matchesTerm && matchesActive;
+      label.classList.toggle("is-hidden", !visible);
+      if (visible) visibleCount += 1;
+    });
+
+    box.classList.toggle("is-empty", visibleCount === 0);
+  });
+}
+
+function updateAdminOverviewCounts() {
+  setText("adminRoleCount", String(ROLES.length));
+  setText("adminDepartmentCount", String(DEPARTMENTS.length));
+  setText("adminUserCount", String(USERS.filter((user) => user?.is_active !== false).length));
+}
+
+function bindPermissionPanel() {
+  getPermissionBoxes().forEach((box) => {
+    box.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        updateRoleSummary();
+        applyPermissionFilters();
+      });
+    });
+  });
+
+  $("permissionSearch")?.addEventListener("input", applyPermissionFilters);
+  $("permissionShowEnabledOnly")?.addEventListener("change", applyPermissionFilters);
+}
+
 function setMsg(id, text, ok = false) {
   const el = $(id);
   if (!el) return;
@@ -410,6 +594,7 @@ async function loadDepartments() {
 
   populateUserFilters();
   renderUsersTable();
+  updateAdminOverviewCounts();
 }
 
 async function loadAdminHistory({ resetPage = false } = {}) {
@@ -672,6 +857,12 @@ async function loadRoles() {
 
   // apply permissions for currently selected
   if (sel && sel.value) applyRoleToCheckboxes(Number(sel.value));
+  else {
+    updateRoleSummary();
+    applyPermissionFilters();
+  }
+
+  updateAdminOverviewCounts();
 }
 
 function getFilteredUsers() {
@@ -784,6 +975,7 @@ async function loadUsers() {
   }
 
   applyUserEditSelection();
+  updateAdminOverviewCounts();
 }
 
 function applyUserEditSelection() {
@@ -908,8 +1100,15 @@ function setPermCheckboxes(perms) {
 
 function applyRoleToCheckboxes(roleId) {
   const role = ROLES.find(r => Number(r.id) === Number(roleId));
-  if (!role) return setPermCheckboxes({});
+  if (!role) {
+    setPermCheckboxes({});
+    updateRoleSummary();
+    applyPermissionFilters();
+    return;
+  }
   setPermCheckboxes(role.permissions || {});
+  updateRoleSummary();
+  applyPermissionFilters();
 }
 
 // ---------------- Actions ----------------
@@ -1185,6 +1384,9 @@ $("saveUserBtn")?.addEventListener("click", async () => {
     bindSettingsMenu();
     bindPasswordModal();
     applyModuleNaming();
+    enhancePermissionCards();
+    bindPermissionPanel();
+    updateRoleSummary();
     await loadMe();
     await loadPerms();
 

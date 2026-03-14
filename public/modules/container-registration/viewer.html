@@ -447,7 +447,8 @@ const socket = io("/container-registration");
 let audioContext = null;
 let notificationRegistration = null;
 let alertsPrimed = false;
-let currentLang = localStorage.getItem("viewerLang") || "de";
+const VIEWER_LANG_KEY = "viewerLang";
+let currentLang = getInitialLanguage();
 let currentState = null;
 const queryParams = new URLSearchParams(window.location.search);
 const filteredPlate = String(queryParams.get("plate") || "").trim().toUpperCase();
@@ -461,6 +462,7 @@ const ALERT_VIBRATION_GAP = Math.max(0, Math.round((ALERT_REPEAT_INTERVAL * 1000
 
 const I18N = {
   de: {
+    pageTitle: "Container Status",
     title: "Container Status",
     subtitle: "Live-Übersicht",
     statusRed: "Slot erstellt",
@@ -471,10 +473,21 @@ const I18N = {
     scheduleLabel: "Termin",
     registeredAt: "Angemeldet um",
     registered: "Angemeldet",
+    slotLabel: "Slot",
+    routeUrlLabel: "Routenlink",
+    emptyState: "Kein gebuchter Slot fuer Kennzeichen <b>{plate}</b> gefunden.",
+    unavailableState: "Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.",
+    settingsAria: "Einstellungen",
+    darkmodeToggle: "Darkmode umschalten",
+    audioContextError: "Audiokontext konnte nicht initialisiert werden:",
+    notificationPermissionError: "Benachrichtigungsrechte konnten nicht angefragt werden:",
+    notificationDisplayError: "Systembenachrichtigung konnte nicht angezeigt werden:",
+    serviceWorkerError: "Viewer Service Worker konnte nicht registriert werden:",
     routeCta: "📍 Route zur Rampe öffnen",
     toggle: "English"
   },
   en: {
+    pageTitle: "Container Status",
     title: "Container Status",
     subtitle: "Live overview",
     statusRed: "Slot created",
@@ -485,6 +498,16 @@ const I18N = {
     scheduleLabel: "Slot",
     registeredAt: "Checked in at",
     registered: "Checked in",
+    slotLabel: "Slot",
+    routeUrlLabel: "Route link",
+    emptyState: "No booked slot found for license plate <b>{plate}</b>.",
+    unavailableState: "Portal session is missing, expired, or access is not granted. Please reopen it through the portal with the required permissions.",
+    settingsAria: "Settings",
+    darkmodeToggle: "Toggle dark mode",
+    audioContextError: "Could not initialize audio context:",
+    notificationPermissionError: "Could not request notification permission:",
+    notificationDisplayError: "Could not display system notification:",
+    serviceWorkerError: "Could not register viewer service worker:",
     routeCta: "📍 Open route to ramp",
     toggle: "Deutsch"
   }
@@ -516,6 +539,30 @@ function t(key){
   return I18N[currentLang]?.[key] || I18N.de[key] || key;
 }
 
+function normalizeLanguage(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized.startsWith("en")) return "en";
+  return "de";
+}
+
+function detectDeviceLanguage() {
+  const candidates = Array.isArray(navigator.languages) && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language, navigator.userLanguage];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    return normalizeLanguage(candidate);
+  }
+
+  return "de";
+}
+
+function getInitialLanguage() {
+  const saved = localStorage.getItem(VIEWER_LANG_KEY);
+  return saved ? normalizeLanguage(saved) : detectDeviceLanguage();
+}
+
 function isGreenStatus(status){
   const normalized = String(status || "").trim().toLowerCase();
   return normalized === "green" || normalized === "to_ramp" || normalized === "waiting_customs" || normalized === "customs_released";
@@ -544,7 +591,7 @@ function plateText(p){ return (p && p.trim()) ? p.trim() : "---"; }
 
 function rampLinkHtml(status){
   if (!isGreenStatus(status)) return "";
-  return `<div class="rampCta"><a href="https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6" target="_blank" rel="noopener noreferrer">${t("routeCta")}</a><div class="rampUrl">https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6</div></div>`;
+  return `<div class="rampCta"><a href="https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6" target="_blank" rel="noopener noreferrer">${t("routeCta")}</a><div class="rampUrl">${t("routeUrlLabel")}: https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6</div></div>`;
 }
 
 function registeredTime(iso){
@@ -577,7 +624,7 @@ function renderAll(state){
 
   const visibleIds = getVisibleContainerIds(state);
   if (!visibleIds.length) {
-    grid.innerHTML = `<div class="emptyState">Kein gebuchter Slot für Kennzeichen <b>${filteredPlate}</b> gefunden.</div>`;
+    grid.innerHTML = `<div class="emptyState">${t("emptyState").replace("{plate}", filteredPlate)}</div>`;
     return;
   }
 
@@ -593,12 +640,12 @@ function renderAll(state){
     card.innerHTML = `
       <div class="cardTop">
         <div>
-          <div class="slotLabel">Slot ${String(i).padStart(2, "0")}</div>
+          <div class="slotLabel">${t("slotLabel")} ${String(i).padStart(2, "0")}</div>
           <div class="name">Container ${i}</div>
         </div>
         <div class="pills">
           <div class="pill tone-${statusTone(c.status)}" id="pill-${i}">${statusText(c.status)}</div>
-          <div class="pill" id="time-${i}">⏱ Termin ${time}</div>
+          <div class="pill" id="time-${i}">⏱ ${t("scheduleLabel")} ${time}</div>
         </div>
       </div>
       <div class="statusArea">
@@ -631,7 +678,7 @@ function applyOne(id, data){
   document.getElementById("card-"+id).className = "card status-" + tone;
   document.getElementById("pill-"+id).textContent = statusText(data.status);
   document.getElementById("pill-"+id).className = "pill tone-" + tone;
-  document.getElementById("time-"+id).textContent = "⏱ Termin " + time;
+  document.getElementById("time-"+id).textContent = "⏱ " + t("scheduleLabel") + " " + time;
   document.getElementById("plate-"+id).textContent = plateText(data.plate);
   document.getElementById("metaStatus-"+id).textContent = statusText(data.status);
   document.getElementById("metaTime-"+id).textContent = t("scheduleLabel") + ": " + time;
@@ -641,6 +688,8 @@ function applyOne(id, data){
 }
 
 function applyStaticTranslations(){
+  document.documentElement.lang = currentLang;
+  document.title = t("pageTitle");
   document.getElementById("title").textContent = t("title");
   document.getElementById("subtitle").textContent = t("subtitle");
   document.getElementById("legend-red").textContent = t("statusRed");
@@ -649,6 +698,8 @@ function applyStaticTranslations(){
   document.getElementById("legend-violet").textContent = t("statusViolet");
   document.getElementById("legend-green").textContent = t("statusGreen");
   document.getElementById("langToggle").textContent = t("toggle");
+  document.getElementById("settingsToggle").setAttribute("aria-label", t("settingsAria"));
+  document.getElementById("darkmodeToggle").textContent = t("darkmodeToggle");
 }
 
 async function ensureAudioContext() {
@@ -657,7 +708,7 @@ async function ensureAudioContext() {
     if (audioContext.state === "suspended") await audioContext.resume();
     return audioContext;
   } catch (error) {
-    console.warn("Audiokontext konnte nicht initialisiert werden:", error);
+    console.warn(t("audioContextError"), error);
     return null;
   }
 }
@@ -669,7 +720,7 @@ async function requestNotificationPermission() {
   try {
     return await Notification.requestPermission();
   } catch (error) {
-    console.warn("Benachrichtigungsrechte konnten nicht angefragt werden:", error);
+    console.warn(t("notificationPermissionError"), error);
     return Notification.permission;
   }
 }
@@ -750,7 +801,7 @@ async function showBackgroundNotification(id, data) {
 
     new Notification(title, options);
   } catch (error) {
-    console.warn("Systembenachrichtigung konnte nicht angezeigt werden:", error);
+    console.warn(t("notificationDisplayError"), error);
   }
 }
 
@@ -772,7 +823,7 @@ async function initializeAlerts() {
     try {
       notificationRegistration = await navigator.serviceWorker.register("/container-registration/viewer-sw.js");
     } catch (error) {
-      console.warn("Viewer Service Worker konnte nicht registriert werden:", error);
+      console.warn(t("serviceWorkerError"), error);
     }
   }
 
@@ -783,7 +834,7 @@ async function initializeAlerts() {
 
 document.getElementById("langToggle").addEventListener("click", () => {
   currentLang = currentLang === "de" ? "en" : "de";
-  localStorage.setItem("viewerLang", currentLang);
+  localStorage.setItem(VIEWER_LANG_KEY, currentLang);
   applyStaticTranslations();
   if (currentState) renderAll(currentState);
 });
@@ -825,7 +876,7 @@ socket.on("statusChanged", ({ id, data }) => {
 });
 
 socket.on("connect_error", () => {
-  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
+  renderUnavailableState(t("unavailableState"));
 });
 
 void initializeTheme();

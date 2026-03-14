@@ -342,7 +342,8 @@ const plateEl = document.getElementById("plate");
 const msgEl = document.getElementById("msg");
 const btnEl = document.getElementById("sendBtn");
 const selInfoEl = document.getElementById("selInfo");
-let currentLang = localStorage.getItem("driverLang") || "de";
+const DRIVER_LANG_KEY = "driverLang";
+let currentLang = getInitialLanguage();
 
 function applyTheme(theme) {
   const isDark = theme === "dark";
@@ -368,6 +369,7 @@ function toggleSettingsMenu(force) {
 
 const I18N = {
   de: {
+    pageTitle: "Fahrer Anmeldung",
     title: "Fahrer Anmeldung",
     subtitle: "Nur Container mit Termin-Uhrzeit sind auswählbar.",
     legendRed: "Frei",
@@ -395,9 +397,15 @@ const I18N = {
     msgSelectFirst: "Bitte zuerst einen Container auswählen.",
     msgNotSelectable: "Dieser Container ist nicht auswählbar. Bitte einen anderen wählen.",
     msgEnterPlate: "Bitte Kennzeichen eingeben.",
+    unavailableState: "Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte über das Portal mit den passenden Rechten neu öffnen.",
+    moduleDisconnected: "Container-Modul nicht verbunden.",
+    settingsAria: "Einstellungen",
+    darkmodeToggle: "Darkmode umschalten",
+    waitingCustoms: "Warten auf Zollfreigabe",
     toggle: "English"
   },
   en: {
+    pageTitle: "Driver Check-in",
     title: "Driver Check-in",
     subtitle: "Only containers with a scheduled time can be selected.",
     legendRed: "Free",
@@ -425,6 +433,11 @@ const I18N = {
     msgSelectFirst: "Please select a container first.",
     msgNotSelectable: "This container cannot be selected. Please choose another one.",
     msgEnterPlate: "Please enter a license plate.",
+    unavailableState: "Portal session is missing, expired, or access is not granted. Please reopen it through the portal with the required permissions.",
+    moduleDisconnected: "Container module not connected.",
+    settingsAria: "Settings",
+    darkmodeToggle: "Toggle dark mode",
+    waitingCustoms: "Waiting for customs release",
     toggle: "Deutsch"
   }
 };
@@ -433,9 +446,33 @@ function t(key){
   return I18N[currentLang]?.[key] || I18N.de[key] || key;
 }
 
+function normalizeLanguage(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized.startsWith("en")) return "en";
+  return "de";
+}
+
+function detectDeviceLanguage() {
+  const candidates = Array.isArray(navigator.languages) && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language, navigator.userLanguage];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    return normalizeLanguage(candidate);
+  }
+
+  return "de";
+}
+
+function getInitialLanguage() {
+  const saved = localStorage.getItem(DRIVER_LANG_KEY);
+  return saved ? normalizeLanguage(saved) : detectDeviceLanguage();
+}
+
 function statusText(status){
   if (status === "customs_released") return t("statusGreen");
-  if (status === "waiting_customs") return "Warten auf Zollfreigabe";
+  if (status === "waiting_customs") return t("waitingCustoms");
   if (status === "to_ramp") return t("statusGreen");
   if (status === "registered") return t("statusOrange");
   if (status === "green") return t("statusGreen");
@@ -477,6 +514,14 @@ function showMsg(text){
 function clearMsg(){
   msgEl.style.display = "none";
   msgEl.textContent = "";
+}
+
+function renderUnavailableState(message){
+  gridEl.innerHTML = `
+    <div style="grid-column:1 / -1;padding:18px 20px;border-radius:18px;border:1px dashed var(--stroke);background:linear-gradient(180deg, var(--card), var(--card2));color:var(--white);">
+      ${message}
+    </div>
+  `;
 }
 
 function focusPlateInput(){
@@ -571,6 +616,8 @@ function applyOne(id, data){
 }
 
 function applyStaticTranslations(){
+  document.documentElement.lang = currentLang;
+  document.title = t("pageTitle");
   document.getElementById("title").textContent = t("title");
   document.getElementById("subtitle").textContent = t("subtitle");
   document.getElementById("legend-red").textContent = t("legendRed");
@@ -581,6 +628,8 @@ function applyStaticTranslations(){
   btnEl.textContent = t("registerBtn");
   document.getElementById("noteText").textContent = t("note");
   document.getElementById("langToggle").textContent = t("toggle");
+  document.getElementById("settingsToggle").setAttribute("aria-label", t("settingsAria"));
+  document.getElementById("darkmodeToggle").textContent = t("darkmodeToggle");
 }
 
 socket.on("init", (s) => {
@@ -596,13 +645,13 @@ socket.on("statusChanged", ({ id, data }) => {
 });
 
 socket.on("connect_error", () => {
-  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
-  showMsg("Container-Modul nicht verbunden.");
+  renderUnavailableState(t("unavailableState"));
+  showMsg(t("moduleDisconnected"));
 });
 
 document.getElementById("langToggle").addEventListener("click", () => {
   currentLang = currentLang === "de" ? "en" : "de";
-  localStorage.setItem("driverLang", currentLang);
+  localStorage.setItem(DRIVER_LANG_KEY, currentLang);
   applyStaticTranslations();
   if (state) {
     renderAll();
