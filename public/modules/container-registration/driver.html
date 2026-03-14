@@ -45,7 +45,7 @@ header{
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
 }
 
-.headerBar { width: 100%; height:64px; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:0 24px; }
+.headerBar { width: 100%; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:10px 24px; }
 .logoLink { display:inline-flex; align-items:center; }
 .logoImage { height:42px; width:auto; object-fit:contain; }
 .headerActions { display:flex; align-items:center; gap:10px; margin-left:auto; }
@@ -84,22 +84,14 @@ body.dark {
   gap: 12px;
   flex-wrap: wrap;
 }
-h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: var(--white); }
-.headerContent{
-  padding-top: 8px;
-  padding-bottom: 10px;
-}
-.headerContent .sub{ color: rgba(255,255,255,.86); }
-.headerContent .legend{ color:#fff; }
-.headerContent .badge{ border-color: rgba(248,250,252,.32); background: rgba(15,23,42,.22); }
-.headerContent .langToggle{ border-color: rgba(248,250,252,.35); background: rgba(37,99,235,.9); color:#fff; }
-.sub{ margin:6px 0 0; color: var(--muted); font-size: 13px; }
+h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: #fff; }
+.sub{ margin:6px 0 0; color: rgba(255,255,255,.85); font-size: 13px; }
 
 .legend{
   display:flex;
   gap: 10px;
   flex-wrap: wrap;
-  color: var(--white);
+  color: #fff;
   font-size: 12px;
 }
 .langToggle{
@@ -127,7 +119,7 @@ h1{ margin:0; font-size: 20px; letter-spacing:.3px; color: var(--white); }
 .dot.orange{ background: var(--orange); }
 .dot.green{ background: var(--green); }
 
-main .wrap{ padding-top: 10px; padding-bottom: 22px; }
+main .wrap{ padding-top: 16px; padding-bottom: 22px; }
 
 .grid{
   display:grid;
@@ -278,6 +270,10 @@ input{
 }
 .selectedInfo b{ color: var(--white); }
 
+body.dark h1,
+body.dark .legend { color: #fff; }
+
+body.dark .sub { color: rgba(255,255,255,.85); }
 </style>
 </head>
 
@@ -297,7 +293,8 @@ input{
       </div>
     </div>
   </div>
-  <div class="wrap top headerContent">
+
+  <div class="wrap top">
     <div>
       <h1 id="title">Fahrer Anmeldung</h1>
       <div class="sub" id="subtitle">Nur Container mit Termin-Uhrzeit sind auswählbar.</div>
@@ -471,12 +468,6 @@ function showMsg(text){
 function clearMsg(){
   msgEl.style.display = "none";
   msgEl.textContent = "";
-}
-
-function renderUnavailableState(message){
-  gridEl.innerHTML = `<div class="small" style="grid-column:1 / -1; padding:18px 0;">${message}</div>`;
-  selectedId = null;
-  updateSelectedInfo();
 }
 
 function focusPlateInput(){

@@ -197,6 +197,11 @@ body.theme-dark {
   z-index: 50;
 }
 .modal-overlay.is-open { display: flex; }
+.modal-overlay--confirm {
+  z-index: 90;
+  background: rgba(2, 6, 23, 0.74);
+  backdrop-filter: blur(5px);
+}
 .modal {
   width: min(530px, 100%);
   background: var(--panel);
@@ -231,6 +236,7 @@ body.theme-dark select {
 .confirm-modal {
   width: min(480px, 100%);
   padding: 1.25rem;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.42);
 }
 .confirm-modal__header {
   display: flex;
@@ -267,6 +273,7 @@ body.theme-dark select {
   color: var(--text);
   font-size: 0.95rem;
   line-height: 1.55;
+  font-weight: 500;
 }
 .confirm-modal__hint {
   margin: 0.75rem 0 0;
@@ -309,6 +316,9 @@ body.theme-dark .confirm-delete {
 body.theme-dark .confirm-modal__badge {
   background: linear-gradient(135deg, rgba(127, 29, 29, 0.35), rgba(185, 28, 28, 0.28));
   color: #fecaca;
+}
+body.theme-dark .confirm-modal {
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52);
 }
 body.theme-dark .confirm-modal__eyebrow,
 body.theme-dark .confirm-modal__hint {
