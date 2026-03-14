@@ -73,8 +73,19 @@ function getAuthenticatedPortalUser(req) {
 
   try {
     return jwt.verify(token, JWT_SECRET);
-  } catch {
-    return null;
+  } catch (_err1) {
+    try {
+      const claims = jwt.verify(token, SHARED_AUTH_SECRET);
+      return {
+        id: claims.id,
+        username: claims.username,
+        role: claims.role || "admin",
+        role_id: claims.role_id || null,
+        location_id: claims.location_id || null
+      };
+    } catch (_err2) {
+      return null;
+    }
   }
 }
 
@@ -1198,11 +1209,15 @@ app.get("/api/modules/container-registration/admin-history.csv", authRequired, r
 });
 
 containerRegistrationNamespace.use(async (socket, next) => {
+  const authObj = socket.handshake.auth || {};
+  const queryObj = socket.handshake.query || {};
+  const tokenFromAuth = authObj.token || authObj.portalToken || queryObj.portalToken || queryObj.token;
   const fakeReq = {
     headers: {
-      authorization: socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : "",
+      authorization: tokenFromAuth ? `Bearer ${tokenFromAuth}` : "",
       cookie: socket.handshake.headers.cookie || ""
-    }
+    },
+    query: queryObj
   };
   const user = getAuthenticatedPortalUser(fakeReq);
   if (!user) return next(new Error("UNAUTHENTICATED"));
