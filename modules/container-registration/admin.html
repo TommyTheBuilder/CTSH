@@ -68,6 +68,13 @@ header .badge,
 header .smallBtn{
   border-color: rgba(248,250,252,.5);
 }
+header .smallBtn{
+  background: rgba(255,255,255,.12);
+}
+header .smallBtn:hover{
+  background: rgba(255,255,255,.18);
+  border-color: rgba(248,250,252,.65);
+}
 
 main{ padding-top: 12px; }
 
@@ -343,6 +350,12 @@ main .wrap{
   flex-direction:column;
   gap: 14px;
 }
+.controls > div:not(.row):not(.regBox){
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: var(--surface-soft);
+}
 label{
   font-size: 12px;
   color: var(--muted);
@@ -541,7 +554,8 @@ body.dark .statCard{
 }
 body.dark .fieldCard,
 body.dark .actionGroup,
-body.dark .tableWrap{
+body.dark .tableWrap,
+body.dark .controls > div:not(.row):not(.regBox){
   border-color: #334155;
 }
 body.dark .menuItem.darkSection{
@@ -881,11 +895,15 @@ function showToast(msg){
 
 function renderUnavailableState(message){
   const authBlock = document.getElementById("authBlock");
+  const overviewPanel = document.getElementById("overviewPanel");
+  const controlSection = document.getElementById("controlSection");
   const grid = document.getElementById("grid");
   const historyPanel = document.getElementById("historyPanel");
   const authNote = document.querySelector("#authBlock .note");
 
   if (authBlock) authBlock.style.display = "block";
+  if (overviewPanel) overviewPanel.style.display = "none";
+  if (controlSection) controlSection.style.display = "none";
   if (grid) grid.style.display = "none";
   if (historyPanel) historyPanel.style.display = "none";
   if (authNote) authNote.textContent = message;
@@ -905,7 +923,10 @@ function renderAll(){
 
     card.innerHTML = `
       <div class="cardTop">
-        <div class="name">Container ${i}</div>
+        <div>
+          <div class="slotLabel">Slot ${String(i).padStart(2, "0")}</div>
+          <div class="name">Container ${i}</div>
+        </div>
         <div class="statusTag ${tagClass(c.status)}" id="tag-${i}">${statusText(c.status)}</div>
       </div>
 
@@ -976,6 +997,8 @@ function renderAll(){
       }
     });
   }
+
+  updateOverview();
 }
 
 function applyOne(id, data){
@@ -1015,6 +1038,7 @@ function applyOne(id, data){
     btnCustomsOk.classList.toggle("greenActive", normalizedStatus(data.status) === "customs_released");
   }
 
+  updateOverview();
 }
 
 // ===== Historie UI (abgeschlossene Buchungen + Detailverlauf) =====
