@@ -109,7 +109,7 @@ main{ padding-top: 12px; }
   z-index: 30;
   background: #F1F5F9;
 }
-.settingsMenu.open { display: block; }
+.hidden { display: none !important; }
 .menuItem { width: 100%; display: block; text-align: left; border: 0; margin: 0; padding: 11px 14px; font-size: 14px; cursor: pointer; }
 .menuItem.darkSection { background: #1F2937; color: #fff; font-weight: 700; }
 .menuItem.lightSection { background: #F1F5F9; color: #0F172A; border-bottom: 1px solid #E2E8F0; }
@@ -448,7 +448,7 @@ body.dark .toast{
     <div class="headerActions">
       <div class="settingsWrap">
         <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
-        <div class="settingsMenu" id="settingsMenu" role="menu">
+        <div class="settingsMenu hidden" id="settingsMenu" role="menu">
           <a class="menuItem menuItemLink darkSection" href="./admin.html">Admin</a>
           <button class="menuItem lightSection" type="button" id="changePasswordBtn">Passwort ändern</button>
           <button class="menuItem lightSection" type="button" id="openContainerLoginBtn">Container Anmeldung</button>
@@ -527,18 +527,19 @@ body.dark .toast{
 <div id="toast" class="toast"></div>
 
 <script>
-const pageUrl = new URL(window.location.href);
-const pageParams = pageUrl.searchParams;
-const adminLegacyToken = String(pageParams.get("portalToken") || pageParams.get("token") || "").trim();
-if (adminLegacyToken) {
-  localStorage.setItem("token", adminLegacyToken);
-  pageParams.delete("portalToken");
-  pageParams.delete("token");
-  history.replaceState({}, document.title, `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`);
+const urlParams = new URLSearchParams(window.location.search);
+const portalToken = urlParams.get('portalToken') || urlParams.get('token') || sessionStorage.getItem('portalToken');
+
+if (portalToken) {
+    sessionStorage.setItem('portalToken', portalToken);
+    // Bereinigt die URL, damit das Token verschwindet
+    window.history.replaceState({}, document.title, window.location.pathname);
 }
-const adminPortalToken = String(adminLegacyToken || localStorage.getItem("token") || "").trim();
+
 const socket = io("/container-registration", {
-  auth: adminPortalToken ? { token: adminPortalToken } : {}
+  auth: { token: portalToken },
+  query: { portalToken: portalToken },
+  withCredentials: true
 });
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
@@ -570,8 +571,8 @@ function applyTheme(theme){
 function toggleSettingsMenu(force) {
   const menu = document.getElementById("settingsMenu");
   const btn = document.getElementById("settingsToggle");
-  const shouldOpen = typeof force === "boolean" ? force : !menu.classList.contains("open");
-  menu.classList.toggle("open", shouldOpen);
+  const shouldOpen = typeof force === "boolean" ? force : menu.classList.contains("hidden");
+  menu.classList.toggle("hidden", !shouldOpen);
   btn.setAttribute("aria-expanded", String(shouldOpen));
 }
 
@@ -963,7 +964,9 @@ const settingsToggleBtn = document.getElementById("settingsToggle");
 if (settingsToggleBtn) {
   settingsToggleBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    toggleSettingsMenu();
+    const menu = document.getElementById("settingsMenu");
+    menu.classList.toggle('hidden');
+    settingsToggleBtn.setAttribute("aria-expanded", String(!menu.classList.contains("hidden")));
   });
 }
 
