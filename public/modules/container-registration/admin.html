@@ -527,12 +527,16 @@ body.dark .toast{
 <div id="toast" class="toast"></div>
 
 <script>
-const pageParams = new URLSearchParams(window.location.search);
-const portalTokenFromUrl = String(pageParams.get("portalToken") || "").trim();
-if (portalTokenFromUrl) {
-  sessionStorage.setItem("portalToken", portalTokenFromUrl);
+const pageUrl = new URL(window.location.href);
+const pageParams = pageUrl.searchParams;
+const adminLegacyToken = String(pageParams.get("portalToken") || pageParams.get("token") || "").trim();
+if (adminLegacyToken) {
+  localStorage.setItem("token", adminLegacyToken);
+  pageParams.delete("portalToken");
+  pageParams.delete("token");
+  history.replaceState({}, document.title, `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`);
 }
-const adminPortalToken = String(sessionStorage.getItem("portalToken") || "").trim();
+const adminPortalToken = String(adminLegacyToken || localStorage.getItem("token") || "").trim();
 const socket = io("/container-registration", {
   auth: adminPortalToken ? { token: adminPortalToken } : {}
 });
@@ -542,6 +546,18 @@ let isAuthed = false;
 let currentUser = "";
 let themeStorageKey = "admin-theme";
 let ssoRedirectInFlight = false;
+
+function setAdminAccessState(allowed, message = "") {
+  isAuthed = !!allowed;
+  document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
+  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
+  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
+
+  const note = document.querySelector("#authBlock .note");
+  if (note && message) {
+    note.textContent = message;
+  }
+}
 
 function applyTheme(theme){
   const isDark = theme === "dark";
@@ -890,11 +906,8 @@ socket.on("init", (state) => {
 });
 
 socket.on("adminAuthResult", ({ ok, user: authUser }) => {
-  isAuthed = !!ok;
   currentUser = String(authUser || "").trim();
-  document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
-  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
-  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
+  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte die Container-Anmeldung ueber das Portal oeffnen.");
 
   if (isAuthed && currentUser) {
     const nextThemeKey = resolveThemeStorageKey(currentUser);
@@ -913,6 +926,11 @@ socket.on("adminAuthResult", ({ ok, user: authUser }) => {
   } else {
     showToast("Kein Admin-Zugriff");
   }
+});
+
+socket.on("connect_error", () => {
+  setAdminAccessState(false, "Portal-Sitzung fehlt oder ist abgelaufen. Bitte die Container-Anmeldung ueber das Portal neu oeffnen.");
+  showToast("Container-Modul nicht verbunden");
 });
 
 socket.on("statusChanged", ({ id, data }) => {
@@ -976,7 +994,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     console.warn("Logout endpoint nicht erreichbar:", error);
   }
   localStorage.removeItem(themeStorageKey);
-  sessionStorage.removeItem("portalToken");
+  localStorage.removeItem("token");
   toggleSettingsMenu(false);
   window.location.href = "/";
 });
