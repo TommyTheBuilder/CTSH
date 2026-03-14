@@ -36,55 +36,73 @@
   <section class="card module-dashboard-card">
     <div class="module-grid">
       <a class="module-button module-button--stacked" href="/app.html" aria-label="Paletten Buchungen">
-        <span class="module-button__icon" aria-hidden="true">
-          <svg viewBox="0 0 48 48" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="10" y="8" width="28" height="8" rx="2" fill="currentColor" opacity="0.12"></rect>
-            <rect x="8" y="18" width="12" height="10" rx="2"></rect>
-            <rect x="20" y="18" width="10" height="10" rx="2" fill="currentColor" opacity="0.08"></rect>
-            <rect x="30" y="18" width="10" height="10" rx="2"></rect>
-            <path d="M8 31h32"></path>
-            <path d="M10 35h28"></path>
-            <path d="M12 31v4"></path>
-            <path d="M20 31v4"></path>
-            <path d="M28 31v4"></path>
-            <path d="M36 31v4"></path>
+        <span class="module-button__icon module-button__icon--square" aria-hidden="true">
+          <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
+            <rect x="13" y="8" width="38" height="48" rx="1.5" fill="#FFE2A0" stroke="#0B0B12" stroke-width="3"></rect>
+            <rect x="19" y="12" width="6" height="40" fill="#FFC24D"></rect>
+            <rect x="31" y="12" width="6" height="40" fill="#FFC24D"></rect>
+            <rect x="43" y="12" width="6" height="40" fill="#FFC24D"></rect>
+            <rect x="25" y="19" width="6" height="9" fill="#FFFFFF"></rect>
+            <rect x="37" y="19" width="6" height="9" fill="#FFFFFF"></rect>
+            <rect x="25" y="34" width="6" height="9" fill="#FFFFFF"></rect>
+            <rect x="37" y="34" width="6" height="9" fill="#FFFFFF"></rect>
+            <circle cx="18" cy="17" r="1.8" fill="#0B0B12"></circle>
+            <circle cx="46" cy="17" r="1.8" fill="#0B0B12"></circle>
+            <circle cx="18" cy="49" r="1.8" fill="#0B0B12"></circle>
+            <circle cx="46" cy="49" r="1.8" fill="#0B0B12"></circle>
           </svg>
         </span>
         <span class="module-button__title">Paletten Buchungen</span>
       </a>
       <a class="module-button module-button--stacked" id="containerAdminLink" href="/container-registration" style="display:none;" aria-label="Container Anmeldung">
-        <span class="module-button__icon" aria-hidden="true">
-          <svg viewBox="0 0 48 48" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="7" y="12" width="34" height="18" rx="2.5" fill="currentColor" opacity="0.1"></rect>
-            <path d="M12 16v10"></path>
-            <path d="M17 16v10"></path>
-            <path d="M22 16v10"></path>
-            <path d="M27 16v10"></path>
-            <path d="M32 16v10"></path>
-            <path d="M37 16v10"></path>
-            <path d="M9 33h30"></path>
-            <path d="M12 30v3"></path>
-            <path d="M36 30v3"></path>
-            <rect x="5" y="17" width="2" height="8" rx="1" fill="currentColor"></rect>
-            <rect x="41" y="17" width="2" height="8" rx="1" fill="currentColor"></rect>
+        <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
+          <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+            <defs>
+              <linearGradient id="registrationTruckGradient" x1="31" y1="30" x2="71" y2="30" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#FFB34A"></stop>
+                <stop offset="1" stop-color="#FFD369"></stop>
+              </linearGradient>
+            </defs>
+            <path d="M12 45V30h11l6-7h17v22z" fill="#FF5A7F" stroke="#09090F" stroke-width="3" stroke-linejoin="round"></path>
+            <rect x="31" y="17" width="40" height="26" fill="url(#registrationTruckGradient)" stroke="#09090F" stroke-width="3"></rect>
+            <rect x="38" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+            <rect x="46" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+            <rect x="54" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+            <rect x="62" y="22" width="4" height="16" rx="1" fill="#09090F"></rect>
+            <rect x="16" y="44" width="58" height="5" fill="#FF5A7F" stroke="#09090F" stroke-width="3"></rect>
+            <rect x="18" y="26" width="10" height="6" fill="#9BEEFF"></rect>
+            <path d="M13 37h8" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
+            <path d="M73 44h6" fill="none" stroke="#09090F" stroke-width="3" stroke-linecap="round"></path>
+            <circle cx="24" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
+            <circle cx="45" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
+            <circle cx="76" cy="51" r="5" fill="#78AEEA" stroke="#09090F" stroke-width="3"></circle>
           </svg>
         </span>
         <span class="module-button__title">Container Anmeldung</span>
       </a>
       <a class="module-button module-button--stacked" id="containerPlanningLink" href="/modules/container-planning/index.html" style="display:none;">
-        <span class="module-button__icon" aria-hidden="true">
-          <svg viewBox="0 0 56 48" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="16" width="21" height="11" rx="2.5" fill="currentColor" opacity="0.08"></rect>
-            <path d="M26 19h10l4 4h5a2 2 0 0 1 2 2v2H26z" fill="currentColor" opacity="0.12"></path>
-            <path d="M8 16v-3h15v3"></path>
-            <path d="M26 19h10l4 4h5a2 2 0 0 1 2 2v2H26"></path>
-            <path d="M10 27h18"></path>
-            <path d="M14 31h18"></path>
-            <circle cx="16" cy="33" r="3"></circle>
-            <circle cx="31" cy="33" r="3"></circle>
-            <circle cx="43" cy="33" r="3"></circle>
-            <path d="M37 19v4"></path>
-            <path d="M40 19h3"></path>
+        <span class="module-button__icon module-button__icon--wide" aria-hidden="true">
+          <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+            <path d="M12 43V27h12l6-7h18v23z" fill="#3D8CFF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+            <rect x="31" y="13" width="47" height="30" rx="2" fill="#FF4457" stroke="#11111A" stroke-width="3"></rect>
+            <rect x="19" y="23" width="9" height="6" fill="#EAF3FF"></rect>
+            <rect x="39" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+            <rect x="47" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+            <rect x="55" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+            <rect x="63" y="18" width="4" height="19" rx="1.5" fill="#11111A"></rect>
+            <rect x="21" y="43" width="51" height="6" fill="#6F6F76" stroke="#11111A" stroke-width="3"></rect>
+            <path d="M70 43l8 6h6" fill="none" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+            <circle cx="18" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+            <circle cx="35" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+            <circle cx="56" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+            <circle cx="71" cy="51" r="5" fill="#313138" stroke="#11111A" stroke-width="3"></circle>
+            <circle cx="18" cy="51" r="2.2" fill="#8D95A3"></circle>
+            <circle cx="35" cy="51" r="2.2" fill="#8D95A3"></circle>
+            <circle cx="56" cy="51" r="2.2" fill="#8D95A3"></circle>
+            <circle cx="71" cy="51" r="2.2" fill="#8D95A3"></circle>
+            <path d="M16 13c0-5 4-9 9-9" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
+            <path d="M16 7c0-9 7-16 16-16" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
+            <path d="M16 1c0-13 10-23 23-23" fill="none" stroke="#11111A" stroke-width="3" stroke-linecap="round"></path>
           </svg>
         </span>
         <span class="module-button__title">Container und LKW</span>
