@@ -503,8 +503,8 @@ function createBookingModal({ onSave }) {
       <form id="bookingCreateForm" class="form-grid">
         <label>Titel<input name="title" required /></label>
         <label>Containernummer<input name="container" required /></label>
-        <label>Kennzeichen<input name="kennzeichen" required /></label>
-        <label>Auftragsnummer<input name="auftrag" required /></label>
+        <label>Kennzeichen<input name="kennzeichen" /></label>
+        <label>Auftragsnummer<input name="auftrag" /></label>
         <label>Lager<input name="lager" required /></label>
         <label>Datum<input type="date" name="date" required /></label>
         <label>Typ

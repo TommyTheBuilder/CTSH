@@ -27,6 +27,16 @@ const weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Sa
 const bookings = [];
 let viewMode = "month";
 let cursorDate = new Date();
+let refreshInFlight = null;
+let refreshQueued = false;
+let liveRefreshTimer = null;
+
+const liveSocket = typeof window.io === "function"
+  ? window.io("/container-planning", {
+      query: portalToken ? { portalToken } : undefined,
+      auth: portalToken ? { token: portalToken } : undefined
+    })
+  : null;
 
 const bookingModal = createBookingModal({
   async onSave(newBooking) {
@@ -110,7 +120,24 @@ async function loadBookingsForCurrentMonth() {
   }
 
   const rows = await response.json();
-  bookings.splice(0, bookings.length, ...rows.map(mapApiBookingToUi));
+  const previousBookingsById = new Map(bookings.map((booking) => [booking.id, booking]));
+  const nextBookings = rows.map((row) => {
+    const mapped = mapApiBookingToUi(row);
+    const existing = previousBookingsById.get(mapped.id);
+    if (existing?.attachments?.length) mapped.attachments = existing.attachments;
+    return mapped;
+  });
+  const nextIds = new Set(nextBookings.map((booking) => booking.id));
+
+  bookings
+    .filter((booking) => !nextIds.has(booking.id))
+    .forEach((booking) => {
+      (booking.attachments || []).forEach((file) => {
+        if (file?.url) URL.revokeObjectURL(file.url);
+      });
+    });
+
+  bookings.splice(0, bookings.length, ...nextBookings);
 }
 
 async function createBooking(booking) {
@@ -359,12 +386,34 @@ function getWeekRange(baseDate) {
 }
 
 function refreshDataAndRender() {
-  loadBookingsForCurrentMonth()
-    .then(() => render())
+  if (refreshInFlight) {
+    refreshQueued = true;
+    return refreshInFlight;
+  }
+
+  refreshInFlight = loadBookingsForCurrentMonth()
     .catch((error) => {
       console.error(error);
+    })
+    .finally(() => {
+      detailsModal.syncWithBookings(bookings);
       render();
+      refreshInFlight = null;
+
+      if (refreshQueued) {
+        refreshQueued = false;
+        refreshDataAndRender();
+      }
     });
+
+  return refreshInFlight;
+}
+
+function scheduleLiveRefresh() {
+  window.clearTimeout(liveRefreshTimer);
+  liveRefreshTimer = window.setTimeout(() => {
+    refreshDataAndRender();
+  }, 120);
 }
 
 function toYearMonth(date) {
@@ -500,6 +549,18 @@ logoutBtn?.addEventListener("click", async () => {
   window.location.href = "/login.html";
 });
 
+liveSocket?.on("connect", () => {
+  scheduleLiveRefresh();
+});
+
+liveSocket?.on("bookingsChanged", () => {
+  scheduleLiveRefresh();
+});
+
+liveSocket?.on("connect_error", (error) => {
+  console.error("Container planning live update connection failed:", error?.message || error);
+});
+
 function createBookingModal({ onSave }) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -509,8 +570,8 @@ function createBookingModal({ onSave }) {
       <form id="bookingCreateForm" class="form-grid">
         <label>Titel<input name="title" required /></label>
         <label><span>Containernummer <span class="field-optional">(optional)</span></span><input name="container" /></label>
-        <label>Kennzeichen<input name="kennzeichen" required /></label>
-        <label>Auftragsnummer<input name="auftrag" required /></label>
+        <label>Kennzeichen<input name="kennzeichen" /></label>
+        <label>Auftragsnummer<input name="auftrag" /></label>
         <label>Lager<input name="lager" required /></label>
         <label>Datum<input type="date" name="date" required /></label>
         <label>Typ
@@ -714,6 +775,19 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     currentBooking = null;
   }
 
+  function syncWithBookings(nextBookings) {
+    if (!currentBooking) return;
+
+    const nextBooking = nextBookings.find((booking) => booking.id === currentBooking.id);
+    if (!nextBooking) {
+      close();
+      return;
+    }
+
+    currentBooking = nextBooking;
+    renderDetails();
+  }
+
   overlay.addEventListener("click", async (event) => {
     if (event.target === overlay || event.target.dataset.close !== undefined) {
       close();
@@ -759,5 +833,5 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     renderDetails();
   });
 
-  return { overlay, open, close };
+  return { overlay, open, close, syncWithBookings };
 }
