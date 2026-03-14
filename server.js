@@ -202,6 +202,7 @@ io.on("connection", (socket) => {
 });
 
 const containerRegistrationNamespace = io.of("/container-registration");
+const containerPlanningNamespace = io.of("/container-planning");
 const CONTAINER_REGISTRATION_STATUS_SLOT_CREATED = "slot_created";
 const CONTAINER_REGISTRATION_STATUS_REGISTERED = "registered";
 const CONTAINER_REGISTRATION_STATUS_TO_RAMP = "to_ramp";
@@ -1089,6 +1090,34 @@ function emitContainerRegistrationUpdate(id) {
   containerRegistrationNamespace.emit("statusChanged", { id, data: { ...containerRegistrationState[id] } });
 }
 
+function getSocketPortalUser(socket, options = {}) {
+  const handshakeToken = String(
+    socket.handshake.auth?.token
+    || socket.handshake.query?.portalToken
+    || socket.handshake.query?.token
+    || ""
+  ).trim();
+  const fakeReq = {
+    headers: {
+      cookie: socket.handshake.headers.cookie || "",
+      ...(handshakeToken ? { authorization: `Bearer ${handshakeToken}` } : {})
+    },
+    query: {
+      portalToken: String(socket.handshake.query?.portalToken || "").trim(),
+      token: String(socket.handshake.query?.token || "").trim()
+    }
+  };
+  return getAuthenticatedPortalUser(fakeReq, options);
+}
+
+function emitContainerPlanningChange(action, bookingId) {
+  containerPlanningNamespace.emit("bookingsChanged", {
+    action,
+    bookingId,
+    at: new Date().toISOString()
+  });
+}
+
 async function requireContainerPlanningAccess(req, res, next) {
   const perms = await getMyPermissions(req.user);
   if (!hasContainerPlanningPermission(perms)) {
@@ -1150,8 +1179,8 @@ app.get("/api/modules/container-planning/bookings", authRequired, requireContain
 
 app.post("/api/modules/container-planning/bookings", authRequired, requireContainerPlanningAccess, async (req, res) => {
   const { title, containerNo, customer, warehouse, plate, orderNo, date, color } = req.body || {};
-  if (!title || !plate || !orderNo || !date) {
-    return res.status(400).json({ message: "Titel, Kennzeichen, Auftragsnummer und Datum sind erforderlich." });
+  if (!title || !date) {
+    return res.status(400).json({ message: "Titel und Datum sind erforderlich." });
   }
 
   const result = await q(
@@ -1165,14 +1194,15 @@ app.post("/api/modules/container-planning/bookings", authRequired, requireContai
       String(containerNo || "").trim(),
       String(customer || "-").trim() || "-",
       String(warehouse || "-").trim() || "-",
-      String(plate).trim(),
-      String(orderNo).trim(),
+      String(plate || "").trim(),
+      String(orderNo || "").trim(),
       String(date).trim(),
       String(color || "#0ea5e9").trim(),
       req.user.id
     ]
   );
 
+  emitContainerPlanningChange("created", result.rows[0].id);
   res.status(201).json(result.rows[0]);
 });
 
@@ -1194,6 +1224,7 @@ app.patch("/api/modules/container-planning/bookings/:id/date", authRequired, req
   );
 
   if (!result.rowCount) return res.status(404).json({ message: "Eintrag nicht gefunden." });
+  emitContainerPlanningChange("moved", result.rows[0].id);
   res.json(result.rows[0]);
 });
 
@@ -1203,6 +1234,7 @@ app.delete("/api/modules/container-planning/bookings/:id", authRequired, require
 
   const result = await q("DELETE FROM container_planning_bookings WHERE id = $1 RETURNING id", [id]);
   if (!result.rowCount) return res.status(404).json({ message: "Eintrag nicht gefunden." });
+  emitContainerPlanningChange("deleted", id);
   res.json({ ok: true });
 });
 
@@ -1228,12 +1260,7 @@ app.get("/api/modules/container-registration/admin-history.csv", authRequired, r
 });
 
 containerRegistrationNamespace.use(async (socket, next) => {
-  const fakeReq = {
-    headers: {
-      cookie: socket.handshake.headers.cookie || ""
-    }
-  };
-  const user = getAuthenticatedPortalUser(fakeReq, { allowHeader: false, allowQuery: false, allowCookie: true });
+  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
   if (!user) return next(new Error("UNAUTHENTICATED"));
 
   try {
@@ -1244,6 +1271,21 @@ containerRegistrationNamespace.use(async (socket, next) => {
     socket.data.canRegister = hasContainerRegistrationPermission(perms);
     socket.data.canAdmin = hasContainerAdminPermission(user, perms);
     if (!socket.data.canView) return next(new Error("FORBIDDEN"));
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+containerPlanningNamespace.use(async (socket, next) => {
+  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
+  if (!user) return next(new Error("UNAUTHENTICATED"));
+
+  try {
+    const perms = await getMyPermissions(user);
+    if (!hasContainerPlanningPermission(perms)) return next(new Error("FORBIDDEN"));
+    socket.data.portalUser = user;
+    socket.data.portalPermissions = perms;
     return next();
   } catch (error) {
     return next(error);
