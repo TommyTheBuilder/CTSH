@@ -528,9 +528,18 @@ body.dark .toast{
 <div id="toast" class="toast"></div>
 
 <script>
-const pageParams = new URLSearchParams(window.location.search);
-const adminQueryToken = String(pageParams.get("token") || "").trim();
-const socket = io("/container-registration");
+const pageUrl = new URL(window.location.href);
+const pageParams = pageUrl.searchParams;
+const adminQueryToken = String(pageParams.get("portalToken") || pageParams.get("token") || localStorage.getItem("token") || "").trim();
+if (adminQueryToken) {
+  localStorage.setItem("token", adminQueryToken);
+  pageParams.delete("portalToken");
+  pageParams.delete("token");
+  history.replaceState({}, document.title, `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`);
+}
+const socket = io("/container-registration", {
+  auth: adminQueryToken ? { token: adminQueryToken } : {}
+});
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
 let isAuthed = false;
@@ -974,6 +983,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     console.warn("Logout endpoint nicht erreichbar:", error);
   }
   localStorage.removeItem(themeStorageKey);
+  localStorage.removeItem("token");
   toggleSettingsMenu(false);
   window.location.href = "/";
 });
