@@ -332,7 +332,16 @@ body.dark .sub { color: rgba(255,255,255,.85); }
 </main>
 
 <script>
-const socket = io("/container-registration");
+const driverPageUrl = new URL(window.location.href);
+const driverQueryToken = String(driverPageUrl.searchParams.get("portalToken") || localStorage.getItem("token") || "").trim();
+if (driverQueryToken) {
+  localStorage.setItem("token", driverQueryToken);
+  driverPageUrl.searchParams.delete("portalToken");
+  history.replaceState({}, document.title, `${driverPageUrl.pathname}${driverPageUrl.search}${driverPageUrl.hash}`);
+}
+const socket = io("/container-registration", {
+  auth: driverQueryToken ? { token: driverQueryToken } : {}
+});
 let state = null;
 let selectedId = null;
 

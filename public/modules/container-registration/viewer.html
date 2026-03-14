@@ -398,7 +398,16 @@ body.dark .rampUrl { color: #bbf7d0; }
 </main>
 
 <script>
-const socket = io("/container-registration");
+const viewerPageUrl = new URL(window.location.href);
+const viewerQueryToken = String(viewerPageUrl.searchParams.get("portalToken") || localStorage.getItem("token") || "").trim();
+if (viewerQueryToken) {
+  localStorage.setItem("token", viewerQueryToken);
+  viewerPageUrl.searchParams.delete("portalToken");
+  history.replaceState({}, document.title, `${viewerPageUrl.pathname}${viewerPageUrl.search}${viewerPageUrl.hash}`);
+}
+const socket = io("/container-registration", {
+  auth: viewerQueryToken ? { token: viewerQueryToken } : {}
+});
 let audioContext = null;
 let currentLang = localStorage.getItem("viewerLang") || "de";
 let currentState = null;

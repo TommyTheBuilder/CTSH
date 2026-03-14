@@ -61,6 +61,9 @@ function getRequestToken(req) {
   const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (headerToken) return headerToken;
 
+  const queryToken = String(req.query?.portalToken || req.query?.token || "").trim();
+  if (queryToken) return queryToken;
+
   const cookieHeader = String(req.headers.cookie || "");
   const cookieMatch = cookieHeader.match(new RegExp(`(?:^|;\\s*)${AUTH_COOKIE_NAME}=([^;]+)`));
   return cookieMatch?.[1] ? decodeURIComponent(cookieMatch[1]) : "";
@@ -832,13 +835,17 @@ app.get("/api/sso/container-session", containerPermissionRequired, async (req, r
     return res.status(403).json({ error: "No Permissions" });
   }
 
+  const portalToken = getRequestToken(req);
+  const targetUrl = hasContainerAdminPermission(req.containerUser, perms)
+    ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
+    : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
+  const separator = targetUrl.includes("?") ? "&" : "?";
+
   return res.json({
     session: null,
     token: null,
     user: req.containerUser.username,
-    url: hasContainerAdminPermission(req.containerUser, perms)
-      ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
-      : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH
+    url: portalToken ? `${targetUrl}${separator}portalToken=${encodeURIComponent(portalToken)}` : targetUrl
   });
 });
 
@@ -849,12 +856,15 @@ async function createContainerPlanningSession(req, res) {
     return res.status(403).json({ error: "No Permissions" });
   }
 
+  const portalToken = getRequestToken(req);
+  const separator = MODULE_CONTAINER_PLANNING_PATH.includes("?") ? "&" : "?";
+
   return res.json({
     session: null,
     ssoToken: null,
     token: null,
     user: req.user.username,
-    url: MODULE_CONTAINER_PLANNING_PATH
+    url: portalToken ? `${MODULE_CONTAINER_PLANNING_PATH}${separator}portalToken=${encodeURIComponent(portalToken)}` : MODULE_CONTAINER_PLANNING_PATH
   });
 }
 

@@ -14,6 +14,15 @@ const moduleDashboardBtn = document.getElementById("moduleDashboardBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 const DARK_MODE_KEY = "containerplanung.darkmode";
+const TOKEN_KEY = "token";
+const urlState = new URL(window.location.href);
+const queryPortalToken = String(urlState.searchParams.get("portalToken") || "").trim();
+if (queryPortalToken) {
+  localStorage.setItem(TOKEN_KEY, queryPortalToken);
+  urlState.searchParams.delete("portalToken");
+  history.replaceState({}, document.title, `${urlState.pathname}${urlState.search}${urlState.hash}`);
+}
+const portalToken = String(localStorage.getItem(TOKEN_KEY) || "").trim();
 const weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 const bookings = [];
 let viewMode = "month";
@@ -61,7 +70,10 @@ async function initApp() {
 
 async function ensureAuthenticated() {
   try {
-    const response = await fetch("/api/me", { credentials: "include" });
+    const response = await fetch("/api/me", {
+      credentials: "include",
+      headers: portalToken ? { Authorization: `Bearer ${portalToken}` } : {}
+    });
     if (response.ok) return true;
   } catch {
     // handled below
@@ -82,7 +94,8 @@ async function safeReadJson(response) {
 async function loadBookingsForCurrentMonth() {
   const month = toYearMonth(cursorDate);
   const response = await fetch(`/api/modules/container-planning/bookings?month=${encodeURIComponent(month)}`, {
-    credentials: "include"
+    credentials: "include",
+    headers: portalToken ? { Authorization: `Bearer ${portalToken}` } : {}
   });
 
   if (!response.ok) {
@@ -100,7 +113,10 @@ async function loadBookingsForCurrentMonth() {
 async function createBooking(booking) {
   const response = await fetch("/api/modules/container-planning/bookings", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(portalToken ? { Authorization: `Bearer ${portalToken}` } : {})
+    },
     credentials: "include",
     body: JSON.stringify({
       title: booking.title,
@@ -125,7 +141,8 @@ async function createBooking(booking) {
 async function deleteBooking(bookingId) {
   const response = await fetch(`/api/modules/container-planning/bookings/${encodeURIComponent(bookingId)}`, {
     method: "DELETE",
-    credentials: "include"
+    credentials: "include",
+    headers: portalToken ? { Authorization: `Bearer ${portalToken}` } : {}
   });
   if (!response.ok) {
     const payload = await safeReadJson(response);
@@ -136,7 +153,10 @@ async function deleteBooking(bookingId) {
 async function updateBookingDate(bookingId, date) {
   const response = await fetch(`/api/modules/container-planning/bookings/${encodeURIComponent(bookingId)}/date`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(portalToken ? { Authorization: `Bearer ${portalToken}` } : {})
+    },
     credentials: "include",
     body: JSON.stringify({ date })
   });
