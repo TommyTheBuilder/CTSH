@@ -99,10 +99,15 @@ const PERMISSION_CARD_META = {
   }
 };
 
-function setText(id, value) {
-  const el = $(id);
-  if (el) el.textContent = value;
-}
+PERMISSION_CARD_META.stock = {
+  eyebrow: "Reporting",
+  description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
+};
+
+PERMISSION_CARD_META.cases = {
+  eyebrow: "Workflow",
+  description: "Rechte fuer den kompletten Lebenszyklus von Faellen."
+};
 
 function enhancePermissionCards() {
   document.querySelectorAll(".permBox").forEach((box) => {
@@ -142,8 +147,6 @@ function getPermissionBoxes() {
 }
 
 function updatePermissionCardCounts() {
-  const categoryItems = [];
-
   getPermissionBoxes().forEach((box) => {
     const checkboxes = Array.from(box.querySelectorAll('input[type="checkbox"]'));
     const checked = checkboxes.filter((input) => input.checked).length;
@@ -151,56 +154,7 @@ function updatePermissionCardCounts() {
     const countEl = box.querySelector(".permBox-count");
     if (countEl) countEl.textContent = `${checked}/${total}`;
     box.classList.toggle("is-dimmed", checked === 0);
-
-    const title = box.dataset.permGroup || box.querySelector(".permBox-head b")?.textContent?.trim() || "Bereich";
-    categoryItems.push({ title, checked, total });
   });
-
-  const list = $("permissionCategoryList");
-  if (list) {
-    list.innerHTML = categoryItems.map((item) => `
-      <div class="rights-group-item">
-        <strong>${item.title}</strong>
-        <span>${item.checked}/${item.total}</span>
-      </div>
-    `).join("");
-  }
-
-  return categoryItems;
-}
-
-function updateRoleSummary() {
-  const select = $("roleSelect");
-  const roleName = select?.selectedOptions?.[0]?.textContent?.trim() || "Noch keine Rolle";
-  const checkboxes = getPermissionBoxes().flatMap((box) => Array.from(box.querySelectorAll('input[type="checkbox"]')));
-  const total = checkboxes.length;
-  const checked = checkboxes.filter((input) => input.checked).length;
-  const categories = updatePermissionCardCounts();
-  const activeCategories = categories.filter((item) => item.checked > 0).length;
-  const hasAdminAccess = !!$("p_admin_full_access")?.checked;
-
-  setText("activeRoleName", roleName);
-  setText("sidebarRoleName", roleName);
-  setText("rolePermissionCount", String(checked));
-  setText("rolePermissionTotal", String(total));
-  setText("sidebarPermissionCount", String(checked));
-  setText("roleCategoryCount", String(activeCategories));
-  setText("sidebarCategoryCount", String(activeCategories));
-  setText("roleAccessMode", hasAdminAccess ? "Vollzugriff" : checked === 0 ? "Kein Zugriff" : "Standard");
-  setText("roleAccessHint", hasAdminAccess
-    ? "Admin-Zugang mit vollem Zugriff auf alle Bereiche"
-    : checked === 0
-      ? "Der Rolle sind aktuell keine Rechte zugewiesen"
-      : "Gezielter Zugriff auf freigegebene Funktionen");
-  setText("roleSummaryNote", hasAdminAccess
-    ? `${roleName} hat derzeit Vollzugriff. Einzelrechte sind damit zusaetzlich freigegeben.`
-    : `${roleName} nutzt ${checked} aktive Rechte in ${activeCategories} Bereichen.`);
-  setText("sidebarRoleHint", hasAdminAccess
-    ? "Diese Rolle kann den gesamten Admin-Bereich ohne weitere Einschraenkungen oeffnen."
-    : checked === 0
-      ? "Aktuell sind keine aktiven Rechte gesetzt. Die Rolle kann damit keine Admin-Funktionen nutzen."
-      : "Die Anzeige zeigt dir, wie breit die Freigaben ueber die einzelnen Bereiche verteilt sind.");
-  setText("sidebarAccessState", hasAdminAccess ? "Vollzugriff aktiv" : checked === 0 ? "Ohne Freigaben" : "Standardzugriff");
 }
 
 function applyPermissionFilters() {
@@ -228,17 +182,11 @@ function applyPermissionFilters() {
   });
 }
 
-function updateAdminOverviewCounts() {
-  setText("adminRoleCount", String(ROLES.length));
-  setText("adminDepartmentCount", String(DEPARTMENTS.length));
-  setText("adminUserCount", String(USERS.filter((user) => user?.is_active !== false).length));
-}
-
 function bindPermissionPanel() {
   getPermissionBoxes().forEach((box) => {
     box.querySelectorAll('input[type="checkbox"]').forEach((input) => {
       input.addEventListener("change", () => {
-        updateRoleSummary();
+        updatePermissionCardCounts();
         applyPermissionFilters();
       });
     });
@@ -594,7 +542,6 @@ async function loadDepartments() {
 
   populateUserFilters();
   renderUsersTable();
-  updateAdminOverviewCounts();
 }
 
 async function loadAdminHistory({ resetPage = false } = {}) {
@@ -861,11 +808,9 @@ async function loadRoles() {
   // apply permissions for currently selected
   if (sel && sel.value) applyRoleToCheckboxes(Number(sel.value));
   else {
-    updateRoleSummary();
+    updatePermissionCardCounts();
     applyPermissionFilters();
   }
-
-  updateAdminOverviewCounts();
 }
 
 function getFilteredUsers() {
@@ -978,7 +923,6 @@ async function loadUsers() {
   }
 
   applyUserEditSelection();
-  updateAdminOverviewCounts();
 }
 
 function applyUserEditSelection() {
@@ -1105,12 +1049,12 @@ function applyRoleToCheckboxes(roleId) {
   const role = ROLES.find(r => Number(r.id) === Number(roleId));
   if (!role) {
     setPermCheckboxes({});
-    updateRoleSummary();
+    updatePermissionCardCounts();
     applyPermissionFilters();
     return;
   }
   setPermCheckboxes(role.permissions || {});
-  updateRoleSummary();
+  updatePermissionCardCounts();
   applyPermissionFilters();
 }
 
@@ -1389,7 +1333,7 @@ $("saveUserBtn")?.addEventListener("click", async () => {
     applyModuleNaming();
     enhancePermissionCards();
     bindPermissionPanel();
-    updateRoleSummary();
+    updatePermissionCardCounts();
     await loadMe();
     await loadPerms();
 
