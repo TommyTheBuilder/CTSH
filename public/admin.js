@@ -830,6 +830,9 @@ async function loadRoles() {
       o.textContent = role.name;
       sel.appendChild(o);
     });
+    if (ROLES.length && !sel.value) {
+      sel.value = String(ROLES[0].id);
+    }
   }
 
   // Role select (user create)
