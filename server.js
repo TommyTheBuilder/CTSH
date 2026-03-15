@@ -12,11 +12,6 @@ const { pool } = require("./db_pg");
 const { authRequired, adminRequired, JWT_SECRET } = require("./middleware_auth");
 const { requirePermission } = require("./middleware_permissions");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
-const { createWarehouseRouter } = require("./modules/warehouse/router");
-const {
-  WAREHOUSE_PERMISSION_DEFAULTS,
-  WAREHOUSE_PERMISSION_FULL_ACCESS
-} = require("./modules/warehouse/permissions");
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
@@ -174,8 +169,6 @@ app.use("/modules", async (req, res, next) => {
       allowed = hasContainerRegistrationPermission(perms);
     } else if (req.path === "/container-registration/viewer.html") {
       allowed = hasContainerViewerPermission(perms);
-    } else if (req.path.startsWith("/warehouse")) {
-      allowed = hasWarehouseModulePermission(perms);
     }
 
     if (!allowed) return res.redirect("/public/dashboard.html");
@@ -358,28 +351,6 @@ function hasContainerViewerPermission(perms) {
 
 function hasContainerAdminPermission(user, perms) {
   return !!(perms?.admin?.full_access || perms?.integrations?.container_admin);
-}
-
-function hasWarehouseModulePermission(perms) {
-  return !!(
-    perms?.warehouse?.dashboard?.view
-    || perms?.warehouse?.customers?.view
-    || perms?.warehouse?.customers?.manage
-    || perms?.warehouse?.articles?.view
-    || perms?.warehouse?.articles?.manage
-    || perms?.warehouse?.storage_locations?.view
-    || perms?.warehouse?.storage_locations?.manage
-    || perms?.warehouse?.inventory?.view
-    || perms?.warehouse?.inventory?.manage
-    || perms?.warehouse?.transactions?.create
-    || perms?.warehouse?.transactions?.view
-    || perms?.warehouse?.transactions?.export
-    || perms?.warehouse?.transactions?.manage
-    || perms?.warehouse?.picking?.view
-    || perms?.warehouse?.picking?.manage
-    || perms?.warehouse?.picking?.process
-    || perms?.admin?.full_access
-  );
 }
 
 function buildContainerSessionToken(payload) {
@@ -585,7 +556,6 @@ async function getMyPermissions(user) {
       container_viewer: true,
       container_admin: true
     },
-    warehouse: { ...WAREHOUSE_PERMISSION_FULL_ACCESS },
     admin: { full_access: true }
   };
 
@@ -618,7 +588,6 @@ async function getMyPermissions(user) {
       container_viewer: false,
       container_admin: false
     },
-    warehouse: { ...WAREHOUSE_PERMISSION_DEFAULTS },
     admin: { full_access: false }
   };
 
@@ -881,8 +850,6 @@ app.get("/api/my-permissions", authRequired, async (req, res) => {
   res.json(perms);
 });
 
-app.use("/api/warehouse", createWarehouseRouter({ authRequired, requirePermission }));
-
 async function createContainerRegistrationSession(req, res) {
   const perms = await getMyPermissions(req.user);
   const canOpenContainerRegistration = hasContainerRegistrationPermission(perms);
@@ -936,9 +903,6 @@ app.get("/container-registration", requireModulePageAccess((_user, perms) => has
     ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
     : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
   res.redirect(targetUrl);
-});
-app.get("/warehouse", requireModulePageAccess((_user, perms) => hasWarehouseModulePermission(perms)), (_req, res) => {
-  res.redirect("/modules/warehouse/index.html");
 });
 app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-planning", "index.html"));

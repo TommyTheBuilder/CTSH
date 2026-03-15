@@ -4,8 +4,6 @@
   function applyTheme(theme) {
     const isDark = theme === "dark";
     document.body.classList.toggle("darkmode", isDark);
-    document.body.classList.toggle("dark", isDark);
-    document.body.classList.toggle("light", !isDark);
     const toggle = document.getElementById("themeToggleBtn");
     if (toggle) {
       toggle.setAttribute("aria-pressed", String(isDark));
