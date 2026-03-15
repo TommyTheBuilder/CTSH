@@ -19,120 +19,55 @@
   </header>
 
   <main class="dashboard-main module-dashboard-main auth-main">
-    <section class="dashboard-header admin-header module-hero auth-hero">
-      <div class="module-hero__copy">
+    <section class="dashboard-header admin-header module-hero auth-hero auth-hero--clean">
+      <div class="module-hero__copy auth-hero__copy">
         <span class="module-hero__eyebrow">Sicherer Portalzugang</span>
         <div class="dashboard-title-row">
           <b>Anmeldung</b>
           <span class="pill">Intranet</span>
         </div>
         <p class="module-hero__lead">
-          Melden Sie sich mit Ihrem persoenlichen Konto an, um Ihr Dashboard, freigeschaltete Arbeitsbereiche
-          und laufende Vorgaenge zentral zu steuern.
+          Melden Sie sich mit Ihrem pers&ouml;nlichen Konto an, um direkt in Ihr Dashboard zu gelangen.
         </p>
-      </div>
-
-      <div class="module-hero__panel auth-hero__panel" aria-label="Portaluebersicht">
-        <article class="module-stat-card">
-          <span class="module-stat-card__label">Zentral</span>
-          <strong class="module-stat-card__value">1 Portal</strong>
-          <span class="module-stat-card__meta">
-            Ein Einstieg fuer Buchungen, Lager, Container-Anmeldung und Planung.
-          </span>
-        </article>
-        <article class="module-stat-card">
-          <span class="module-stat-card__label">Direkt</span>
-          <strong class="module-stat-card__value">Schnell startklar</strong>
-          <span class="module-stat-card__meta">
-            Nach dem Login gelangen Sie direkt in Ihr persoenliches Modul-Dashboard.
-          </span>
-        </article>
       </div>
     </section>
 
-    <section class="card module-dashboard-card auth-card-shell">
-      <div class="module-dashboard-layout auth-layout">
-        <section class="auth-card" aria-labelledby="loginHeadline">
-          <div class="auth-card__head">
-            <span class="module-section-kicker">Zugang</span>
-            <h2 id="loginHeadline">Mit Ihrem Konto anmelden</h2>
-            <p>
-              Nutzen Sie Ihre persoenlichen Zugangsdaten, um auf die fuer Sie freigegebenen Bereiche zuzugreifen.
-            </p>
+    <section class="card module-dashboard-card auth-card-shell auth-card-shell--compact">
+      <section class="auth-card auth-card--centered" aria-labelledby="loginHeadline">
+        <div class="auth-card__head">
+          <span class="module-section-kicker">Zugang</span>
+          <h2 id="loginHeadline">Mit Ihrem Konto anmelden</h2>
+          <p>Verwenden Sie Benutzername und Passwort, um die f&uuml;r Sie freigegebenen Bereiche zu &ouml;ffnen.</p>
+        </div>
+
+        <form id="loginForm" class="auth-form" novalidate>
+          <div class="auth-field">
+            <label for="username">Benutzername</label>
+            <input id="username" autocomplete="username" placeholder="Benutzername eingeben" autofocus>
           </div>
 
-          <form id="loginForm" class="auth-form" novalidate>
-            <div class="auth-field">
-              <label for="username">Benutzername</label>
-              <input id="username" autocomplete="username" placeholder="Benutzername eingeben" autofocus>
+          <div class="auth-field">
+            <div class="auth-label-row">
+              <label for="password">Passwort</label>
+              <span class="muted">Pers&ouml;nlicher Zugang</span>
             </div>
+            <div class="password-field auth-password-field">
+              <input id="password" type="password" autocomplete="current-password" placeholder="Passwort eingeben">
+              <button
+                id="togglePassword"
+                type="button"
+                class="password-visibility-toggle auth-password-toggle"
+                aria-label="Passwort anzeigen"
+                aria-pressed="false"
+              >Anz.</button>
+            </div>
+          </div>
 
-            <div class="auth-field">
-              <div class="auth-label-row">
-                <label for="password">Passwort</label>
-                <span class="muted">Persoenlicher Zugang</span>
-              </div>
-              <div class="password-field auth-password-field">
-                <input id="password" type="password" autocomplete="current-password" placeholder="Passwort eingeben">
-                <button
-                  id="togglePassword"
-                  type="button"
-                  class="password-visibility-toggle auth-password-toggle"
-                  aria-label="Passwort anzeigen"
-                  aria-pressed="false"
-                >Anz.</button>
-              </div>
-            </div>
-
-            <button id="loginBtn" class="primary auth-submit" type="submit">Zum Dashboard</button>
-            <p id="err" class="auth-message" role="alert" aria-live="assertive"></p>
-            <p class="auth-hint">
-              Hinweis: Bei Problemen kann die Administration das Passwort zuruecksetzen.
-            </p>
-          </form>
-        </section>
-
-        <aside class="module-side-panel auth-side-panel" aria-label="Hinweise">
-          <article class="module-side-panel__card">
-            <div class="module-side-panel__head">
-              <span class="module-section-kicker">Ueberblick</span>
-              <h3>Alles an einem Ort</h3>
-              <p>Ihr Portalzugang oeffnet dieselbe Arbeitsumgebung, die Sie aus dem Dashboard kennen.</p>
-            </div>
-            <div class="module-side-panel__list">
-              <div class="module-side-panel__item">
-                <span class="module-side-panel__marker">01</span>
-                <div>
-                  <strong>Dashboard zuerst</strong>
-                  <span>Nach dem Login landen Sie direkt in der zentralen Modulauswahl.</span>
-                </div>
-              </div>
-              <div class="module-side-panel__item">
-                <span class="module-side-panel__marker">02</span>
-                <div>
-                  <strong>Rollenbasiert</strong>
-                  <span>Nur freigeschaltete Bereiche und Funktionen werden fuer Ihr Konto angezeigt.</span>
-                </div>
-              </div>
-              <div class="module-side-panel__item">
-                <span class="module-side-panel__marker">03</span>
-                <div>
-                  <strong>Einheitliches Design</strong>
-                  <span>Die Anmeldung folgt derselben visuellen Sprache wie der restliche Hub.</span>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article class="module-side-panel__card">
-            <div class="module-side-panel__head">
-              <span class="module-section-kicker">Support</span>
-              <h3>Falls etwas hakt</h3>
-              <p>Pruefen Sie zuerst Benutzername und Passwort. Wenn der Zugang weiterhin nicht funktioniert, hilft die Administration weiter.</p>
-            </div>
-          </article>
-        </aside>
-      </div>
+          <button id="loginBtn" class="primary auth-submit" type="submit">Zum Dashboard</button>
+          <p id="err" class="auth-message" role="alert" aria-live="assertive"></p>
+          <p class="auth-hint">Bei Problemen hilft die Administration weiter.</p>
+        </form>
+      </section>
     </section>
   </main>
 
