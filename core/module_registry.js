@@ -17,6 +17,11 @@ const MODULE_REGISTRY = Object.freeze([
       eyebrow: "Lager und Bewegung",
       description: "Buchungen erfassen, Bestände prüfen und Bewegungen lückenlos nachverfolgen."
     },
+    licensing: {
+      includedInBaseProduct: true,
+      label: "Basismodul",
+      salesDescription: "Das Kernmodul für die produktive Nutzung der Installation."
+    },
     canAccess(perms) {
       return permissionsConfig.hasPalletModulePermission(perms);
     },
@@ -31,7 +36,7 @@ const MODULE_REGISTRY = Object.freeze([
     launchPath: "/warehouse",
     entryPath: "/modules/warehouse/index.html",
     adminPath: null,
-    enabledByDefault: true,
+    enabledByDefault: false,
     permissionRoots: ["warehouse"],
     aliasPermissionRoots: [],
     dashboard: {
@@ -39,6 +44,11 @@ const MODULE_REGISTRY = Object.freeze([
       tag: "Warehouse",
       eyebrow: "Lager und Versand",
       description: "Artikel, Lagerplätze, Stellplätze, Kommissionierung und Historie zentral steuern."
+    },
+    licensing: {
+      includedInBaseProduct: false,
+      label: "Zusatzmodul",
+      salesDescription: "Optional buchbares Modul für Lager- und Versandprozesse."
     },
     canAccess(perms) {
       return permissionsConfig.hasWarehouseModulePermission(perms);
@@ -54,7 +64,7 @@ const MODULE_REGISTRY = Object.freeze([
     launchPath: "/container-registration",
     entryPath: "/modules/container-registration/driver.html",
     adminPath: "/modules/container-registration/admin.html",
-    enabledByDefault: true,
+    enabledByDefault: false,
     permissionRoots: ["modules.container_registration"],
     aliasPermissionRoots: [
       "integrations.container_login",
@@ -67,6 +77,11 @@ const MODULE_REGISTRY = Object.freeze([
       tag: "Operations",
       eyebrow: "Anmeldung und Check-in",
       description: "Ankünfte koordinieren, Registrierungen vorbereiten und Prozesse vor Ort beschleunigen."
+    },
+    licensing: {
+      includedInBaseProduct: false,
+      label: "Zusatzmodul",
+      salesDescription: "Optional buchbares Modul für Check-in, Anmeldung und Statusboard."
     },
     canAccess(perms) {
       return permissionsConfig.hasContainerRegistrationModuleAccess(perms);
@@ -82,7 +97,7 @@ const MODULE_REGISTRY = Object.freeze([
     launchPath: "/container-planning",
     entryPath: "/modules/container-planning/index.html",
     adminPath: null,
-    enabledByDefault: true,
+    enabledByDefault: false,
     permissionRoots: ["modules.container_planning"],
     aliasPermissionRoots: ["integrations.container_planning"],
     dashboard: {
@@ -90,6 +105,11 @@ const MODULE_REGISTRY = Object.freeze([
       tag: "Planung",
       eyebrow: "Disposition und Auslastung",
       description: "Slots, Transporte und Ressourcen in einer Planungsansicht abstimmen."
+    },
+    licensing: {
+      includedInBaseProduct: false,
+      label: "Zusatzmodul",
+      salesDescription: "Optional buchbares Modul für Transport-, Slot- und Ressourcenplanung."
     },
     canAccess(perms) {
       return permissionsConfig.hasContainerPlanningPermission(perms);

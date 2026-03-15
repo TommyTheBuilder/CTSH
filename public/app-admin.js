@@ -1,12 +1,10 @@
 let token = localStorage.getItem("token");
 let coreContext = null;
-let customers = [];
-let customerModules = [];
+let installation = null;
+let productModules = [];
 let users = [];
-let selectedCustomerId = "";
 let selectedUserId = "";
-let selectedCustomerOptions = { roles: [], locations: [], departments: [] };
-let userCustomerOptions = { roles: [], locations: [], departments: [] };
+let installationOptions = { roles: [], locations: [], departments: [] };
 
 function $(id) {
   return document.getElementById(id);
@@ -62,13 +60,6 @@ function optionMarkup(items, placeholder, allowEmpty = true) {
   return prefix + items.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("");
 }
 
-function updateCustomerInUrl() {
-  const url = new URL(window.location.href);
-  if (selectedCustomerId) url.searchParams.set("customerId", selectedCustomerId);
-  else url.searchParams.delete("customerId");
-  history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-}
-
 function bindSettingsMenu() {
   const trigger = $("settingsTriggerBtn");
   const wrap = $("settingsMenuWrap");
@@ -98,8 +89,7 @@ function bindSettingsMenu() {
 
   $("openCustomerAdminBtn")?.addEventListener("click", () => {
     closeSettingsMenu();
-    const target = selectedCustomerId ? `/admin.html?customerId=${encodeURIComponent(selectedCustomerId)}` : "/admin.html";
-    window.location.href = target;
+    window.location.href = "/admin.html";
   });
 
   $("openChangePasswordBtn")?.addEventListener("click", () => {
@@ -138,13 +128,13 @@ function bindPasswordModal() {
     const new_password = String($("newPassword").value || "").trim();
     const confirm_password = String($("confirmPassword").value || "").trim();
     if (!current_password || !new_password || !confirm_password) {
-      return setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
     }
     if (new_password.length < 8) {
       return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      return setMsg("passwordModalMsg", "Die Passwoerter stimmen nicht ueberein.");
+      return setMsg("passwordModalMsg", "Die Passwörter stimmen nicht überein.");
     }
 
     const response = await api("/api/change-password", {
@@ -158,38 +148,40 @@ function bindPasswordModal() {
   });
 }
 
-function renderCustomers() {
-  const options = customers.map((customer) => `<option value="${customer.id}">${escapeHtml(customer.name)}</option>`).join("");
-  $("appAdminCustomerSelect").innerHTML = options;
-  $("userCustomerSelect").innerHTML = options;
-  if (selectedCustomerId) $("appAdminCustomerSelect").value = selectedCustomerId;
+function renderInstallationEditor() {
+  $("activeInstallationLabel").textContent = installation?.name || "-";
+  $("editInstallationName").value = installation?.name || "";
+  $("editInstallationSlug").value = installation?.slug || "";
+  $("editInstallationActive").value = installation?.is_active ? "true" : "false";
 }
 
-function renderCustomerEditor() {
-  const customer = customers.find((entry) => String(entry.id) === String(selectedCustomerId));
-  $("activeCustomerLabel").textContent = customer?.name || "-";
-  $("editCustomerName").value = customer?.name || "";
-  $("editCustomerSlug").value = customer?.slug || "";
-  $("editCustomerActive").value = customer?.is_active ? "true" : "false";
-}
-
-function renderCustomerModules() {
-  $("customerModuleList").innerHTML = customerModules.map((module) => `
+function renderProductModules() {
+  $("licensedModuleCount").textContent = String(productModules.filter((module) => module.is_enabled).length);
+  $("productModuleList").innerHTML = productModules.map((module) => `
     <label class="module-checklist__item">
-      <input type="checkbox" data-module-key="${escapeHtml(module.key)}" ${module.is_enabled ? "checked" : ""}>
+      <input
+        type="checkbox"
+        data-module-key="${escapeHtml(module.key)}"
+        ${module.is_base_module ? "checked disabled" : (module.is_enabled ? "checked" : "")}
+      >
       <span>
         <strong>${escapeHtml(module.name)}</strong>
-        <small class="muted">${escapeHtml(module.description || "")}</small>
+        <small class="muted">${escapeHtml(module.license_label || "Zusatzmodul")}</small>
       </span>
     </label>
   `).join("");
+}
+
+function populateUserOptionSelects() {
+  $("userRoleSelect").innerHTML = optionMarkup(installationOptions.roles || [], "Keine Rolle");
+  $("userLocationSelect").innerHTML = optionMarkup(installationOptions.locations || [], "Kein Standort");
+  $("userDepartmentSelect").innerHTML = optionMarkup(installationOptions.departments || [], "Keine feste Abteilung");
 }
 
 function renderUsers() {
   $("usersBody").innerHTML = users.map((user) => `
     <tr>
       <td>${escapeHtml(user.username)}</td>
-      <td>${escapeHtml(user.customer_name || "-")}</td>
       <td>${escapeHtml(user.business_role_name || "-")}</td>
       <td>${escapeHtml(user.location_name || "-")}</td>
       <td>${escapeHtml(user.fixed_department_name || "-")}</td>
@@ -199,32 +191,42 @@ function renderUsers() {
   `).join("");
 
   $("appAdminUserSelect").innerHTML = users.length
-    ? users.map((user) => `<option value="${user.id}">${escapeHtml(user.username)} (${escapeHtml(user.customer_name || "-")})</option>`).join("")
+    ? users.map((user) => `<option value="${user.id}">${escapeHtml(user.username)}</option>`).join("")
     : `<option value="">Keine Benutzer vorhanden</option>`;
 
+  if (selectedUserId && !users.some((user) => String(user.id) === String(selectedUserId))) {
+    selectedUserId = "";
+  }
   if (!selectedUserId && users.length) selectedUserId = String(users[0].id);
   if (selectedUserId) $("appAdminUserSelect").value = selectedUserId;
   syncSelectedUser();
 }
 
-function populateUserOptionSelects() {
-  $("userRoleSelect").innerHTML = optionMarkup(userCustomerOptions.roles || [], "Keine Rolle");
-  $("userLocationSelect").innerHTML = optionMarkup(userCustomerOptions.locations || [], "Kein Standort");
-  $("userDepartmentSelect").innerHTML = optionMarkup(userCustomerOptions.departments || [], "Keine feste Abteilung");
-}
-
 function syncSelectedUser() {
-  const user = users.find((entry) => String(entry.id) === String(selectedUserId || $("appAdminUserSelect").value));
-  if (!user) return;
+  const selectedId = selectedUserId || $("appAdminUserSelect").value;
+  const user = users.find((entry) => String(entry.id) === String(selectedId));
+  if (!user) {
+    selectedUserId = "";
+    $("userRoleSelect").value = "";
+    $("userLocationSelect").value = "";
+    $("userDepartmentSelect").value = "";
+    $("userIsActiveSelect").value = "true";
+    $("userIsAppAdminSelect").value = "false";
+    return;
+  }
+
   selectedUserId = String(user.id);
-  $("userCustomerSelect").value = user.app_customer_id ? String(user.app_customer_id) : "";
+  $("userRoleSelect").value = user.role_id ? String(user.role_id) : "";
+  $("userLocationSelect").value = user.location_id ? String(user.location_id) : "";
+  $("userDepartmentSelect").value = user.fixed_department_id ? String(user.fixed_department_id) : "";
   $("userIsActiveSelect").value = user.is_active ? "true" : "false";
   $("userIsAppAdminSelect").value = user.is_app_admin ? "true" : "false";
-  void loadUserCustomerOptions(user.app_customer_id, {
-    roleId: user.role_id,
-    locationId: user.location_id,
-    departmentId: user.fixed_department_id
-  });
+}
+
+function applyCoreUi() {
+  $("me").textContent = coreContext?.user
+    ? `${coreContext.user.username} - ${coreContext.user.business_role_name || "-"}`
+    : "-";
 }
 
 async function loadCoreContext() {
@@ -243,46 +245,34 @@ async function loadCoreContext() {
     window.location.href = "/dashboard.html";
     return false;
   }
-  $("me").textContent = `${coreContext.user.username} • ${coreContext.user.business_role_name || "-"}`;
+  applyCoreUi();
   return true;
 }
 
-async function loadCustomers() {
-  const response = await api("/api/app-admin/customers", { method: "GET", headers: {} });
-  customers = response.ok ? await response.json() : [];
-  if (!selectedCustomerId && customers.length) selectedCustomerId = String(customers[0].id);
-  updateCustomerInUrl();
-  renderCustomers();
-  renderCustomerEditor();
-}
-
-async function loadCustomerModules() {
-  if (!selectedCustomerId) return;
-  const response = await api(`/api/app-admin/customer-modules/${encodeURIComponent(selectedCustomerId)}`, { method: "GET", headers: {} });
+async function loadInstallation() {
+  const response = await api("/api/app-admin/installation", { method: "GET", headers: {} });
   const data = response.ok ? await response.json() : {};
-  customerModules = Array.isArray(data.modules) ? data.modules : [];
-  renderCustomerModules();
+  installation = data.installation || null;
+  renderInstallationEditor();
 }
 
-async function loadSelectedCustomerOptions() {
-  if (!selectedCustomerId) return;
-  const response = await api(`/api/app-admin/customer-options/${encodeURIComponent(selectedCustomerId)}`, { method: "GET", headers: {} });
-  selectedCustomerOptions = response.ok ? await response.json() : { roles: [], locations: [], departments: [] };
+async function loadProductModules() {
+  const response = await api("/api/app-admin/product-modules", { method: "GET", headers: {} });
+  const data = response.ok ? await response.json() : {};
+  productModules = Array.isArray(data.modules) ? data.modules : [];
+  renderProductModules();
 }
 
-async function loadUserCustomerOptions(customerId, currentSelection = {}) {
-  const targetCustomerId = customerId || "";
-  if (!targetCustomerId) {
-    userCustomerOptions = { roles: [], locations: [], departments: [] };
-    populateUserOptionSelects();
-    return;
-  }
-  const response = await api(`/api/app-admin/customer-options/${encodeURIComponent(targetCustomerId)}`, { method: "GET", headers: {} });
-  userCustomerOptions = response.ok ? await response.json() : { roles: [], locations: [], departments: [] };
+async function loadInstallationOptions() {
+  const response = await api("/api/app-admin/installation-options", { method: "GET", headers: {} });
+  const data = response.ok ? await response.json() : {};
+  installationOptions = {
+    roles: Array.isArray(data.roles) ? data.roles : [],
+    locations: Array.isArray(data.locations) ? data.locations : [],
+    departments: Array.isArray(data.departments) ? data.departments : []
+  };
   populateUserOptionSelects();
-  $("userRoleSelect").value = currentSelection.roleId ? String(currentSelection.roleId) : "";
-  $("userLocationSelect").value = currentSelection.locationId ? String(currentSelection.locationId) : "";
-  $("userDepartmentSelect").value = currentSelection.departmentId ? String(currentSelection.departmentId) : "";
+  syncSelectedUser();
 }
 
 async function loadUsers() {
@@ -291,90 +281,53 @@ async function loadUsers() {
   renderUsers();
 }
 
-async function refreshSelectedCustomer() {
-  renderCustomerEditor();
-  await Promise.all([loadSelectedCustomerOptions(), loadCustomerModules()]);
-}
-
 function bindEvents() {
-  $("appAdminCustomerSelect")?.addEventListener("change", async (event) => {
-    selectedCustomerId = String(event.target.value || "");
-    updateCustomerInUrl();
-    await refreshSelectedCustomer();
-  });
-
   $("appAdminUserSelect")?.addEventListener("change", () => {
     selectedUserId = String($("appAdminUserSelect").value || "");
     syncSelectedUser();
   });
 
-  $("userCustomerSelect")?.addEventListener("change", async (event) => {
-    await loadUserCustomerOptions(String(event.target.value || ""), {});
-  });
-
-  $("createCustomerBtn")?.addEventListener("click", async () => {
+  $("saveInstallationBtn")?.addEventListener("click", async () => {
     const payload = {
-      name: String($("newCustomerName").value || "").trim(),
-      slug: String($("newCustomerSlug").value || "").trim()
+      name: String($("editInstallationName").value || "").trim(),
+      slug: String($("editInstallationSlug").value || "").trim(),
+      is_active: $("editInstallationActive").value === "true"
     };
-    if (!payload.name) return setMsg("createCustomerMsg", "Bitte einen Kundennamen eingeben.");
-    const response = await api("/api/app-admin/customers", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("createCustomerMsg", data?.error || "Kunde konnte nicht angelegt werden.");
-    $("newCustomerName").value = "";
-    $("newCustomerSlug").value = "";
-    selectedCustomerId = String(data.id);
-    setMsg("createCustomerMsg", "Kunde angelegt.", true);
-    await loadCustomers();
-    await refreshSelectedCustomer();
-  });
 
-  $("saveCustomerBtn")?.addEventListener("click", async () => {
-    if (!selectedCustomerId) return setMsg("saveCustomerMsg", "Bitte zuerst einen Kunden auswaehlen.");
-    const payload = {
-      name: String($("editCustomerName").value || "").trim(),
-      slug: String($("editCustomerSlug").value || "").trim(),
-      is_active: $("editCustomerActive").value === "true"
-    };
-    const response = await api(`/api/app-admin/customers/${encodeURIComponent(selectedCustomerId)}`, {
+    const response = await api("/api/app-admin/installation", {
       method: "PUT",
       body: JSON.stringify(payload)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("saveCustomerMsg", data?.error || "Kunde konnte nicht gespeichert werden.");
-    setMsg("saveCustomerMsg", "Kunde gespeichert.", true);
-    await loadCustomers();
+    if (!response.ok) return setMsg("saveInstallationMsg", data?.error || "Installation konnte nicht gespeichert werden.");
+    installation = data;
+    renderInstallationEditor();
+    setMsg("saveInstallationMsg", "Installation gespeichert.", true);
   });
 
-  $("openSelectedCustomerAdminBtn")?.addEventListener("click", () => {
-    if (!selectedCustomerId) return;
-    window.location.href = `/admin.html?customerId=${encodeURIComponent(selectedCustomerId)}`;
+  $("openOrganizationAdminBtn")?.addEventListener("click", () => {
+    window.location.href = "/admin.html";
   });
 
-  $("saveCustomerModulesBtn")?.addEventListener("click", async () => {
-    if (!selectedCustomerId) return setMsg("customerModulesMsg", "Bitte zuerst einen Kunden auswaehlen.");
+  $("saveProductModulesBtn")?.addEventListener("click", async () => {
     const modules = Array.from(document.querySelectorAll("[data-module-key]")).map((input) => ({
       key: input.dataset.moduleKey,
       is_enabled: input.checked
     }));
-    const response = await api(`/api/app-admin/customer-modules/${encodeURIComponent(selectedCustomerId)}`, {
+    const response = await api("/api/app-admin/product-modules", {
       method: "PUT",
       body: JSON.stringify({ modules })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("customerModulesMsg", data?.error || "Freischaltungen konnten nicht gespeichert werden.");
-    customerModules = Array.isArray(data.modules) ? data.modules : customerModules;
-    renderCustomerModules();
-    setMsg("customerModulesMsg", "Freischaltungen gespeichert.", true);
+    if (!response.ok) return setMsg("productModulesMsg", data?.error || "Modulfreigaben konnten nicht gespeichert werden.");
+    productModules = Array.isArray(data.modules) ? data.modules : productModules;
+    renderProductModules();
+    setMsg("productModulesMsg", "Modulfreigaben gespeichert.", true);
   });
 
   $("saveUserBtn")?.addEventListener("click", async () => {
-    if (!selectedUserId) return setMsg("saveUserMsg", "Bitte einen Benutzer auswaehlen.");
+    if (!selectedUserId) return setMsg("saveUserMsg", "Bitte einen Benutzer auswählen.");
     const payload = {
-      app_customer_id: $("userCustomerSelect").value || null,
       role_id: $("userRoleSelect").value || null,
       location_id: $("userLocationSelect").value || null,
       fixed_department_id: $("userDepartmentSelect").value || null,
@@ -393,13 +346,15 @@ function bindEvents() {
 }
 
 (async function init() {
-  selectedCustomerId = String(new URLSearchParams(window.location.search).get("customerId") || "").trim();
   bindSettingsMenu();
   bindPasswordModal();
   bindEvents();
   const ok = await loadCoreContext();
   if (!ok) return;
-  await loadCustomers();
-  await refreshSelectedCustomer();
-  await loadUsers();
+  await Promise.all([
+    loadInstallation(),
+    loadProductModules(),
+    loadInstallationOptions(),
+    loadUsers()
+  ]);
 })();

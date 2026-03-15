@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Kunden-Administration</title>
+  <title>Organisations-Administration</title>
   <link rel="stylesheet" href="/public/styles.css">
 </head>
 <body>
@@ -11,13 +11,13 @@
   <a href="/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">CTSH Dashboard</a>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="settings-menu-wrap" id="settingsMenuWrap">
-      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen oeffnen">&#9881;</button>
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">&#9881;</button>
       <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
         <button class="secondary" id="openDashboardBtn" role="menuitem">Dashboard</button>
-        <button class="secondary" id="openPalletAdminBtn" role="menuitem" style="display:none;">Paletten Modul-Admin</button>
-        <button class="secondary" id="openAppAdminBtn" role="menuitem" style="display:none;">App Admin</button>
-        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort aendern</button>
-        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+        <button class="secondary" id="openPalletAdminBtn" role="menuitem" style="display:none;">Paletten-Modul-Admin</button>
+        <button class="secondary" id="openAppAdminBtn" role="menuitem" style="display:none;">Produkt-Admin</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Dunkelmodus</button>
         <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
       </div>
     </div>
@@ -28,21 +28,17 @@
 <main class="dashboard-main module-dashboard-main">
   <section class="dashboard-header admin-header module-hero">
     <div class="module-hero__copy">
-      <span class="module-hero__eyebrow">Core Administration</span>
+      <span class="module-hero__eyebrow">Core</span>
       <div class="dashboard-title-row">
-        <b>Kunden-Administration</b>
+        <b>Organisations-Administration</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead" id="adminLead">Benutzer und Rollen innerhalb des aktuellen Kunden verwalten.</p>
+      <p class="module-hero__lead" id="adminLead">Benutzer und Rollen.</p>
     </div>
     <div class="module-hero__panel">
       <div class="module-hero__panel-item">
-        <span class="module-section-kicker">Kunde</span>
+        <span class="module-section-kicker">Installation</span>
         <strong id="managedCustomerName">-</strong>
-      </div>
-      <div class="module-hero__panel-item" id="customerSwitchWrap" style="display:none;">
-        <label for="customerSelect">Mandant wechseln</label>
-        <select id="customerSelect"></select>
       </div>
       <div class="module-hero__panel-item">
         <span class="module-section-kicker">Freigeschaltete Module</span>
@@ -61,9 +57,9 @@
       <article class="card admin-card" id="userCreateCard">
         <div class="admin-card-head compact">
           <div>
-            <span class="section-eyebrow">Neuer Benutzer</span>
+            <span class="section-eyebrow">Benutzer</span>
             <h3>Benutzer anlegen</h3>
-            <p>Benutzer fuer den aktuellen Kunden anlegen.</p>
+            <p>Neuer Benutzer.</p>
           </div>
         </div>
         <div class="row">
@@ -103,9 +99,9 @@
       <article class="card admin-card">
         <div class="admin-card-head compact">
           <div>
-            <span class="section-eyebrow">Benutzer bearbeiten</span>
-            <h3>Benutzer aktualisieren</h3>
-            <p>Rolle, Status und Zuordnung im aktuellen Kunden pflegen.</p>
+            <span class="section-eyebrow">Benutzer</span>
+            <h3>Benutzer bearbeiten</h3>
+            <p>Status und Rollen.</p>
           </div>
         </div>
         <div class="row">
@@ -140,8 +136,8 @@
         <div class="row">
           <div class="module-admin-inline-actions">
             <button class="primary" id="saveUserBtn" type="button">Speichern</button>
-            <button class="secondary" id="resetPasswordBtn" type="button">Passwort zuruecksetzen</button>
-            <button class="secondary" id="deleteUserBtn" type="button">Benutzer loeschen</button>
+            <button class="secondary" id="resetPasswordBtn" type="button">Passwort zurücksetzen</button>
+            <button class="secondary" id="deleteUserBtn" type="button">Benutzer löschen</button>
           </div>
         </div>
         <p id="editUserMsg"></p>
@@ -151,8 +147,8 @@
     <article class="card admin-card">
       <div class="admin-card-head">
         <div>
-          <span class="section-eyebrow">Benutzerliste</span>
-          <h3>Benutzer im Ueberblick</h3>
+          <span class="section-eyebrow">Benutzer</span>
+          <h3>Benutzer im Überblick</h3>
         </div>
       </div>
       <div class="admin-table-wrap">
@@ -178,9 +174,9 @@
       <article class="card admin-card">
         <div class="admin-card-head compact">
           <div>
-            <span class="section-eyebrow">Neue Rolle</span>
+            <span class="section-eyebrow">Rolle</span>
             <h3>Rolle anlegen</h3>
-            <p>Rechte gelten nur fuer freigeschaltete Module dieses Kunden.</p>
+            <p>Neue Rolle.</p>
           </div>
         </div>
         <div class="row">
@@ -198,19 +194,19 @@
       <article class="card admin-card">
         <div class="admin-card-head compact">
           <div>
-            <span class="section-eyebrow">Aktive Rolle</span>
+            <span class="section-eyebrow">Rolle</span>
             <h3>Rolle bearbeiten</h3>
-            <p>Nur Rechte fuer aktive Module werden angezeigt.</p>
+            <p>Rechte bearbeiten.</p>
           </div>
         </div>
         <div class="row">
           <div>
-            <label for="roleSelect">Rolle auswaehlen</label>
+            <label for="roleSelect">Rolle auswählen</label>
             <select id="roleSelect"></select>
           </div>
           <div class="module-admin-inline-actions">
-            <button class="primary" id="saveRoleBtn" type="button">Rechte speichern</button>
-            <button class="secondary" id="deleteRoleBtn" type="button">Rolle loeschen</button>
+            <button class="primary" id="saveRoleBtn" type="button">Speichern</button>
+            <button class="secondary" id="deleteRoleBtn" type="button">Rolle löschen</button>
           </div>
         </div>
         <p id="editRoleMsg"></p>
@@ -220,7 +216,7 @@
     <article class="card admin-card">
       <div class="admin-card-head">
         <div>
-          <span class="section-eyebrow">Rechte-Matrix</span>
+          <span class="section-eyebrow">Rechte</span>
           <h3>Rollen und Rechte</h3>
         </div>
       </div>
@@ -232,8 +228,8 @@
 <div class="modalBack" id="passwordModalBack" aria-hidden="true">
   <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="password-modal-head">
-      <h3 id="passwordModalTitle">Passwort aendern</h3>
-      <button class="secondary" id="closePasswordModalBtn" type="button">Schliessen</button>
+      <h3 id="passwordModalTitle">Passwort ändern</h3>
+      <button class="secondary" id="closePasswordModalBtn" type="button">Schließen</button>
     </div>
     <div class="row" style="margin-top:8px;">
       <div>

@@ -2,6 +2,9 @@ const { pool } = require("../db_pg");
 const permissionsConfig = require("../permissions_config");
 const { getDefaultEnabledModuleKeys, getModuleByKey, listModules } = require("./module_registry");
 
+const DEFAULT_INSTALLATION_NAME = "Standardinstallation";
+const DEFAULT_INSTALLATION_SLUG = "standardinstallation";
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -44,6 +47,43 @@ function isAppAdmin(user) {
   return Boolean(user?.is_app_admin || user?.role === "admin");
 }
 
+async function seedModulesForCustomer(customerId) {
+  for (const moduleDefinition of listModules()) {
+    await pool.query(
+      `
+      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (app_customer_id, module_key)
+      DO NOTHING
+      `,
+      [customerId, moduleDefinition.key, Boolean(moduleDefinition.enabledByDefault)]
+    );
+  }
+}
+
+async function ensureInstallationCustomer() {
+  const existing = await pool.query(
+    `
+    SELECT id, name, slug, is_active, created_at
+    FROM app_customers
+    ORDER BY id
+    LIMIT 1
+    `
+  );
+  if (existing.rowCount) return existing.rows[0];
+
+  const created = await pool.query(
+    `
+    INSERT INTO app_customers (name, slug, is_active)
+    VALUES ($1, $2, TRUE)
+    RETURNING id, name, slug, is_active, created_at
+    `,
+    [DEFAULT_INSTALLATION_NAME, DEFAULT_INSTALLATION_SLUG]
+  );
+  await seedModulesForCustomer(created.rows[0].id);
+  return created.rows[0];
+}
+
 async function getCustomerById(customerId) {
   const normalizedId = Number(customerId);
   if (!Number.isInteger(normalizedId) || normalizedId <= 0) return null;
@@ -56,6 +96,20 @@ async function getCustomerById(customerId) {
     [normalizedId]
   );
   return result.rowCount ? result.rows[0] : null;
+}
+
+async function getInstallationCustomer(user = null) {
+  const userCustomerId = Number(user?.app_customer_id);
+  if (Number.isInteger(userCustomerId) && userCustomerId > 0) {
+    const userCustomer = await getCustomerById(userCustomerId);
+    if (userCustomer) return userCustomer;
+  }
+  return ensureInstallationCustomer();
+}
+
+async function getInstallationCustomerId(user = null) {
+  const installation = await getInstallationCustomer(user);
+  return installation?.id || null;
 }
 
 async function getUserContext(userId) {
@@ -90,7 +144,10 @@ async function getUserContext(userId) {
   return result.rowCount ? result.rows[0] : null;
 }
 
-async function listCustomers() {
+async function listCustomers(user = null) {
+  const installation = await getInstallationCustomer(user);
+  if (!installation) return [];
+
   const result = await pool.query(
     `
     SELECT
@@ -102,9 +159,11 @@ async function listCustomers() {
       COUNT(u.id)::int AS user_count
     FROM app_customers c
     LEFT JOIN users u ON u.app_customer_id = c.id
+    WHERE c.id = $1
     GROUP BY c.id
     ORDER BY c.name
-    `
+    `,
+    [installation.id]
   );
   return result.rows;
 }
@@ -126,8 +185,12 @@ async function getEnabledModuleKeysForCustomer(appCustomerId) {
     [normalizedCustomerId]
   );
 
-  if (!result.rowCount) return getDefaultEnabledModuleKeys();
-  return result.rows.map((row) => row.module_key);
+  const enabledModuleKeys = new Set(getDefaultEnabledModuleKeys());
+  for (const row of result.rows) {
+    enabledModuleKeys.add(row.module_key);
+  }
+
+  return Array.from(enabledModuleKeys).sort();
 }
 
 function filterPermissionsByEnabledModules(rawPermissions, enabledModuleKeys, options = {}) {
@@ -155,10 +218,14 @@ async function getUserPermissions(user) {
   }
 
   const normalizedUser = user?.id ? user : await getUserContext(user?.id);
+  const customerId = Number(normalizedUser?.app_customer_id) > 0
+    ? Number(normalizedUser.app_customer_id)
+    : await getInstallationCustomerId(normalizedUser);
+
   if (!normalizedUser?.role_id) {
     return filterPermissionsByEnabledModules(
       permissionsConfig.createPermissionDefaults(),
-      await getEnabledModuleKeysForCustomer(normalizedUser?.app_customer_id),
+      await getEnabledModuleKeysForCustomer(customerId),
       { appAdmin: false }
     );
   }
@@ -170,7 +237,7 @@ async function getUserPermissions(user) {
     WHERE id = $1
       AND app_customer_id = $2
     `,
-    [Number(normalizedUser.role_id), Number(normalizedUser.app_customer_id)]
+    [Number(normalizedUser.role_id), Number(customerId)]
   );
 
   const rawPermissions = permissionsConfig.normalizePermissions(
@@ -179,7 +246,7 @@ async function getUserPermissions(user) {
 
   return filterPermissionsByEnabledModules(
     rawPermissions,
-    await getEnabledModuleKeysForCustomer(normalizedUser.app_customer_id),
+    await getEnabledModuleKeysForCustomer(customerId),
     { appAdmin: false }
   );
 }
@@ -227,7 +294,8 @@ function buildDashboardModules({ user, permissions, enabledModuleKeys }) {
         enabled: moduleEnabled,
         visible: Boolean(allowed),
         allowed: Boolean(allowed),
-        dashboard: moduleDefinition.dashboard
+        dashboard: moduleDefinition.dashboard,
+        licensing: moduleDefinition.licensing || null
       };
     })
     .filter((moduleEntry) => moduleEntry.visible);
@@ -259,18 +327,8 @@ function parseRequestedCustomerId(value) {
   return normalizedId;
 }
 
-async function resolveManagedCustomerId(user, requestedCustomerId) {
-  if (!isAppAdmin(user)) {
-    return Number(user?.app_customer_id || 0) || null;
-  }
-
-  const normalizedId = parseRequestedCustomerId(requestedCustomerId);
-  if (!normalizedId) {
-    return Number(user?.app_customer_id || 0) || null;
-  }
-
-  const customer = await getCustomerById(normalizedId);
-  return customer ? normalizedId : Number(user?.app_customer_id || 0) || null;
+async function resolveManagedCustomerId(user, _requestedCustomerId) {
+  return getInstallationCustomerId(user);
 }
 
 module.exports = {
@@ -283,6 +341,8 @@ module.exports = {
   filterPermissionsByEnabledModules,
   getCustomerById,
   getEnabledModuleKeysForCustomer,
+  getInstallationCustomer,
+  getInstallationCustomerId,
   getUserContext,
   getUserPermissions,
   isAppAdmin,

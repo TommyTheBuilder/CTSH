@@ -512,7 +512,7 @@ async function createBooking(booking) {
 
 async function deleteBooking(bookingId) {
   if (!canDeletePlanningBookings()) {
-    throw new Error("Keine Berechtigung zum Loeschen von Planungsbuchungen.");
+    throw new Error("Keine Berechtigung zum Löschen von Planungsbuchungen.");
   }
   const response = await fetch(`/api/modules/container-planning/bookings/${encodeURIComponent(bookingId)}`, {
     method: "DELETE",
@@ -1110,15 +1110,15 @@ function createConfirmDialog() {
       <div class="confirm-modal__header">
         <div class="confirm-modal__badge" aria-hidden="true">!</div>
         <div>
-          <p class="confirm-modal__eyebrow">Bitte bestÃ¤tigen</p>
-          <h3 id="confirmDialogTitle">Eintrag lÃ¶schen?</h3>
+          <p class="confirm-modal__eyebrow">Bitte bestätigen</p>
+          <h3 id="confirmDialogTitle">Eintrag löschen?</h3>
         </div>
       </div>
       <p class="confirm-modal__message" id="confirmDialogMessage"></p>
-      <p class="confirm-modal__hint">Dieser Vorgang kann nicht rÃ¼ckgÃ¤ngig gemacht werden.</p>
+      <p class="confirm-modal__hint">Dieser Vorgang kann nicht rückgängig gemacht werden.</p>
       <div class="modal-actions confirm-modal__actions">
         <button type="button" class="btn" data-confirm-cancel>Abbrechen</button>
-        <button type="button" class="btn btn--danger-solid" data-confirm-accept>EndgÃ¼ltig lÃ¶schen</button>
+        <button type="button" class="btn btn--danger-solid" data-confirm-accept>Endgültig löschen</button>
       </div>
     </div>
   `;
@@ -1162,7 +1162,7 @@ function createConfirmDialog() {
   });
 
   async function confirm({ title, message, confirmLabel }) {
-    titleNode.textContent = title || "Eintrag lÃ¶schen?";
+    titleNode.textContent = title || "Eintrag löschen?";
     lastState = {
       title: title || t("confirmDeleteTitle"),
       message: message || "",

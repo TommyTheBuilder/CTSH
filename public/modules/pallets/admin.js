@@ -1,7 +1,5 @@
 let token = localStorage.getItem("token");
 let context = null;
-let customers = [];
-let selectedCustomerId = "";
 let locations = [];
 let departments = [];
 let entrepreneurs = [];
@@ -23,25 +21,11 @@ function api(path, opts = {}) {
   });
 }
 
-function withCustomerQuery(path) {
-  if (!selectedCustomerId) return path;
-  const url = new URL(path, window.location.origin);
-  url.searchParams.set("customerId", selectedCustomerId);
-  return `${url.pathname}${url.search}`;
-}
-
 function setMsg(id, text, ok = false) {
   const el = $(id);
   if (!el) return;
   el.style.color = ok ? "#0a7a2f" : "#b00020";
   el.textContent = text || "";
-}
-
-function sanitizeUrlCustomer() {
-  const url = new URL(window.location.href);
-  if (selectedCustomerId) url.searchParams.set("customerId", selectedCustomerId);
-  else url.searchParams.delete("customerId");
-  history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
 }
 
 function closeSettingsMenu() {
@@ -125,13 +109,13 @@ function bindPasswordModal() {
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      return setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
     }
     if (new_password.length < 8) {
       return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      return setMsg("passwordModalMsg", "Die Passwoerter stimmen nicht ueberein.");
+      return setMsg("passwordModalMsg", "Die Passwörter stimmen nicht überein.");
     }
 
     const response = await api("/api/change-password", {
@@ -147,32 +131,15 @@ function bindPasswordModal() {
   });
 }
 
-function renderCustomerSwitcher() {
-  const wrap = $("customerSwitchWrap");
-  const select = $("customerSelect");
-  if (!wrap || !select) return;
-
-  if (!customers.length) {
-    wrap.style.display = "none";
-    return;
-  }
-
-  wrap.style.display = "";
-  select.innerHTML = customers.map((customer) => (
-    `<option value="${customer.id}">${customer.name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</option>`
-  )).join("");
-  if (selectedCustomerId) select.value = selectedCustomerId;
-}
-
 function updateContextUi() {
   $("me").textContent = context?.user
-    ? `${context.user.username} • ${context.user.business_role_name || "-"}`
+    ? `${context.user.username} - ${context.user.business_role_name || "-"}`
     : "-";
-  $("managedCustomerName").textContent = context?.managed_customer?.name || "Kein Kunde";
+  $("managedCustomerName").textContent = context?.installation?.name || context?.managed_customer?.name || "Keine Installation";
 }
 
 async function loadContext() {
-  const response = await api(withCustomerQuery("/api/modules/pallets/admin/context"), { method: "GET", headers: {} });
+  const response = await api("/api/modules/pallets/admin/context", { method: "GET", headers: {} });
   if (!response.ok) {
     if (response.status === 401) {
       localStorage.removeItem("token");
@@ -186,12 +153,6 @@ async function loadContext() {
   }
 
   context = await response.json();
-  customers = Array.isArray(context.available_customers) ? context.available_customers : [];
-  if (!selectedCustomerId && context?.managed_customer?.id) {
-    selectedCustomerId = String(context.managed_customer.id);
-  }
-  sanitizeUrlCustomer();
-  renderCustomerSwitcher();
   updateContextUi();
   return true;
 }
@@ -200,19 +161,19 @@ function renderLocations() {
   $("locationsBody").innerHTML = locations.map((entry) => `
     <tr>
       <td>${entry.name}</td>
-      <td><button class="secondary" type="button" data-delete-location="${entry.id}" style="width:auto;">Loeschen</button></td>
+      <td><button class="secondary" type="button" data-delete-location="${entry.id}" style="width:auto;">Löschen</button></td>
     </tr>
   `).join("");
 
   document.querySelectorAll("[data-delete-location]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Standort wirklich loeschen?")) return;
-      const response = await api(withCustomerQuery(`/api/modules/pallets/admin/locations/${encodeURIComponent(button.dataset.deleteLocation)}`), {
+      if (!confirm("Standort wirklich löschen?")) return;
+      const response = await api(`/api/modules/pallets/admin/locations/${encodeURIComponent(button.dataset.deleteLocation)}`, {
         method: "DELETE"
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("locationMsg", data?.error || "Loeschen fehlgeschlagen.");
-      setMsg("locationMsg", "Standort geloescht.", true);
+      if (!response.ok) return setMsg("locationMsg", data?.error || "Löschen fehlgeschlagen.");
+      setMsg("locationMsg", "Standort gelöscht.", true);
       await loadLocations();
     });
   });
@@ -222,19 +183,19 @@ function renderDepartments() {
   $("departmentsBody").innerHTML = departments.map((entry) => `
     <tr>
       <td>${entry.name}</td>
-      <td><button class="secondary" type="button" data-delete-department="${entry.id}" style="width:auto;">Loeschen</button></td>
+      <td><button class="secondary" type="button" data-delete-department="${entry.id}" style="width:auto;">Löschen</button></td>
     </tr>
   `).join("");
 
   document.querySelectorAll("[data-delete-department]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Abteilung wirklich loeschen?")) return;
-      const response = await api(withCustomerQuery(`/api/modules/pallets/admin/departments/${encodeURIComponent(button.dataset.deleteDepartment)}`), {
+      if (!confirm("Abteilung wirklich löschen?")) return;
+      const response = await api(`/api/modules/pallets/admin/departments/${encodeURIComponent(button.dataset.deleteDepartment)}`, {
         method: "DELETE"
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("departmentMsg", data?.error || "Loeschen fehlgeschlagen.");
-      setMsg("departmentMsg", "Abteilung geloescht.", true);
+      if (!response.ok) return setMsg("departmentMsg", data?.error || "Löschen fehlgeschlagen.");
+      setMsg("departmentMsg", "Abteilung gelöscht.", true);
       await loadDepartments();
     });
   });
@@ -252,7 +213,7 @@ function renderEntrepreneurs() {
       <td>
         <div class="module-admin-inline-actions">
           <button class="secondary" type="button" data-edit-entrepreneur="${entry.id}" style="width:auto;">Bearbeiten</button>
-          <button class="secondary" type="button" data-delete-entrepreneur="${entry.id}" style="width:auto;">Loeschen</button>
+          <button class="secondary" type="button" data-delete-entrepreneur="${entry.id}" style="width:auto;">Löschen</button>
         </div>
       </td>
     </tr>
@@ -273,14 +234,14 @@ function renderEntrepreneurs() {
 
   document.querySelectorAll("[data-delete-entrepreneur]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Frachtfuehrer wirklich loeschen?")) return;
-      const response = await api(withCustomerQuery(`/api/modules/pallets/admin/entrepreneurs/${encodeURIComponent(button.dataset.deleteEntrepreneur)}`), {
+      if (!confirm("Frachtführer wirklich löschen?")) return;
+      const response = await api(`/api/modules/pallets/admin/entrepreneurs/${encodeURIComponent(button.dataset.deleteEntrepreneur)}`, {
         method: "DELETE"
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "Loeschen fehlgeschlagen.");
+      if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "Löschen fehlgeschlagen.");
       if (String(editingEntrepreneurId) === String(button.dataset.deleteEntrepreneur)) resetEntrepreneurForm();
-      setMsg("entrepreneurMsg", "Frachtfuehrer geloescht.", true);
+      setMsg("entrepreneurMsg", "Frachtführer gelöscht.", true);
       await loadEntrepreneurs();
     });
   });
@@ -295,36 +256,28 @@ function resetEntrepreneurForm() {
 }
 
 async function loadLocations() {
-  const response = await api(withCustomerQuery("/api/modules/pallets/admin/locations"), { method: "GET", headers: {} });
+  const response = await api("/api/modules/pallets/admin/locations", { method: "GET", headers: {} });
   locations = response.ok ? await response.json() : [];
   renderLocations();
 }
 
 async function loadDepartments() {
-  const response = await api(withCustomerQuery("/api/modules/pallets/admin/departments"), { method: "GET", headers: {} });
+  const response = await api("/api/modules/pallets/admin/departments", { method: "GET", headers: {} });
   departments = response.ok ? await response.json() : [];
   renderDepartments();
 }
 
 async function loadEntrepreneurs() {
-  const response = await api(withCustomerQuery("/api/modules/pallets/admin/entrepreneurs"), { method: "GET", headers: {} });
+  const response = await api("/api/modules/pallets/admin/entrepreneurs", { method: "GET", headers: {} });
   entrepreneurs = response.ok ? await response.json() : [];
   renderEntrepreneurs();
 }
 
 function bindActions() {
-  $("customerSelect")?.addEventListener("change", async (event) => {
-    selectedCustomerId = String(event.target.value || "");
-    sanitizeUrlCustomer();
-    const ok = await loadContext();
-    if (!ok) return;
-    await Promise.all([loadLocations(), loadDepartments(), loadEntrepreneurs()]);
-  });
-
   $("saveLocationBtn")?.addEventListener("click", async () => {
     const name = String($("locationName").value || "").trim();
     if (!name) return setMsg("locationMsg", "Bitte einen Standortnamen eingeben.");
-    const response = await api(withCustomerQuery("/api/modules/pallets/admin/locations"), {
+    const response = await api("/api/modules/pallets/admin/locations", {
       method: "POST",
       body: JSON.stringify({ name })
     });
@@ -338,7 +291,7 @@ function bindActions() {
   $("saveDepartmentBtn")?.addEventListener("click", async () => {
     const name = String($("departmentName").value || "").trim();
     if (!name) return setMsg("departmentMsg", "Bitte einen Abteilungsnamen eingeben.");
-    const response = await api(withCustomerQuery("/api/modules/pallets/admin/departments"), {
+    const response = await api("/api/modules/pallets/admin/departments", {
       method: "POST",
       body: JSON.stringify({ name })
     });
@@ -359,9 +312,9 @@ function bindActions() {
     if (!payload.name) return setMsg("entrepreneurMsg", "Bitte einen Namen eingeben.");
 
     const response = await api(
-      withCustomerQuery(editingEntrepreneurId
+      editingEntrepreneurId
         ? `/api/modules/pallets/admin/entrepreneurs/${encodeURIComponent(editingEntrepreneurId)}`
-        : "/api/modules/pallets/admin/entrepreneurs"),
+        : "/api/modules/pallets/admin/entrepreneurs",
       {
         method: editingEntrepreneurId ? "PUT" : "POST",
         body: JSON.stringify(payload)
@@ -369,8 +322,9 @@ function bindActions() {
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "Speichern fehlgeschlagen.");
+    const wasEditing = Boolean(editingEntrepreneurId);
     resetEntrepreneurForm();
-    setMsg("entrepreneurMsg", editingEntrepreneurId ? "Frachtfuehrer aktualisiert." : "Frachtfuehrer gespeichert.", true);
+    setMsg("entrepreneurMsg", wasEditing ? "Frachtführer aktualisiert." : "Frachtführer gespeichert.", true);
     await loadEntrepreneurs();
   });
 
@@ -381,7 +335,6 @@ function bindActions() {
 }
 
 (async function init() {
-  selectedCustomerId = String(new URLSearchParams(window.location.search).get("customerId") || "").trim();
   bindSettingsMenu();
   bindPasswordModal();
   bindActions();
