@@ -7,23 +7,19 @@
   <link rel="stylesheet" href="/public/styles.css">
 </head>
 <body>
-<header class="topbar topbar-modern">
-  <div class="system-logo-wrap">
-    <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
-    <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
-  </div>
+<header class="topbar topbar-modern admin-topbar">
+  <a href="/public/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">Paletten Buchungen</a>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="notification-wrap">
-      <button class="secondary notification-toggle" id="notificationBtn" title="Benachrichtigungen">🔔<span class="notification-badge" id="notificationBadge" style="display:none;">0</span></button>
+      <button class="secondary notification-toggle" id="notificationBtn" title="Benachrichtigungen">&#128276;<span class="notification-badge" id="notificationBadge" style="display:none;">0</span></button>
       <div class="notification-panel" id="notificationPanel"></div>
     </div>
-    <button class="secondary" id="entrepreneursMasterBtn" style="display:none;">Frachtführerstammdaten</button>
+    <button class="secondary" id="entrepreneursMasterBtn" style="display:none;">Frachtf&uuml;hrerstammdaten</button>
     <div class="settings-menu-wrap" id="settingsMenuWrap">
-      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">⚙️</button>
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen &ouml;ffnen">&#9881;</button>
       <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
         <button class="secondary" id="adminBtn" style="display:none;" role="menuitem">Admin</button>
-        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort &auml;ndern</button>
         <button class="secondary" id="containerRegistrationBtn" style="display:none;" role="menuitem">Container Anmeldung</button>
         <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
         <button class="secondary" id="moduleDashboardBtn" role="menuitem">Modul-Dashboard</button>
@@ -34,110 +30,161 @@
   </div>
 </header>
 
-<main class="dashboard-main">
-  <section class="dashboard-header">
-    <div class="dashboard-title-row"><b>Palettenmanagement</b> <span class="pill" id="me">-</span></div>
-    <div class="row filter-row">
-    <div class="filter-field">
-      <label>Standort (Filter für Vorgänge/Historie)</label>
-      <select id="locationSelect" class="filter-select"></select>
+<main class="dashboard-main module-dashboard-main pallet-app-main">
+  <section class="dashboard-header admin-header module-hero pallet-app-hero">
+    <div class="module-hero__copy">
+      <span class="module-hero__eyebrow">CTSH Hub</span>
+      <div class="dashboard-title-row">
+        <b>Paletten Buchungen</b>
+        <span class="pill" id="me">-</span>
+      </div>
+      <p class="module-hero__lead">
+        Buchungen, Best&auml;nde und Vorg&auml;nge in einer klaren Arbeitsoberfl&auml;che steuern, ohne den bestehenden Ablauf zu ver&auml;ndern.
+      </p>
     </div>
-    <div class="filter-field">
-      <label>Abteilung (für Historie/Export)</label>
-      <select id="departmentSelect" class="filter-select"></select>
+
+    <div class="pallet-hero-panel">
+      <article class="pallet-hero-filter-card">
+        <span class="module-section-kicker">Standort</span>
+        <label for="locationSelect">Filter f&uuml;r Vorg&auml;nge und Historie</label>
+        <select id="locationSelect" class="filter-select"></select>
+      </article>
+
+      <article class="pallet-hero-filter-card">
+        <span class="module-section-kicker">Abteilung</span>
+        <label for="departmentSelect">Filter f&uuml;r Historie und Export</label>
+        <select id="departmentSelect" class="filter-select"></select>
+      </article>
     </div>
-  </div>
   </section>
 
-  <div class="tabs dashboard-nav">
-    <button data-tab="dashboard" class="active nav-button"><span class="nav-icon">🏠</span>Dashboard</button>
-    <button data-tab="history" class="nav-button"><span class="nav-icon">📅</span>Historie</button>
-    <button data-tab="aviso" class="nav-button"><span class="nav-icon">📄</span>Aviso</button>
-    <button data-tab="entrepreneur-history" class="nav-button"><span class="nav-icon">🚚</span>Frachtführer Historie</button>
-    <button data-tab="cases" class="nav-button"><span class="nav-icon">⚙️</span>Vorgänge</button>
-    <button data-tab="export" class="nav-button"><span class="nav-icon">⤴</span>Export</button>
-  </div>
+  <section class="card module-dashboard-card pallet-nav-shell">
+    <div class="module-dashboard-card__head pallet-nav-shell__head">
+      <div>
+        <span class="module-section-kicker">Navigation</span>
+        <h2>Arbeitsbereiche</h2>
+      </div>
+      <p class="module-dashboard-card__intro">
+        Wechseln Sie direkt zwischen Live-&Uuml;bersicht, Erfassung, Historie, Vorg&auml;ngen und Export.
+      </p>
+    </div>
 
-  <!-- DASHBOARD -->
-  <section id="tab-dashboard">
-    <div class="card">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <button class="secondary toggle-btn" id="toggleStockBtn" type="button" aria-expanded="true">−</button>
-          <h3 style="margin:0;">Bestände (Live)</h3>
-        </div>
-        <div class="rollcard" style="padding:10px 12px; margin:0;">
-          <div class="rollcard-grid" style="grid-template-columns: repeat(2, minmax(190px, 1fr)); gap: 8px 12px;">
-            <div class="rollcard-item">
-              <label>Ansicht</label>
-              <select id="stockMode">
-                <option value="location_total">Standort-Bestand (gesamt)</option>
-                <option value="overall">Komplett-Bestand (je Abteilung)</option>
-                <option value="entrepreneur">Frachtführer-Bestand (gesamt)</option>
-              </select>
+    <div class="tabs dashboard-nav pallet-dashboard-nav">
+      <button data-tab="dashboard" class="active nav-button"><span class="nav-icon nav-icon--text">DB</span>Dashboard</button>
+      <button data-tab="history" class="nav-button"><span class="nav-icon nav-icon--text">HI</span>Historie</button>
+      <button data-tab="aviso" class="nav-button"><span class="nav-icon nav-icon--text">AV</span>Aviso</button>
+      <button data-tab="entrepreneur-history" class="nav-button"><span class="nav-icon nav-icon--text">FH</span>Frachtf&uuml;hrer Historie</button>
+      <button data-tab="cases" class="nav-button"><span class="nav-icon nav-icon--text">VG</span>Vorg&auml;nge</button>
+      <button data-tab="export" class="nav-button"><span class="nav-icon nav-icon--text">EX</span>Export</button>
+    </div>
+  </section>
+
+  <section id="tab-dashboard" class="pallet-tab-section">
+    <div class="pallet-dashboard-grid">
+      <article class="card module-dashboard-card pallet-panel">
+        <div class="pallet-panel__header">
+          <div class="pallet-panel__title">
+            <button class="secondary toggle-btn pallet-panel__toggle" id="toggleStockBtn" type="button" aria-expanded="true">-</button>
+            <div class="pallet-panel__copy">
+              <span class="module-section-kicker">Live</span>
+              <h2>Best&auml;nde</h2>
+              <p>Aktuelle Best&auml;nde nach Sicht, Produkt und Freigaben fokussiert pr&uuml;fen.</p>
             </div>
-            <div class="rollcard-item">
-              <label>Produkt</label>
-              <select id="stockProductType">
-                <option value="euro">Euro-Paletten</option>
-                <option value="h1">H1-Paletten</option>
-                <option value="gitterbox">Gitterboxen</option>
-              </select>
+          </div>
+
+          <div class="rollcard pallet-inline-filter">
+            <div class="rollcard-grid">
+              <div class="rollcard-item">
+                <label for="stockMode">Ansicht</label>
+                <select id="stockMode">
+                  <option value="location_total">Standort-Bestand (gesamt)</option>
+                  <option value="overall">Komplett-Bestand (je Abteilung)</option>
+                  <option value="entrepreneur">Frachtf&uuml;hrer-Bestand (gesamt)</option>
+                </select>
+              </div>
+              <div class="rollcard-item">
+                <label for="stockProductType">Produkt</label>
+                <select id="stockProductType">
+                  <option value="euro">Euro-Paletten</option>
+                  <option value="h1">H1-Paletten</option>
+                  <option value="gitterbox">Gitterboxen</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div id="stockContent">
-        <div class="muted" id="stockHint" style="margin-top:6px;"></div>
-        <div id="stockTableWrap" style="overflow:auto; margin-top:8px;"></div>
-      </div>
-    </div>
 
-    <div class="card">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <button class="secondary toggle-btn" id="toggleCasesBtn" type="button" aria-expanded="true">−</button>
-        <h3 style="margin:0;">Vorgänge (Live)</h3>
-      </div>
-      <div id="casesContent">
-      <div class="muted">Status: 0 Storniert • 1 Aviso • 2 In Bearbeitung • 3 In Prüfung • 4 Gebucht</div>
-        <div id="casesDashWrap" style="overflow:auto; margin-top:8px;"></div>
-      </div>
+        <div id="stockContent">
+          <div class="pallet-status-note muted" id="stockHint"></div>
+          <div class="pallet-table-surface">
+            <div id="stockTableWrap" style="overflow:auto;"></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card module-dashboard-card pallet-panel">
+        <div class="pallet-panel__header">
+          <div class="pallet-panel__title">
+            <button class="secondary toggle-btn pallet-panel__toggle" id="toggleCasesBtn" type="button" aria-expanded="true">-</button>
+            <div class="pallet-panel__copy">
+              <span class="module-section-kicker">Live</span>
+              <h2>Vorg&auml;nge</h2>
+              <p>Offene und gebuchte Vorg&auml;nge in einer kompakten, gut lesbaren Live-&Uuml;bersicht verfolgen.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="casesContent">
+          <p class="pallet-status-note muted">Status: 0 Storniert &#8226; 1 Aviso &#8226; 2 In Bearbeitung &#8226; 3 In Pr&uuml;fung &#8226; 4 Gebucht</p>
+          <div class="pallet-table-surface">
+            <div id="casesDashWrap" style="overflow:auto;"></div>
+          </div>
+        </div>
+      </article>
     </div>
   </section>
 
-  <!-- AVISO -->
-  <section id="tab-aviso" style="display:none;">
-    <div class="card">
-      <h3 style="margin-top:0;">Neue Buchung eröffnen (Aviso)</h3>
+  <section id="tab-aviso" class="pallet-tab-section" style="display:none;">
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Erfassung</span>
+          <h2>Neue Buchung er&ouml;ffnen</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Erfassen Sie neue Avisos mit allen relevanten Angaben in einer kompakten, &uuml;bersichtlichen Maske.
+        </p>
+      </div>
+
       <div class="row">
         <div>
-          <label>Lager (Pflicht)</label>
+          <label for="avisoLocation">Lager (Pflicht)</label>
           <select id="avisoLocation"></select>
         </div>
         <div>
-          <label>Abteilung (Pflicht)</label>
+          <label for="avisoDept">Abteilung (Pflicht)</label>
           <select id="avisoDept"></select>
         </div>
         <div>
-          <label>Kennzeichen (Pflicht, ohne -)</label>
+          <label for="avisoPlate">Kennzeichen (Pflicht, ohne -)</label>
           <input id="avisoPlate" placeholder="z.B. BGLP123">
         </div>
         <div class="inline-field">
           <div class="grow">
-            <label>Frachtführer (Stammdaten)</label>
+            <label for="avisoEntrepreneur">Frachtf&uuml;hrer (Stammdaten)</label>
             <select id="avisoEntrepreneur"></select>
           </div>
-          <button class="secondary" id="addEntrepreneurBtn" type="button" title="Frachtführer hinzufügen" aria-label="Frachtführer hinzufügen">+</button>
+          <button class="secondary" id="addEntrepreneurBtn" type="button" title="Frachtf&uuml;hrer hinzuf&uuml;gen" aria-label="Frachtf&uuml;hrer hinzuf&uuml;gen">+</button>
         </div>
         <div>
-          <label>Frachtführer (frei, nicht speichern)</label>
-          <input id="avisoEntrepreneurFree" placeholder="z.B. Müller Spedition">
+          <label for="avisoEntrepreneurFree">Frachtf&uuml;hrer (frei, nicht speichern)</label>
+          <input id="avisoEntrepreneurFree" placeholder="z.B. M&uuml;ller Spedition">
         </div>
       </div>
 
-      <div class="row" style="margin-top:10px;">
+      <div class="row" style="margin-top:16px;">
         <div>
-          <label>Produkt</label>
+          <label for="avisoProductType">Produkt</label>
           <select id="avisoProductType">
             <option value="euro">Euro-Paletten</option>
             <option value="h1">H1-Paletten</option>
@@ -145,42 +192,50 @@
           </select>
         </div>
         <div>
-          <label>Eingang (IN)</label>
+          <label for="avisoIn">Eingang (IN)</label>
           <input id="avisoIn" type="number" min="0" value="0">
         </div>
         <div>
-          <label>Ausgang (OUT)</label>
+          <label for="avisoOut">Ausgang (OUT)</label>
           <input id="avisoOut" type="number" min="0" value="0">
         </div>
         <div>
-          <label id="avisoEmployeeCodeLabel">Lagermitarbeiter (2-stellig, optional)</label>
+          <label id="avisoEmployeeCodeLabel" for="avisoEmployeeCode">Lagermitarbeiter (2-stellig, optional)</label>
           <input id="avisoEmployeeCode" maxlength="2" placeholder="z.B. AB">
         </div>
         <div style="flex:1; min-width:260px;">
-          <label>Notiz</label>
-          <input id="avisoNote" placeholder="z.B. Auftragsnummer/Info">
+          <label for="avisoNote">Notiz</label>
+          <input id="avisoNote" placeholder="z.B. Auftragsnummer oder Info">
         </div>
-        <div>
+        <div class="pallet-form-actions">
           <button class="primary" id="createAvisoBtn">Aviso erstellen</button>
         </div>
       </div>
-      <p id="avisoMsg"></p>
-    </div>
+      <p id="avisoMsg" class="pallet-message"></p>
+    </article>
 
-    <div class="card" id="internalTransferCard" style="display:none;">
-      <h3 style="margin-top:0;">Interne Lagerumbuchung</h3>
-      <div class="muted" style="margin-bottom:8px;">Umbuchung zwischen Standorten oder direkter Zugang auf einen Standort (ohne Kennzeichen, Frachtführer, Abteilung).</div>
+    <article class="card module-dashboard-card pallet-form-card" id="internalTransferCard" style="display:none;">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Umbuchung</span>
+          <h2>Interne Lagerumbuchung</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Umbuchungen zwischen Standorten oder direkte Zug&auml;nge ohne Kennzeichen, Frachtf&uuml;hrer und Abteilung buchen.
+        </p>
+      </div>
+
       <div class="row">
         <div>
-          <label>Von Standort/Lager (optional)</label>
+          <label for="internalTransferFrom">Von Standort oder Lager (optional)</label>
           <select id="internalTransferFrom"></select>
         </div>
         <div>
-          <label>Empfänger Standort/Lager (Pflicht)</label>
+          <label for="internalTransferTo">Empf&auml;nger Standort oder Lager (Pflicht)</label>
           <select id="internalTransferTo"></select>
         </div>
         <div>
-          <label>Produkt</label>
+          <label for="internalTransferProductType">Produkt</label>
           <select id="internalTransferProductType">
             <option value="euro">Euro-Paletten</option>
             <option value="h1">H1-Paletten</option>
@@ -188,72 +243,47 @@
           </select>
         </div>
         <div>
-          <label>Menge (Pflicht)</label>
+          <label for="internalTransferQty">Menge (Pflicht)</label>
           <input id="internalTransferQty" type="number" min="1" value="1">
         </div>
         <div style="flex:1; min-width:260px;">
-          <label>Notiz (Pflicht)</label>
-          <input id="internalTransferNote" placeholder="z.B. Umlagerung Wien → Linz">
+          <label for="internalTransferNote">Notiz (Pflicht)</label>
+          <input id="internalTransferNote" placeholder="z.B. Umlagerung Wien nach Linz">
         </div>
-        <div>
+        <div class="pallet-form-actions">
           <button class="primary" id="createInternalTransferBtn" type="button">Umbuchung buchen</button>
         </div>
       </div>
-      <p id="internalTransferMsg"></p>
-    </div>
-
-    <div class="modalBack" id="entrepreneurModalBack">
-      <div class="modal" style="max-width:620px; width:100%; box-shadow:0 18px 45px rgba(15,23,42,.3); border:1px solid #e5e7eb;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <h3 style="margin:0;">Frachtführer anlegen</h3>
-          <button class="secondary" type="button" id="closeEntrepreneurModalBtn" style="width:auto;">✕</button>
-        </div>
-        <p class="muted" style="margin-top:0;">Bitte die Stammdaten für den neuen Frachtführer erfassen.</p>
-        <div class="row">
-          <div>
-            <label>Name (Pflicht)</label>
-            <input id="modalEntrepreneurName" placeholder="z.B. Spedition Müller">
-          </div>
-          <div>
-            <label>Straße</label>
-            <input id="modalEntrepreneurStreet" placeholder="z.B. Musterstraße 12">
-          </div>
-          <div>
-            <label>PLZ</label>
-            <input id="modalEntrepreneurPostal" placeholder="z.B. 1010">
-          </div>
-          <div>
-            <label>Ort</label>
-            <input id="modalEntrepreneurCity" placeholder="z.B. Wien">
-          </div>
-        </div>
-        <p id="entrepreneurModalMsg" style="margin:10px 0 0;"></p>
-        <div class="row" style="justify-content:flex-end; margin-top:10px;">
-          <button class="secondary" type="button" id="cancelEntrepreneurModalBtn" style="min-width:140px;">Abbrechen</button>
-          <button class="primary" type="button" id="saveEntrepreneurModalBtn" style="min-width:170px;">Frachtführer speichern</button>
-        </div>
-      </div>
-    </div>
+      <p id="internalTransferMsg" class="pallet-message"></p>
+    </article>
   </section>
 
-  <!-- CASES -->
-  <section id="tab-cases" style="display:none;">
-    <div class="card">
-      <h3 style="margin-top:0;">Vorgänge</h3>
+  <section id="tab-cases" class="pallet-tab-section" style="display:none;">
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Bearbeitung</span>
+          <h2>Vorg&auml;nge</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Filtern, suchen und bearbeiten Sie laufende Vorg&auml;nge in derselben Logik wie bisher, aber in einer ruhigeren Darstellung.
+        </p>
+      </div>
+
       <div class="row">
         <div>
-          <label>Status</label>
+          <label for="caseStatusFilter">Status</label>
           <select id="caseStatusFilter">
             <option value="">Alle</option>
             <option value="0">0 Storniert</option>
             <option value="1">1 Aviso</option>
             <option value="2">2 In Bearbeitung</option>
-            <option value="3">3 In Prüfung</option>
+            <option value="3">3 In Pr&uuml;fung</option>
             <option value="4">4 Gebucht</option>
           </select>
         </div>
         <div>
-          <label>Translogica übernommen</label>
+          <label for="caseTranslogicaFilter">Translogica &uuml;bernommen</label>
           <select id="caseTranslogicaFilter">
             <option value="">Alle</option>
             <option value="1">Ja</option>
@@ -261,44 +291,56 @@
           </select>
         </div>
         <div>
-          <label>Suche (ID/Kennzeichen/Frachtführer/Notiz)</label>
+          <label for="caseSearch">Suche (ID, Kennzeichen, Frachtf&uuml;hrer, Notiz)</label>
           <input id="caseSearch" name="caseSearchNoRestore" value="" placeholder="z.B. BGLP123" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false">
         </div>
-        <div>
+        <div class="pallet-form-actions">
           <button class="secondary" id="reloadCasesBtn">Neu laden</button>
         </div>
       </div>
-      <div id="casesTableWrap" style="overflow:auto; margin-top:10px;"></div>
-      <p class="muted">
-        Auto: wenn du „claim“ hast und ein Aviso öffnest, wird es automatisch auf „In Bearbeitung“ gesetzt.
+
+      <div class="pallet-section-table">
+        <div id="casesTableWrap" style="overflow:auto;"></div>
+      </div>
+
+      <p class="pallet-status-note muted">
+        Wenn die Freigabe f&uuml;r &bdquo;claim&ldquo; vorhanden ist und ein Aviso ge&ouml;ffnet wird, wechselt es automatisch auf &bdquo;In Bearbeitung&ldquo;.
       </p>
-    </div>
+    </article>
   </section>
 
-  <!-- HISTORY -->
-  <section id="tab-history" style="display:none;">
-    <div class="card">
-      <h3 style="margin-top:0;">Historie</h3>
-      <div class="rollcard history-filters" style="margin-bottom:10px;">
+  <section id="tab-history" class="pallet-tab-section" style="display:none;">
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">R&uuml;ckblick</span>
+          <h2>Historie</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Grenzen Sie Buchungen schnell nach Zeitraum, Frachtf&uuml;hrer, Kennzeichen oder Beleg ein.
+        </p>
+      </div>
+
+      <div class="rollcard history-filters pallet-filter-block">
         <div class="rollcard-grid">
           <div class="rollcard-item">
-            <label>Von</label>
+            <label for="histFrom">Von</label>
             <input id="histFrom" type="date">
           </div>
           <div class="rollcard-item">
-            <label>Bis</label>
+            <label for="histTo">Bis</label>
             <input id="histTo" type="date">
           </div>
           <div class="rollcard-item">
-            <label>Frachtführer</label>
+            <label for="histEntrepreneur">Frachtf&uuml;hrer</label>
             <input id="histEntrepreneur" placeholder="optional">
           </div>
           <div class="rollcard-item">
-            <label>Kennzeichen</label>
+            <label for="histPlate">Kennzeichen</label>
             <input id="histPlate" placeholder="optional">
           </div>
           <div class="rollcard-item">
-            <label>Beleg</label>
+            <label for="histReceipt">Beleg</label>
             <input id="histReceipt" placeholder="optional">
           </div>
           <div class="rollcard-item">
@@ -307,79 +349,133 @@
           </div>
         </div>
       </div>
-      <div id="historyWrap" style="overflow:auto; margin-top:10px;"></div>
-    </div>
+
+      <div class="pallet-section-table">
+        <div id="historyWrap" style="overflow:auto;"></div>
+      </div>
+    </article>
   </section>
 
-  <!-- ENTREPRENEUR HISTORY -->
-  <section id="tab-entrepreneur-history" style="display:none;">
-    <div class="card">
-      <h3 style="margin-top:0;">Frachtführer Historie</h3>
+  <section id="tab-entrepreneur-history" class="pallet-tab-section" style="display:none;">
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Partner</span>
+          <h2>Frachtf&uuml;hrer Historie</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Historie gezielt nach Frachtf&uuml;hrer, Abteilung und Kennzeichen auswerten.
+        </p>
+      </div>
+
       <div class="row">
         <div>
-          <label>Frachtführer</label>
+          <label for="entHistEntrepreneur">Frachtf&uuml;hrer</label>
           <select id="entHistEntrepreneur">
             <option value="">Alle</option>
           </select>
         </div>
         <div>
-          <label>Abteilung</label>
+          <label for="entHistDept">Abteilung</label>
           <select id="entHistDept">
             <option value="">Alle</option>
           </select>
         </div>
         <div>
-          <label>Kennzeichen</label>
+          <label for="entHistPlate">Kennzeichen</label>
           <select id="entHistPlate">
             <option value="">Alle</option>
           </select>
         </div>
-        <div>
+        <div class="pallet-form-actions">
           <button class="secondary" id="entHistReloadBtn">Neu laden</button>
         </div>
       </div>
-      <div class="muted" id="entHistTotal" style="margin-top:8px;"></div>
-      <div id="entrepreneurHistoryWrap" style="overflow:auto; margin-top:10px;"></div>
-    </div>
+
+      <div class="pallet-status-note muted" id="entHistTotal"></div>
+      <div class="pallet-section-table">
+        <div id="entrepreneurHistoryWrap" style="overflow:auto;"></div>
+      </div>
+    </article>
   </section>
 
-  <!-- EXPORT -->
-  <section id="tab-export" style="display:none;">
-    <div class="card">
-      <h3 style="margin-top:0;">Export</h3>
-      <div class="row">
+  <section id="tab-export" class="pallet-tab-section" style="display:none;">
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Ausgabe</span>
+          <h2>Export</h2>
+        </div>
+        <p class="module-dashboard-card__intro">
+          Exportieren Sie die aktuell gefilterten Daten schnell im gewohnten Format.
+        </p>
+      </div>
+
+      <div class="row pallet-export-actions">
         <button class="secondary" id="csvBtn">CSV</button>
         <button class="secondary" id="xlsxBtn">Excel</button>
       </div>
-      <p class="muted">Export bezieht sich auf ausgewählten Standort + Abteilung.</p>
-    </div>
+      <p class="pallet-status-note muted">Der Export bezieht sich auf den ausgew&auml;hlten Standort und die ausgew&auml;hlte Abteilung.</p>
+    </article>
   </section>
 </main>
 
-<!-- Case Modal -->
+<div class="modalBack" id="entrepreneurModalBack">
+  <div class="modal password-modal" style="max-width:620px; width:100%;">
+    <div class="password-modal-head">
+      <h3 style="margin:0;">Frachtf&uuml;hrer anlegen</h3>
+      <button class="secondary" type="button" id="closeEntrepreneurModalBtn" style="width:auto;">&#10005;</button>
+    </div>
+    <p class="muted" style="margin-top:0;">Bitte die Stammdaten f&uuml;r den neuen Frachtf&uuml;hrer erfassen.</p>
+    <div class="row">
+      <div>
+        <label for="modalEntrepreneurName">Name (Pflicht)</label>
+        <input id="modalEntrepreneurName" placeholder="z.B. Spedition M&uuml;ller">
+      </div>
+      <div>
+        <label for="modalEntrepreneurStreet">Stra&szlig;e</label>
+        <input id="modalEntrepreneurStreet" placeholder="z.B. Musterstra&szlig;e 12">
+      </div>
+      <div>
+        <label for="modalEntrepreneurPostal">PLZ</label>
+        <input id="modalEntrepreneurPostal" placeholder="z.B. 1010">
+      </div>
+      <div>
+        <label for="modalEntrepreneurCity">Ort</label>
+        <input id="modalEntrepreneurCity" placeholder="z.B. Wien">
+      </div>
+    </div>
+    <p id="entrepreneurModalMsg" class="pallet-message"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:10px;">
+      <button class="secondary" type="button" id="cancelEntrepreneurModalBtn" style="min-width:140px;">Abbrechen</button>
+      <button class="primary" type="button" id="saveEntrepreneurModalBtn" style="min-width:170px;">Frachtf&uuml;hrer speichern</button>
+    </div>
+  </div>
+</div>
+
 <div class="modalBack" id="caseModalBack">
-  <div class="modal">
-    <div class="row" style="justify-content:space-between; align-items:center;">
+  <div class="modal password-modal">
+    <div class="password-modal-head">
       <h3 style="margin:0;">Vorgang bearbeiten</h3>
-      <button class="secondary" id="closeCaseModalBtn">Schließen</button>
+      <button class="secondary" id="closeCaseModalBtn" type="button">Schlie&szlig;en</button>
     </div>
     <div class="muted" id="caseModalMeta" style="margin-top:6px;"></div>
 
-    <div class="row" style="margin-top:10px;">
+    <div class="row" style="margin-top:14px;">
       <div>
-        <label>Abteilung</label>
+        <label for="caseDept">Abteilung</label>
         <select id="caseDept"></select>
       </div>
       <div>
-        <label>Kennzeichen</label>
+        <label for="casePlate">Kennzeichen</label>
         <input id="casePlate">
       </div>
       <div>
-        <label>Frachtführer</label>
+        <label for="caseEntrepreneur">Frachtf&uuml;hrer</label>
         <input id="caseEntrepreneur">
       </div>
       <div id="caseProductWrap" style="flex:0 0 calc(50% - 6px); min-width:220px;">
-        <label>Produkt</label>
+        <label for="caseProductType">Produkt</label>
         <select id="caseProductType">
           <option value="euro">Euro-Paletten</option>
           <option value="h1">H1-Paletten</option>
@@ -387,51 +483,51 @@
         </select>
       </div>
       <div id="caseEmployeeCodeStatus4Wrap" style="display:none; flex:0 0 calc(50% - 6px); min-width:220px;">
-        <label>Lagermitarbeiter</label>
+        <label for="caseEmployeeCodeStatus4">Lagermitarbeiter</label>
         <input id="caseEmployeeCodeStatus4" maxlength="2" disabled>
       </div>
     </div>
 
-    <div class="row" style="margin-top:10px;">
+    <div class="row" style="margin-top:12px;">
       <div>
-        <label>IN</label>
+        <label for="caseIn">IN</label>
         <input id="caseIn" type="number" min="0">
       </div>
       <div>
-        <label>OUT</label>
+        <label for="caseOut">OUT</label>
         <input id="caseOut" type="number" min="0">
       </div>
       <div id="caseNonExchangeableWrap" style="display:none;">
-        <label>Nicht tauschfähig</label>
+        <label for="caseNonExchangeable">Nicht tauschf&auml;hig</label>
         <input id="caseNonExchangeable" type="number" min="0" value="0">
       </div>
       <div id="caseEmployeeCodeWrap" style="display:none;">
-        <label id="caseEmployeeCodeLabel">Lagermitarbeiter (2-stellig, optional)</label>
+        <label id="caseEmployeeCodeLabel" for="caseEmployeeCode">Lagermitarbeiter (2-stellig, optional)</label>
         <input id="caseEmployeeCode" maxlength="2" placeholder="z.B. AB">
       </div>
       <div style="min-width:260px;">
         <label>
           <input id="caseTranslogicaTransferred" type="checkbox">
-          In Translogica übernommen
+          In Translogica &uuml;bernommen
         </label>
       </div>
       <div style="flex:1; min-width:260px;">
-        <label>Notiz</label>
+        <label for="caseNote">Notiz</label>
         <input id="caseNote">
       </div>
     </div>
 
-    <div class="row" style="margin-top:12px;">
+    <div class="row" style="margin-top:16px;">
       <button class="primary" id="saveCaseBtn">Speichern</button>
       <button class="secondary" id="claimCaseBtn">In Bearbeitung nehmen</button>
-      <button class="secondary" id="submitCaseBtn">In Prüfung senden</button>
-      <button class="secondary" id="printCaseBtn">Vorläufig drucken</button>
-      <button class="primary" id="approveCaseBtn">Abschließen (Buchen)</button>
+      <button class="secondary" id="submitCaseBtn">In Pr&uuml;fung senden</button>
+      <button class="secondary" id="printCaseBtn">Vorl&auml;ufig drucken</button>
+      <button class="primary" id="approveCaseBtn">Abschlie&szlig;en (Buchen)</button>
       <button class="secondary" id="cancelCaseBtn">Stornieren</button>
-      <button class="danger" id="deleteCaseBtn">Löschen</button>
+      <button class="danger" id="deleteCaseBtn">L&ouml;schen</button>
     </div>
 
-    <p id="caseModalMsg"></p>
+    <p id="caseModalMsg" class="pallet-message"></p>
   </div>
 </div>
 
@@ -439,13 +535,13 @@
   <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="approveConfirmTitle">
     <div class="row" style="justify-content:space-between; align-items:center; gap:12px;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <div class="icon">✓</div>
-        <h3 id="approveConfirmTitle">Vorgang final abschließen?</h3>
+        <div class="icon">&#10003;</div>
+        <h3 id="approveConfirmTitle">Vorgang final abschlie&szlig;en?</h3>
       </div>
-      <button class="secondary" id="closeApproveConfirmBtn">Schließen</button>
+      <button class="secondary" id="closeApproveConfirmBtn">Schlie&szlig;en</button>
     </div>
-    <p style="margin:14px 0 4px 0; line-height:1.5;">Mit dem Abschluss wird der Vorgang verbindlich gebucht und die Bestände werden aktualisiert.</p>
-    <p class="muted" style="margin:0;">Bitte prüfen Sie die Angaben im Vorgang, bevor Sie fortfahren.</p>
+    <p style="margin:14px 0 4px 0; line-height:1.5;">Mit dem Abschluss wird der Vorgang verbindlich gebucht und die Best&auml;nde werden aktualisiert.</p>
+    <p class="muted" style="margin:0;">Bitte pr&uuml;fen Sie die Angaben im Vorgang, bevor Sie fortfahren.</p>
     <div class="row" style="justify-content:flex-end; margin-top:16px;">
       <button class="secondary" id="approveConfirmCancelBtn">Abbrechen</button>
       <button class="primary" id="approveConfirmBtn">Ja, verbindlich buchen</button>
@@ -456,25 +552,25 @@
 <div class="modalBack" id="passwordModalBack" aria-hidden="true">
   <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="password-modal-head">
-      <h3 id="passwordModalTitle">Passwort ändern</h3>
-      <button class="secondary" id="closePasswordModalBtn" type="button">Schließen</button>
+      <h3 id="passwordModalTitle">Passwort &auml;ndern</h3>
+      <button class="secondary" id="closePasswordModalBtn" type="button">Schlie&szlig;en</button>
     </div>
     <p class="muted" style="margin-top:0;">Verwenden Sie ein sicheres Passwort mit mindestens 8 Zeichen.</p>
     <div class="row" style="margin-top:8px;">
       <div>
-        <label>Aktuelles Passwort</label>
+        <label for="currentPassword">Aktuelles Passwort</label>
         <input id="currentPassword" type="password" autocomplete="new-password" placeholder="Aktuelles Passwort">
       </div>
       <div>
-        <label>Neues Passwort</label>
+        <label for="newPassword">Neues Passwort</label>
         <input id="newPassword" type="password" autocomplete="off" placeholder="Mindestens 8 Zeichen">
       </div>
       <div>
-        <label>Neues Passwort wiederholen</label>
-        <input id="confirmPassword" type="password" autocomplete="off" placeholder="Passwort bestätigen">
+        <label for="confirmPassword">Neues Passwort wiederholen</label>
+        <input id="confirmPassword" type="password" autocomplete="off" placeholder="Passwort best&auml;tigen">
       </div>
     </div>
-    <p id="passwordModalMsg"></p>
+    <p id="passwordModalMsg" class="pallet-message"></p>
     <div class="row" style="justify-content:flex-end; margin-top:8px;">
       <button class="secondary" id="cancelPasswordBtn" type="button">Abbrechen</button>
       <button class="primary" id="savePasswordBtn" type="button">Passwort speichern</button>
@@ -482,12 +578,9 @@
   </div>
 </div>
 
-  <footer class="site-copyright">© 2026 / CTSH Systems</footer>
-<script src="theme.js"></script>
+<footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
+<script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
-<script src="/public/theme.js"></script>
-<script src="/socket.io/socket.io.js"></script>
-<script src="/public/app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>
