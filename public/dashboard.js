@@ -39,6 +39,12 @@ function updateDashboardHero() {
   if (greetingEl) greetingEl.textContent = greeting;
 }
 
+function hasAnyPermission(value) {
+  if (value === true) return true;
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some((entry) => hasAnyPermission(entry));
+}
+
 function renderDashboardLiveFeed(items = [], message = "") {
   const feedEl = $("dashboardLiveFeed");
   if (!feedEl) return;
@@ -375,8 +381,10 @@ async function loadMeAndPermissions() {
     currentPermissions?.integrations?.container_planning
     || currentPermissions?.integrations?.container_admin
   );
+  const canUseWarehouse = hasAnyPermission(currentPermissions?.warehouse);
 
   if ($("openAdminBtn")) $("openAdminBtn").style.display = canOpenAdmin ? "" : "none";
+  if ($("warehouseModuleLink")) $("warehouseModuleLink").style.display = canUseWarehouse ? "" : "none";
   if ($("containerAdminLink")) $("containerAdminLink").style.display = canUseContainerRegistration ? "" : "none";
   if ($("containerPlanningLink")) $("containerPlanningLink").style.display = canUseContainerPlanning ? "" : "none";
   refreshModuleSummary();
