@@ -2430,6 +2430,26 @@ body.light .module-button--warehouse {
   background: linear-gradient(150deg, #d7a84e, #a86a28 60%, #5a3417);
 }
 
+body.dark .module-button--pallet,
+body.darkmode .module-button--pallet {
+  background: linear-gradient(150deg, #0f8b82, #084b61 68%, #07273d) !important;
+}
+
+body.dark .module-button--warehouse,
+body.darkmode .module-button--warehouse {
+  background: linear-gradient(150deg, #d7a84e, #a86a28 60%, #5a3417) !important;
+}
+
+body.dark .module-button--registration,
+body.darkmode .module-button--registration {
+  background: linear-gradient(150deg, #ff9a5d, #d5516e 62%, #7b1f4a) !important;
+}
+
+body.dark .module-button--planning,
+body.darkmode .module-button--planning {
+  background: linear-gradient(150deg, #3967ff, #1c318d 62%, #0b143d) !important;
+}
+
 body.light .module-dashboard-main .dashboard-title-row .pill {
   background: rgba(15, 23, 42, 0.08);
   color: #0f172a;

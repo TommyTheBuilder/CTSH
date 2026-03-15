@@ -2142,15 +2142,16 @@ app.get("/api/dashboard/live-feed", authRequired, async (req, res) => {
 });
 
 containerRegistrationNamespace.use(async (socket, next) => {
-  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
+  const user = await getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
   if (!user) return next(new Error("UNAUTHENTICATED"));
 
   try {
     const perms = await getMyPermissions(user);
     socket.data.portalUser = user;
     socket.data.portalPermissions = perms;
-    socket.data.canView = hasContainerViewerPermission(perms);
-    socket.data.canRegister = hasContainerRegistrationPermission(perms);
+    socket.data.canAdmin = hasContainerAdminPermission(user, perms);
+    socket.data.canRegister = socket.data.canAdmin || hasContainerRegistrationPermission(perms);
+    socket.data.canView = socket.data.canRegister || hasContainerViewerPermission(perms);
     socket.data.canViewHistory = hasContainerHistoryPermission(perms);
     socket.data.canExportHistory = hasContainerHistoryExportPermission(perms);
     socket.data.canClearHistory = hasContainerHistoryClearPermission(perms);
@@ -2158,7 +2159,6 @@ containerRegistrationNamespace.use(async (socket, next) => {
     socket.data.canManageStatus = hasContainerStatusManagementPermission(perms);
     socket.data.canResetContainer = hasContainerResetPermission(perms);
     socket.data.canResetAll = hasContainerResetAllPermission(perms);
-    socket.data.canAdmin = hasContainerAdminPermission(user, perms);
     if (!socket.data.canView) return next(new Error("FORBIDDEN"));
     return next();
   } catch (error) {
@@ -2167,7 +2167,7 @@ containerRegistrationNamespace.use(async (socket, next) => {
 });
 
 containerPlanningNamespace.use(async (socket, next) => {
-  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
+  const user = await getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
   if (!user) return next(new Error("UNAUTHENTICATED"));
 
   try {
