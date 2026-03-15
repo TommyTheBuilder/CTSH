@@ -196,6 +196,237 @@ function bindPermissionPanel() {
   $("permissionShowEnabledOnly")?.addEventListener("change", applyPermissionFilters);
 }
 
+const WAREHOUSE_PERMISSION_DEFAULTS = {
+  dashboard: { view: false },
+  customers: { view: false, manage: false },
+  articles: { view: false, manage: false },
+  storage_locations: { view: false, manage: false },
+  inventory: { view: false, manage: false },
+  transactions: { create: false, view: false, export: false, manage: false },
+  picking: { view: false, manage: false, process: false }
+};
+
+const ROLE_PERMISSION_MODULES = [
+  {
+    eyebrow: "Portal",
+    title: "Portal · Buchungen und Historie",
+    description: "Sicht, Export und manuelle Nachbearbeitung im Hauptsystem.",
+    note: "Deckt Historie, Belegdruck und Export im Portal ab.",
+    fields: [
+      { id: "p_bookings_create", path: ["bookings", "create"], label: "Buchungen anlegen" },
+      { id: "p_bookings_view", path: ["bookings", "view"], label: "Historie und Buchungen anzeigen" },
+      { id: "p_bookings_export", path: ["bookings", "export"], label: "CSV/XLSX exportieren" },
+      { id: "p_bookings_receipt", path: ["bookings", "receipt"], label: "Belege und Quittungen drucken" },
+      { id: "p_bookings_edit", path: ["bookings", "edit"], label: "Buchungen manuell bearbeiten" },
+      { id: "p_bookings_delete", path: ["bookings", "delete"], label: "Buchungen loeschen" },
+      { id: "p_bookings_translogica", path: ["bookings", "translogica"], label: "Translogica Kennzeichen pflegen" }
+    ]
+  },
+  {
+    eyebrow: "Portal",
+    title: "Portal · Bestaende",
+    description: "Bestandsansicht im Portal und Sicht ueber mehrere Standorte.",
+    note: "Steuert die Bestandskarten und den Komplett-Bestand im Dashboard.",
+    fields: [
+      { id: "p_stock_view", path: ["stock", "view"], label: "Bestand anzeigen" },
+      { id: "p_stock_overall", path: ["stock", "overall"], label: "Komplett-Bestand ueber alle Standorte" }
+    ]
+  },
+  {
+    eyebrow: "Portal",
+    title: "Portal · Vorgaenge",
+    description: "Kompletter Workflow von Aviso bis Abschluss.",
+    fields: [
+      { id: "p_cases_create", path: ["cases", "create"], label: "Aviso anlegen" },
+      { id: "p_cases_internal_transfer", path: ["cases", "internal_transfer"], label: "Interne Lagerumbuchung buchen" },
+      { id: "p_cases_employee_code", path: ["cases", "require_employee_code"], label: "Mitarbeitercode in Status 2 erzwingen" },
+      { id: "p_cases_claim", path: ["cases", "claim"], label: "Vorgaenge uebernehmen" },
+      { id: "p_cases_edit", path: ["cases", "edit"], label: "Vorgaenge bearbeiten" },
+      { id: "p_cases_submit", path: ["cases", "submit"], label: "Zur Pruefung senden" },
+      { id: "p_cases_approve", path: ["cases", "approve"], label: "Buchen und abschliessen" },
+      { id: "p_cases_cancel", path: ["cases", "cancel"], label: "Vorgaenge stornieren" },
+      { id: "p_cases_delete", path: ["cases", "delete"], label: "Vorgaenge loeschen" }
+    ]
+  },
+  {
+    eyebrow: "Portal",
+    title: "Portal · Filter und Navigation",
+    description: "Steuert ortsuebergreifende Sicht im Hauptsystem.",
+    note: "Relevant fuer Historie, Bestandsfilter und Uebersichten.",
+    fields: [
+      { id: "p_filters_all_locations", path: ["filters", "all_locations"], label: "Alle Standorte filtern und auswerten" }
+    ]
+  },
+  {
+    eyebrow: "Admin",
+    title: "Admin · Stammdaten",
+    description: "Pflege von Standorten, Abteilungen und Partnern.",
+    note: "Diese Rechte betreffen den Admin-Bereich und Stammdatenmasken im Portal.",
+    fields: [
+      { id: "p_master_manage", path: ["masterdata", "manage"], label: "Standorte und Abteilungen verwalten" },
+      { id: "p_master_entrepreneurs_manage", path: ["masterdata", "entrepreneurs_manage"], label: "Frachtfuehrer verwalten" }
+    ]
+  },
+  {
+    eyebrow: "Admin",
+    title: "Admin · Benutzer und Rollen",
+    description: "Freigaben fuer Benutzerpflege, Rollenpflege und Vollzugriff.",
+    fields: [
+      { id: "p_users_manage", path: ["users", "manage"], label: "Benutzer verwalten" },
+      { id: "p_users_view_department", path: ["users", "view_department"], label: "Benutzer der eigenen Abteilung sehen" },
+      { id: "p_roles_manage", path: ["roles", "manage"], label: "Business-Rollen verwalten" },
+      { id: "p_admin_full_access", path: ["admin", "full_access"], label: "Vollzugriff auf Admin und alle Module" }
+    ]
+  },
+  {
+    eyebrow: "Modul",
+    title: "Container Registration",
+    description: "Feingranulare Rechte fuer Fahreranmeldung, Viewer und Adminfunktionen.",
+    note: "Neue Rollen koennen die Rechte fuer Container-Status, Historie und Resets getrennt vergeben.",
+    fields: [
+      { id: "p_module_container_registration_open", path: ["modules", "container_registration", "open"], label: "Modul oeffnen und Fahrer anmelden" },
+      { id: "p_module_container_registration_viewer", path: ["modules", "container_registration", "viewer"], label: "Statusboard / Viewer anzeigen" },
+      { id: "p_module_container_registration_history", path: ["modules", "container_registration", "history"], label: "Historie und Timeline sehen" },
+      { id: "p_module_container_registration_manage_time", path: ["modules", "container_registration", "manage_time"], label: "Zeitfenster aendern" },
+      { id: "p_module_container_registration_manage_status", path: ["modules", "container_registration", "manage_status"], label: "Status umschalten" },
+      { id: "p_module_container_registration_reset_container", path: ["modules", "container_registration", "reset_container"], label: "Einzelne Container zuruecksetzen" },
+      { id: "p_module_container_registration_reset_all", path: ["modules", "container_registration", "reset_all"], label: "Alle Container auf einmal zuruecksetzen" }
+    ]
+  },
+  {
+    eyebrow: "Modul",
+    title: "Container Planning",
+    description: "Zugriff auf die Container- und LKW-Planung.",
+    fields: [
+      { id: "p_module_container_planning_open", path: ["modules", "container_planning", "open"], label: "Planung anzeigen und bearbeiten" }
+    ]
+  },
+  {
+    eyebrow: "Modul",
+    title: "Warehouse · Dashboard und Stammdaten",
+    description: "Sichtbarkeit des Warehouse-Dashboards und Stammdatenpflege.",
+    fields: [
+      { id: "p_warehouse_dashboard_view", path: ["warehouse", "dashboard", "view"], label: "Dashboard anzeigen" },
+      { id: "p_warehouse_customers_view", path: ["warehouse", "customers", "view"], label: "Kunden anzeigen" },
+      { id: "p_warehouse_customers_manage", path: ["warehouse", "customers", "manage"], label: "Kunden verwalten" },
+      { id: "p_warehouse_articles_view", path: ["warehouse", "articles", "view"], label: "Artikel anzeigen" },
+      { id: "p_warehouse_articles_manage", path: ["warehouse", "articles", "manage"], label: "Artikel verwalten" },
+      { id: "p_warehouse_storage_locations_view", path: ["warehouse", "storage_locations", "view"], label: "Lagerplaetze anzeigen" },
+      { id: "p_warehouse_storage_locations_manage", path: ["warehouse", "storage_locations", "manage"], label: "Lagerplaetze verwalten" }
+    ]
+  },
+  {
+    eyebrow: "Modul",
+    title: "Warehouse · Bestand und Bewegungen",
+    description: "Bestandsfuehrung und Buchungslogik im Warehouse-Modul.",
+    fields: [
+      { id: "p_warehouse_inventory_view", path: ["warehouse", "inventory", "view"], label: "Bestand anzeigen" },
+      { id: "p_warehouse_inventory_manage", path: ["warehouse", "inventory", "manage"], label: "Bestand korrigieren" },
+      { id: "p_warehouse_transactions_create", path: ["warehouse", "transactions", "create"], label: "Warenbewegungen anlegen" },
+      { id: "p_warehouse_transactions_view", path: ["warehouse", "transactions", "view"], label: "Warenbewegungen anzeigen" },
+      { id: "p_warehouse_transactions_export", path: ["warehouse", "transactions", "export"], label: "Warenbewegungen exportieren" },
+      { id: "p_warehouse_transactions_manage", path: ["warehouse", "transactions", "manage"], label: "Warenbewegungen bearbeiten" }
+    ]
+  },
+  {
+    eyebrow: "Modul",
+    title: "Warehouse · Picking",
+    description: "Versand- und Picking-Auftraege im Warehouse-Modul.",
+    fields: [
+      { id: "p_warehouse_picking_view", path: ["warehouse", "picking", "view"], label: "Picking anzeigen" },
+      { id: "p_warehouse_picking_manage", path: ["warehouse", "picking", "manage"], label: "Picking verwalten" },
+      { id: "p_warehouse_picking_process", path: ["warehouse", "picking", "process"], label: "Picking-Prozesse starten und abschliessen" }
+    ]
+  }
+];
+
+function buildRolePermissionDefaults() {
+  return {
+    bookings: { create: true, view: true, export: true, receipt: true, edit: false, delete: false, translogica: false },
+    stock: { view: true, overall: true },
+    cases: {
+      create: true,
+      internal_transfer: false,
+      require_employee_code: false,
+      claim: false,
+      edit: false,
+      submit: false,
+      approve: false,
+      cancel: false,
+      delete: false
+    },
+    filters: { all_locations: false },
+    masterdata: { manage: false, entrepreneurs_manage: false },
+    users: { manage: false, view_department: false },
+    roles: { manage: false },
+    modules: {
+      container_registration: {
+        open: false,
+        viewer: false,
+        history: false,
+        manage_time: false,
+        manage_status: false,
+        reset_container: false,
+        reset_all: false
+      },
+      container_planning: {
+        open: false
+      }
+    },
+    warehouse: {
+      dashboard: { ...WAREHOUSE_PERMISSION_DEFAULTS.dashboard },
+      customers: { ...WAREHOUSE_PERMISSION_DEFAULTS.customers },
+      articles: { ...WAREHOUSE_PERMISSION_DEFAULTS.articles },
+      storage_locations: { ...WAREHOUSE_PERMISSION_DEFAULTS.storage_locations },
+      inventory: { ...WAREHOUSE_PERMISSION_DEFAULTS.inventory },
+      transactions: { ...WAREHOUSE_PERMISSION_DEFAULTS.transactions },
+      picking: { ...WAREHOUSE_PERMISSION_DEFAULTS.picking }
+    },
+    admin: { full_access: false }
+  };
+}
+
+function getAllRolePermissionFields() {
+  return ROLE_PERMISSION_MODULES.flatMap((module) => module.fields);
+}
+
+function getNestedPermissionValue(source, path) {
+  return path.reduce((value, key) => (value && typeof value === "object") ? value[key] : undefined, source);
+}
+
+function setNestedPermissionValue(target, path, value) {
+  let cursor = target;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const key = path[index];
+    if (!cursor[key] || typeof cursor[key] !== "object") cursor[key] = {};
+    cursor = cursor[key];
+  }
+  cursor[path[path.length - 1]] = value;
+}
+
+function renderPermissionModules() {
+  const grid = document.querySelector(".permissions-grid");
+  if (!grid) return;
+
+  grid.innerHTML = ROLE_PERMISSION_MODULES.map((module) => `
+    <div class="permBox" data-perm-group="${module.title}">
+      <div class="permBox-head">
+        <div>
+          <span class="section-eyebrow">${module.eyebrow}</span>
+          <b>${module.title}</b>
+          <p>${module.description}</p>
+        </div>
+        <span class="permBox-count">0/0</span>
+      </div>
+      ${module.fields.map((field) => `<label><input type="checkbox" id="${field.id}"> ${field.label}</label>`).join("")}
+      ${module.note ? `<small class="muted">${module.note}</small>` : ""}
+    </div>
+  `).join("");
+}
+
+function applyModuleNaming() {}
+function enhancePermissionCards() {}
+
 function setMsg(id, text, ok = false) {
   const el = $(id);
   if (!el) return;
@@ -939,110 +1170,19 @@ function applyUserEditSelection() {
 
 // ---------------- Role permission UI ----------------
 function getPermCheckboxes() {
-  return {
-    bookings: {
-      create: $("p_bookings_create")?.checked || false,
-      view: $("p_bookings_view")?.checked || false,
-      export: $("p_bookings_export")?.checked || false,
-      receipt: $("p_bookings_receipt")?.checked || false,
-      edit: $("p_bookings_edit")?.checked || false,
-      delete: $("p_bookings_delete")?.checked || false,
-      translogica: $("p_bookings_translogica")?.checked || false
-    },
-    stock: {
-      view: $("p_stock_view")?.checked || false,
-      overall: $("p_stock_overall")?.checked || false
-    },
-    cases: {
-      create: $("p_cases_create")?.checked || false,
-      internal_transfer: $("p_cases_internal_transfer")?.checked || false,
-      require_employee_code: $("p_cases_employee_code")?.checked || false,
-      claim: $("p_cases_claim")?.checked || false,
-      edit: $("p_cases_edit")?.checked || false,
-      submit: $("p_cases_submit")?.checked || false,
-      approve: $("p_cases_approve")?.checked || false,
-      cancel: $("p_cases_cancel")?.checked || false,
-      delete: $("p_cases_delete")?.checked || false
-    },
-    filters: {
-      all_locations: $("p_filters_all_locations")?.checked || false
-    },
-    masterdata: {
-      manage: $("p_master_manage")?.checked || false,
-      entrepreneurs_manage: $("p_master_entrepreneurs_manage")?.checked || false
-    },
-    users: {
-      manage: $("p_users_manage")?.checked || false,
-      view_department: $("p_users_view_department")?.checked || false
-    },
-    roles: { manage: $("p_roles_manage")?.checked || false },
-    integrations: {
-      container_login: $("p_integrations_container_registration")?.checked || false,
-      container_registration: $("p_integrations_container_registration")?.checked || false,
-      container_planning: $("p_integrations_container_planning")?.checked || false,
-      container_viewer: $("p_integrations_container_viewer")?.checked || false,
-      container_admin: $("p_integrations_container_admin")?.checked || false
-    },
-    admin: { full_access: $("p_admin_full_access")?.checked || false }
-  };
+  const permissions = buildRolePermissionDefaults();
+  getAllRolePermissionFields().forEach((field) => {
+    setNestedPermissionValue(permissions, field.path, !!$(field.id)?.checked);
+  });
+  return permissions;
 }
 
 function setPermCheckboxes(perms) {
   const p = perms || {};
-  $("p_bookings_create").checked = !!p?.bookings?.create;
-  $("p_bookings_view").checked = !!p?.bookings?.view;
-  $("p_bookings_export").checked = !!p?.bookings?.export;
-  $("p_bookings_receipt").checked = !!p?.bookings?.receipt;
-  $("p_bookings_edit").checked = !!p?.bookings?.edit;
-  $("p_bookings_delete").checked = !!p?.bookings?.delete;
-  if ($("p_bookings_translogica")) {
-    $("p_bookings_translogica").checked = !!p?.bookings?.translogica;
-  }
-
-  $("p_stock_view").checked = !!p?.stock?.view;
-  $("p_stock_overall").checked = !!p?.stock?.overall;
-
-  $("p_cases_create").checked = !!p?.cases?.create;
-  if ($("p_cases_internal_transfer")) {
-    $("p_cases_internal_transfer").checked = !!p?.cases?.internal_transfer;
-  }
-  $("p_cases_employee_code").checked = !!p?.cases?.require_employee_code;
-  $("p_cases_claim").checked = !!p?.cases?.claim;
-  $("p_cases_edit").checked = !!p?.cases?.edit;
-  $("p_cases_submit").checked = !!p?.cases?.submit;
-  $("p_cases_approve").checked = !!p?.cases?.approve;
-  $("p_cases_cancel").checked = !!p?.cases?.cancel;
-  if ($("p_cases_delete")) {
-    $("p_cases_delete").checked = !!p?.cases?.delete;
-  }
-  if ($("p_filters_all_locations")) {
-    $("p_filters_all_locations").checked = !!p?.filters?.all_locations;
-  }
-
-  $("p_master_manage").checked = !!p?.masterdata?.manage;
-  if ($("p_master_entrepreneurs_manage")) {
-    $("p_master_entrepreneurs_manage").checked = !!p?.masterdata?.entrepreneurs_manage;
-  }
-  $("p_users_manage").checked = !!p?.users?.manage;
-  if ($("p_users_view_department")) {
-    $("p_users_view_department").checked = !!p?.users?.view_department;
-  }
-  $("p_roles_manage").checked = !!p?.roles?.manage;
-  if ($("p_integrations_container_registration")) {
-    $("p_integrations_container_registration").checked = !!(p?.integrations?.container_login || p?.integrations?.container_registration);
-  }
-  if ($("p_integrations_container_planning")) {
-    $("p_integrations_container_planning").checked = !!p?.integrations?.container_planning;
-  }
-  if ($("p_integrations_container_viewer")) {
-    $("p_integrations_container_viewer").checked = !!p?.integrations?.container_viewer;
-  }
-  if ($("p_integrations_container_admin")) {
-    $("p_integrations_container_admin").checked = !!p?.integrations?.container_admin;
-  }
-  if ($("p_admin_full_access")) {
-    $("p_admin_full_access").checked = !!p?.admin?.full_access;
-  }
+  getAllRolePermissionFields().forEach((field) => {
+    const checkbox = $(field.id);
+    if (checkbox) checkbox.checked = !!getNestedPermissionValue(p, field.path);
+  });
 }
 
 function applyRoleToCheckboxes(roleId) {
@@ -1067,33 +1207,7 @@ $("createRoleBtn")?.addEventListener("click", async () => {
 
   const rr = await api("/api/admin/roles", {
     method: "POST",
-    body: JSON.stringify({ name, permissions: {
-      bookings: { create:true, view:true, export:true, receipt:true, edit:false, delete:false, translogica:false },
-      stock: { view:true, overall:true },
-      cases: {
-        create: true,
-        internal_transfer: false,
-        require_employee_code: false,
-        claim: false,
-        edit: false,
-        submit: false,
-        approve: false,
-        cancel: false,
-        delete: false
-      },
-      filters: { all_locations: false },
-      masterdata: { manage:false, entrepreneurs_manage:false },
-      users: { manage:false, view_department:false },
-      roles: { manage:false },
-      integrations: {
-        container_login:false,
-        container_registration:false,
-        container_planning:false,
-        container_viewer:false,
-        container_admin:false
-      },
-      admin: { full_access:false }
-    }})
+    body: JSON.stringify({ name, permissions: buildRolePermissionDefaults() })
   });
   const data = await rr.json().catch(() => ({}));
   if (!rr.ok) return setMsg("roleMsg", data.error || "Rolle konnte nicht angelegt werden");
@@ -1330,8 +1444,7 @@ $("saveUserBtn")?.addEventListener("click", async () => {
     bindTabs();
     bindSettingsMenu();
     bindPasswordModal();
-    applyModuleNaming();
-    enhancePermissionCards();
+    renderPermissionModules();
     bindPermissionPanel();
     updatePermissionCardCounts();
     await loadMe();

@@ -12,11 +12,21 @@ const { pool } = require("./db_pg");
 const { authRequired, adminRequired, JWT_SECRET } = require("./middleware_auth");
 const { requirePermission } = require("./middleware_permissions");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
-const { createWarehouseRouter } = require("./modules/warehouse/router");
 const {
-  WAREHOUSE_PERMISSION_DEFAULTS,
-  WAREHOUSE_PERMISSION_FULL_ACCESS
-} = require("./modules/warehouse/permissions");
+  createFullAccessPermissions,
+  createPermissionDefaults,
+  hasContainerHistoryPermission,
+  hasContainerPlanningPermission,
+  hasContainerRegistrationAdminAccess,
+  hasContainerRegistrationModuleAccess,
+  hasContainerRegistrationPermission,
+  hasContainerResetAllPermission,
+  hasContainerResetPermission,
+  hasContainerStatusManagementPermission,
+  hasContainerTimeManagementPermission,
+  hasContainerViewerPermission,
+  normalizePermissions
+} = require("./permissions_config");
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
@@ -169,13 +179,11 @@ app.use("/modules", async (req, res, next) => {
     if (req.path.startsWith("/container-planning")) {
       allowed = hasContainerPlanningPermission(perms);
     } else if (req.path === "/container-registration/admin.html") {
-      allowed = hasContainerAdminPermission(user, perms);
+      allowed = hasContainerRegistrationAdminAccess(perms);
     } else if (req.path === "/container-registration/driver.html") {
       allowed = hasContainerRegistrationPermission(perms);
     } else if (req.path === "/container-registration/viewer.html") {
       allowed = hasContainerViewerPermission(perms);
-    } else if (req.path.startsWith("/warehouse")) {
-      allowed = hasWarehouseModulePermission(perms);
     }
 
     if (!allowed) return res.redirect("/public/dashboard.html");
@@ -330,57 +338,6 @@ function flattenPermissionRoles(perms, prefix = "") {
   return roles;
 }
 
-
-function hasContainerRegistrationPermission(perms) {
-  return !!(
-    perms?.integrations?.container_login
-    || perms?.integrations?.container_registration
-    || perms?.integrations?.container_admin
-    || perms?.admin?.full_access
-  );
-}
-
-function hasContainerPlanningPermission(perms) {
-  return !!(
-    perms?.integrations?.container_planning
-    || perms?.integrations?.container_admin
-    || perms?.admin?.full_access
-  );
-}
-
-function hasContainerViewerPermission(perms) {
-  return !!(
-    perms?.integrations?.container_viewer
-    || hasContainerRegistrationPermission(perms)
-    || perms?.admin?.full_access
-  );
-}
-
-function hasContainerAdminPermission(user, perms) {
-  return !!(perms?.admin?.full_access || perms?.integrations?.container_admin);
-}
-
-function hasWarehouseModulePermission(perms) {
-  return !!(
-    perms?.warehouse?.dashboard?.view
-    || perms?.warehouse?.customers?.view
-    || perms?.warehouse?.customers?.manage
-    || perms?.warehouse?.articles?.view
-    || perms?.warehouse?.articles?.manage
-    || perms?.warehouse?.storage_locations?.view
-    || perms?.warehouse?.storage_locations?.manage
-    || perms?.warehouse?.inventory?.view
-    || perms?.warehouse?.inventory?.manage
-    || perms?.warehouse?.transactions?.create
-    || perms?.warehouse?.transactions?.view
-    || perms?.warehouse?.transactions?.export
-    || perms?.warehouse?.transactions?.manage
-    || perms?.warehouse?.picking?.view
-    || perms?.warehouse?.picking?.manage
-    || perms?.warehouse?.picking?.process
-    || perms?.admin?.full_access
-  );
-}
 
 function buildContainerSessionToken(payload) {
   const payloadEncoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -560,87 +517,17 @@ async function deleteNotificationsForCaseByTitle(caseId, title) {
 }
 
 async function getMyPermissions(user) {
-  const fullAccessPerms = {
-    bookings: { create: true, view: true, export: true, receipt: true, edit: true, delete: true, translogica: true },
-    stock: { view: true, overall: true },
-    cases: {
-      create: true,
-      internal_transfer: true,
-      claim: true,
-      edit: true,
-      submit: true,
-      approve: true,
-      cancel: true,
-      delete: true,
-      require_employee_code: false
-    },
-    filters: { all_locations: true },
-    masterdata: { manage: true, entrepreneurs_manage: true },
-    users: { manage: true, view_department: true },
-    roles: { manage: true },
-    integrations: {
-      container_login: true,
-      container_registration: true,
-      container_planning: true,
-      container_viewer: true,
-      container_admin: true
-    },
-    warehouse: { ...WAREHOUSE_PERMISSION_FULL_ACCESS },
-    admin: { full_access: true }
-  };
-
   if (user.role === "admin") {
-    return fullAccessPerms;
+    return createFullAccessPermissions();
   }
 
-  const defaults = {
-    bookings: { create: true, view: true, export: true, receipt: true, edit: false, delete: false, translogica: false },
-    stock: { view: true, overall: true },
-    cases: {
-      create: true,
-      internal_transfer: false,
-      claim: false,
-      edit: false,
-      submit: false,
-      approve: false,
-      cancel: false,
-      delete: false,
-      require_employee_code: false
-    },
-    filters: { all_locations: false },
-    masterdata: { manage: false, entrepreneurs_manage: false },
-    users: { manage: false, view_department: false },
-    roles: { manage: false },
-    integrations: {
-      container_login: false,
-      container_registration: false,
-      container_planning: false,
-      container_viewer: false,
-      container_admin: false
-    },
-    warehouse: { ...WAREHOUSE_PERMISSION_DEFAULTS },
-    admin: { full_access: false }
-  };
-
   if (!user.role_id) {
-    return defaults;
+    return createPermissionDefaults();
   }
 
   const r = await q(`SELECT permissions FROM roles WHERE id=$1`, [user.role_id]);
   const raw = (r.rowCount ? r.rows[0].permissions : {}) || {};
-
-  function merge(b, o) {
-    const out = { ...b };
-    for (const k of Object.keys(o || {})) {
-      if (o[k] && typeof o[k] === "object" && !Array.isArray(o[k])) out[k] = merge(b[k] || {}, o[k]);
-      else out[k] = o[k];
-    }
-    return out;
-  }
-
-  const p = merge(defaults, raw);
-  if (p?.admin?.full_access) return fullAccessPerms;
-  return p;
+  return normalizePermissions(raw);
 }
 
 // ---------- AUTH ----------
@@ -881,17 +768,15 @@ app.get("/api/my-permissions", authRequired, async (req, res) => {
   res.json(perms);
 });
 
-app.use("/api/warehouse", createWarehouseRouter({ authRequired, requirePermission }));
-
 async function createContainerRegistrationSession(req, res) {
   const perms = await getMyPermissions(req.user);
-  const canOpenContainerRegistration = hasContainerRegistrationPermission(perms);
+  const canOpenContainerRegistration = hasContainerRegistrationModuleAccess(perms);
 
   if (!canOpenContainerRegistration) {
     return res.status(403).json({ error: "No Permissions" });
   }
 
-  const targetUrl = hasContainerAdminPermission(req.user, perms)
+  const targetUrl = hasContainerRegistrationAdminAccess(perms)
     ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
     : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
 
@@ -931,19 +816,16 @@ app.get("/api/sso/container-planning-session", authRequired, createContainerPlan
 app.get("/container-planning", requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (_req, res) => {
   res.redirect(MODULE_CONTAINER_PLANNING_PATH);
 });
-app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
-  const targetUrl = hasContainerAdminPermission(req.user, req.portalPermissions)
+app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationModuleAccess(perms)), (req, res) => {
+  const targetUrl = hasContainerRegistrationAdminAccess(req.portalPermissions)
     ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
     : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
   res.redirect(targetUrl);
 });
-app.get("/warehouse", requireModulePageAccess((_user, perms) => hasWarehouseModulePermission(perms)), (_req, res) => {
-  res.redirect("/modules/warehouse/index.html");
-});
 app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-planning", "index.html"));
 });
-app.get(MODULE_CONTAINER_REGISTRATION_ADMIN_PATH, requireModulePageAccess((user, perms) => hasContainerAdminPermission(user, perms)), (req, res) => {
+app.get(MODULE_CONTAINER_REGISTRATION_ADMIN_PATH, requireModulePageAccess((_user, perms) => hasContainerRegistrationAdminAccess(perms)), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "admin.html"));
 });
 app.get(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH, requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
@@ -1280,7 +1162,7 @@ async function getDashboardLiveFeedItems(req, limit) {
   if (
     hasContainerViewerPermission(perms)
     || hasContainerRegistrationPermission(perms)
-    || hasContainerAdminPermission(req.user, perms)
+    || hasContainerRegistrationAdminAccess(perms)
   ) {
     const rows = (await q(
       `
@@ -1382,7 +1264,16 @@ async function requireContainerRegistrationAccess(req, res, next) {
 
 async function requireContainerAdminAccess(req, res, next) {
   const perms = await getMyPermissions(req.user);
-  if (!hasContainerAdminPermission(req.user, perms)) {
+  if (!hasContainerRegistrationAdminAccess(perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  return next();
+}
+
+async function requireContainerHistoryAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerHistoryPermission(perms)) {
     return res.status(403).json({ error: "No Permissions" });
   }
   req.portalPermissions = perms;
@@ -1477,17 +1368,17 @@ app.get("/api/modules/container-registration/state", authRequired, requireContai
   res.json(cloneRegistrationState());
 });
 
-app.get("/api/modules/container-registration/history", authRequired, requireContainerAdminAccess, async (req, res) => {
+app.get("/api/modules/container-registration/history", authRequired, requireContainerHistoryAccess, async (req, res) => {
   const entries = await getContainerRegistrationHistory(req.query.limit);
   res.json({ entries });
 });
 
-app.get("/api/modules/container-registration/history/:bookingNo", authRequired, requireContainerAdminAccess, async (req, res) => {
+app.get("/api/modules/container-registration/history/:bookingNo", authRequired, requireContainerHistoryAccess, async (req, res) => {
   const entries = await getContainerRegistrationBookingTimeline(req.params.bookingNo);
   res.json({ bookingNo: Number(req.params.bookingNo), entries });
 });
 
-app.get("/api/modules/container-registration/admin-history.csv", authRequired, requireContainerAdminAccess, async (_req, res) => {
+app.get("/api/modules/container-registration/admin-history.csv", authRequired, requireContainerHistoryAccess, async (_req, res) => {
   const entries = await getContainerRegistrationHistory(1000);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=container-registration-history.csv");
@@ -1514,7 +1405,12 @@ containerRegistrationNamespace.use(async (socket, next) => {
     socket.data.portalPermissions = perms;
     socket.data.canView = hasContainerViewerPermission(perms);
     socket.data.canRegister = hasContainerRegistrationPermission(perms);
-    socket.data.canAdmin = hasContainerAdminPermission(user, perms);
+    socket.data.canAdmin = hasContainerRegistrationAdminAccess(perms);
+    socket.data.canViewHistory = hasContainerHistoryPermission(perms);
+    socket.data.canManageTime = hasContainerTimeManagementPermission(perms);
+    socket.data.canManageStatus = hasContainerStatusManagementPermission(perms);
+    socket.data.canResetContainer = hasContainerResetPermission(perms);
+    socket.data.canResetAll = hasContainerResetAllPermission(perms);
     if (!socket.data.canView) return next(new Error("FORBIDDEN"));
     return next();
   } catch (error) {
@@ -1551,12 +1447,19 @@ containerRegistrationNamespace.on("connection", (socket) => {
     socket.emit("adminAuthResult", {
       ok: true,
       user: socket.data.portalUser?.username || "",
-      roles: flattenPermissionRoles(socket.data.portalPermissions)
+      roles: flattenPermissionRoles(socket.data.portalPermissions),
+      permissions: {
+        history: socket.data.canViewHistory,
+        manageTime: socket.data.canManageTime,
+        manageStatus: socket.data.canManageStatus,
+        resetContainer: socket.data.canResetContainer,
+        resetAll: socket.data.canResetAll
+      }
     });
   });
 
   socket.on("adminGetHistory", async ({ limit } = {}) => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canViewHistory) return;
     try {
       const entries = await getContainerRegistrationHistory(limit);
       socket.emit("adminHistory", { entries });
@@ -1566,7 +1469,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("adminGetBookingTimeline", async ({ bookingNo } = {}) => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canViewHistory) return;
     try {
       const entries = await getContainerRegistrationBookingTimeline(bookingNo);
       socket.emit("adminBookingTimeline", { bookingNo, entries });
@@ -1576,7 +1479,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("adminClearHistory", async () => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canViewHistory) return;
     await clearContainerRegistrationHistory();
     socket.emit("adminHistory", { entries: [] });
   });
@@ -1631,7 +1534,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("adminSetStatus", async ({ id, status } = {}) => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canManageStatus) return;
     const cid = Number(id);
     if (!containerRegistrationState[cid] || !CONTAINER_REGISTRATION_STATUSES.includes(status)) return;
 
@@ -1650,7 +1553,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("adminSetTime", async ({ id, time } = {}) => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canManageTime) return;
     const cid = Number(id);
     if (!containerRegistrationState[cid]) return;
 
@@ -1672,7 +1575,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("adminResetContainer", async ({ id } = {}) => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canResetContainer) return;
     const cid = Number(id);
     if (!containerRegistrationState[cid]) return;
 
@@ -1691,7 +1594,7 @@ containerRegistrationNamespace.on("connection", (socket) => {
   });
 
   socket.on("resetAll", async () => {
-    if (!socket.data.canAdmin) return;
+    if (!socket.data.canResetAll) return;
     const nextState = {};
     for (let i = 1; i <= 8; i += 1) {
       nextState[i] = defaultRegistrationContainer(i);
@@ -1926,7 +1829,10 @@ app.delete("/api/admin/entrepreneurs/:id", authRequired, adminRequired, async (r
 // ---------- ROLES (Admin) ----------
 app.get("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
   const rows = (await q(`SELECT id, name, permissions, created_at FROM roles ORDER BY name`)).rows;
-  res.json(rows);
+  res.json(rows.map((row) => ({
+    ...row,
+    permissions: normalizePermissions(row.permissions || {})
+  })));
 });
 
 app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
@@ -1934,7 +1840,7 @@ app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
   if (!name || !String(name).trim()) return res.status(400).json({ error: "name required" });
 
   const roleName = String(name).trim();
-  const perms = (permissions && typeof permissions === "object") ? permissions : {};
+  const perms = normalizePermissions((permissions && typeof permissions === "object") ? permissions : {});
 
   try {
     const r = await q(
@@ -1942,7 +1848,10 @@ app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
        RETURNING id, name, permissions`,
       [roleName, JSON.stringify(perms)]
     );
-    res.json(r.rows[0]);
+    res.json({
+      ...r.rows[0],
+      permissions: normalizePermissions(r.rows[0].permissions || {})
+    });
   } catch (e) {
     if (e && e.code === "23505") return res.status(400).json({ error: "role name already exists" });
     throw e;
@@ -1955,7 +1864,9 @@ app.put("/api/admin/roles/:id", authRequired, adminRequired, async (req, res) =>
 
   const { name, permissions } = req.body || {};
   const roleName = name ? String(name).trim() : null;
-  const perms = (permissions && typeof permissions === "object") ? permissions : null;
+  const perms = (permissions && typeof permissions === "object")
+    ? normalizePermissions(permissions)
+    : null;
 
   await q(
     `UPDATE roles
