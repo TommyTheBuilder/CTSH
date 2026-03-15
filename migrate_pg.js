@@ -47,6 +47,39 @@ async function runSqlMigrations() {
   }
 }
 
+async function columnExists(tableName, columnName) {
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = $1
+      AND column_name = $2
+    LIMIT 1
+    `,
+    [tableName, columnName]
+  );
+  return result.rowCount > 0;
+}
+
+async function getInstallationCustomerIdForSeed() {
+  const result = await pool.query(
+    `
+    SELECT id
+    FROM app_customers
+    ORDER BY
+      CASE
+        WHEN slug = 'standardinstallation' THEN 0
+        WHEN slug = 'standardkunde' THEN 1
+        ELSE 2
+      END,
+      id
+    LIMIT 1
+    `
+  );
+  return result.rowCount ? Number(result.rows[0].id) : null;
+}
+
 async function migrate() {
   // Basis-Tabelle
   await pool.query(`
@@ -298,35 +331,6 @@ async function migrate() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_notifications_user_created ON user_notifications(user_id, created_at DESC);`);
 
-  // Default Rolle anlegen
-  await pool.query(`
-    INSERT INTO roles (name, permissions)
-    VALUES (
-      'Standard',
-      '{
-        "bookings": { "create": true, "view": true, "export": true, "receipt": true, "edit": false, "delete": false, "translogica": false },
-        "stock": { "view": true, "overall": true },
-        "cases": {
-          "create": true,
-          "internal_transfer": false,
-          "claim": false,
-          "edit": false,
-          "submit": false,
-          "approve": false,
-          "cancel": false,
-          "delete": false,
-          "require_employee_code": false
-        },
-        "filters": { "all_locations": false },
-        "masterdata": { "manage": false },
-        "users": { "manage": false, "view_department": false },
-        "roles": { "manage": false },
-        "integrations": { "container_registration": false }
-      }'::jsonb
-    )
-    ON CONFLICT (name) DO NOTHING;
-  `);
-
   // booking_cases Index
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_booking_cases_loc_status
@@ -340,15 +344,94 @@ async function migrate() {
 
   await runSqlMigrations();
 
+  const defaultRolePermissions = JSON.stringify({
+    bookings: { create: true, view: true, export: true, receipt: true, edit: false, delete: false, translogica: false },
+    stock: { view: true, overall: true },
+    cases: {
+      create: true,
+      internal_transfer: false,
+      claim: false,
+      edit: false,
+      submit: false,
+      approve: false,
+      cancel: false,
+      delete: false,
+      require_employee_code: false
+    },
+    filters: { all_locations: false },
+    masterdata: { manage: false },
+    users: { manage: false, view_department: false },
+    roles: { manage: false },
+    integrations: { container_registration: false }
+  });
+
+  const rolesUseCustomerScope = await columnExists("roles", "app_customer_id");
+  const usersUseCustomerScope = await columnExists("users", "app_customer_id");
+  const usersHaveAppAdminFlag = await columnExists("users", "is_app_admin");
+  const installationCustomerId = (rolesUseCustomerScope || usersUseCustomerScope)
+    ? await getInstallationCustomerIdForSeed()
+    : null;
+
+  if ((rolesUseCustomerScope || usersUseCustomerScope) && !installationCustomerId) {
+    throw new Error("Keine Installation für den Seed gefunden.");
+  }
+
+  if (rolesUseCustomerScope) {
+    await pool.query(
+      `
+      INSERT INTO roles (name, permissions, app_customer_id)
+      SELECT $1, $2::jsonb, $3
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM roles
+        WHERE name = $1
+          AND app_customer_id = $3
+      )
+      `,
+      ["Standard", defaultRolePermissions, installationCustomerId]
+    );
+  } else {
+    await pool.query(
+      `
+      INSERT INTO roles (name, permissions)
+      SELECT $1, $2::jsonb
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM roles
+        WHERE name = $1
+      )
+      `,
+      ["Standard", defaultRolePermissions]
+    );
+  }
+
   // Seed Admin falls keiner existiert
   const existing = await pool.query(`SELECT id FROM users WHERE role='admin' LIMIT 1`);
   if (existing.rowCount === 0) {
     const hash = await bcrypt.hash("admin1234", 10);
-    await pool.query(
-      `INSERT INTO users (username, password_hash, role, is_active)
-       VALUES ($1,$2,$3,TRUE)`,
-      ["admin", hash, "admin"]
-    );
+    if (usersUseCustomerScope && usersHaveAppAdminFlag) {
+      await pool.query(
+        `
+        INSERT INTO users (username, password_hash, role, is_active, app_customer_id, is_app_admin)
+        VALUES ($1, $2, $3, TRUE, $4, TRUE)
+        `,
+        ["admin", hash, "admin", installationCustomerId]
+      );
+    } else if (usersUseCustomerScope) {
+      await pool.query(
+        `
+        INSERT INTO users (username, password_hash, role, is_active, app_customer_id)
+        VALUES ($1, $2, $3, TRUE, $4)
+        `,
+        ["admin", hash, "admin", installationCustomerId]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO users (username, password_hash, role, is_active)
+         VALUES ($1,$2,$3,TRUE)`,
+        ["admin", hash, "admin"]
+      );
+    }
     console.log("Seed admin created: admin / admin1234 (CHANGE IT!)");
   }
 
