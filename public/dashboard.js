@@ -166,7 +166,7 @@ function bindPasswordModal() {
 
 function moduleCardClass(moduleKey) {
   if (moduleKey === "pallets") return "module-button module-button--stacked module-button--pallet";
-  if (moduleKey === "warehouse") return "module-button module-button--stacked";
+  if (moduleKey === "warehouse") return "module-button module-button--stacked module-button--warehouse";
   if (moduleKey === "container_registration") return "module-button module-button--stacked module-button--registration";
   if (moduleKey === "container_planning") return "module-button module-button--stacked module-button--planning";
   return "module-button module-button--stacked";
@@ -214,7 +214,7 @@ function renderModules() {
   const modules = Array.isArray(coreContext?.dashboard_modules) ? coreContext.dashboard_modules : [];
   $("moduleCount").textContent = String(modules.length);
   host.innerHTML = modules.length ? modules.map((module) => `
-    <article class="${moduleCardClass(module.key)}" data-module-launch="${escapeHtml(module.launchPath)}">
+    <button class="${moduleCardClass(module.key)}" type="button" data-module-launch="${escapeHtml(module.launchPath)}">
       <div class="module-button__top">
         <span class="module-button__icon ${module.key === "pallets" ? "module-button__icon--square" : "module-button__icon--wide"}">${moduleIcon(module.key)}</span>
         <span class="module-button__tag">${escapeHtml(module.dashboard?.tag || module.licensing?.label || "Modul")}</span>
@@ -224,22 +224,16 @@ function renderModules() {
         <span class="module-button__title">${escapeHtml(module.name)}</span>
         <span class="module-button__description">${escapeHtml(module.dashboard?.description || "")}</span>
       </div>
-      <div class="module-button__footer module-card-footer">
-        <button class="secondary module-card-open" type="button" data-module-launch="${escapeHtml(module.launchPath)}">Modul öffnen</button>
-        ${module.adminPath ? `<button class="secondary module-card-admin" type="button" data-module-admin="${escapeHtml(module.adminPath)}">Modul-Admin</button>` : ""}
+      <div class="module-button__footer">
+        <span class="module-button__linktext">Modul öffnen</span>
+        <span class="module-button__arrow" aria-hidden="true">›</span>
       </div>
-    </article>
+    </button>
   `).join("") : '<div class="module-feed__empty">Keine Module freigeschaltet.</div>';
 
   document.querySelectorAll("[data-module-launch]").forEach((button) => {
     button.addEventListener("click", () => {
       window.location.href = button.dataset.moduleLaunch;
-    });
-  });
-  document.querySelectorAll("[data-module-admin]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      window.location.href = button.dataset.moduleAdmin;
     });
   });
 }
