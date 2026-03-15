@@ -8,7 +8,9 @@
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
-  <a href="/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">CTSH Dashboard</a>
+  <a href="/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">
+    <img src="/public/logo2.png" alt="CTSH" class="topbar-brand-logo">
+  </a>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="settings-menu-wrap" id="settingsMenuWrap">
       <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">&#9881;</button>
@@ -44,18 +46,13 @@
         <span class="module-section-kicker">Module</span>
         <strong id="moduleCount">0</strong>
       </article>
-      <article class="module-stat-card">
-        <span class="module-section-kicker">Zugriff</span>
-        <strong id="accessSummary">-</strong>
-      </article>
     </div>
   </section>
 
   <section class="card module-dashboard-card">
     <div class="module-dashboard-card__head">
       <div>
-        <span class="module-section-kicker">Produktumfang</span>
-        <h2>Freigeschaltete Bereiche</h2>
+        <h2>Dashboard</h2>
       </div>
     </div>
     <div class="module-grid" id="dashboardModuleGrid"></div>

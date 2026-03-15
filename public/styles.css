@@ -371,6 +371,13 @@ body.light {
   text-decoration: none;
 }
 
+.topbar-brand-logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+}
+
 
 .topbar-actions {
   justify-content: flex-end;
