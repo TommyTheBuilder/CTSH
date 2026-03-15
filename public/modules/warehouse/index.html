@@ -35,7 +35,7 @@
           <span class="pill" id="warehouseMe">-</span>
         </div>
         <p class="warehouse-page-header__lead">
-          Live-Bestände, Lagerplätze, Artikelstamm, Kundenstamm und Versandaufträge in einer gemeinsamen Arbeitsoberfläche für Büro und Lager.
+          Live-Bestaende, Lagerplaetze, Kundenstamm und Versandauftraege in einer gemeinsamen Arbeitsoberflaeche fuer Buero und Lager.
         </p>
       </div>
       <div class="warehouse-page-header__stats">
@@ -46,10 +46,6 @@
         <article class="warehouse-mini-stat">
           <span>Bestandspositionen</span>
           <strong id="warehouseQuickInventory">0</strong>
-        </article>
-        <article class="warehouse-mini-stat">
-          <span>Artikel</span>
-          <strong id="warehouseQuickArticles">0</strong>
         </article>
       </div>
     </section>
@@ -79,7 +75,7 @@
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="masterdata">
             <span class="warehouse-nav__icon">05</span>
-            <span>Stammdaten</span>
+            <span>Kunden</span>
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="picking">
             <span class="warehouse-nav__icon">06</span>
@@ -102,11 +98,6 @@
               <span class="warehouse-stat-card__label">Kunden</span>
               <strong class="warehouse-stat-card__value" id="dashboardCustomersCount">0</strong>
               <span class="warehouse-stat-card__meta">aktive Kunden im Kundenstamm</span>
-            </article>
-            <article class="warehouse-stat-card">
-              <span class="warehouse-stat-card__label">Artikel</span>
-              <strong class="warehouse-stat-card__value" id="dashboardArticlesCount">0</strong>
-              <span class="warehouse-stat-card__meta">Artikel im Artikelstamm</span>
             </article>
             <article class="warehouse-stat-card">
               <span class="warehouse-stat-card__label">Lagerplätze</span>
@@ -188,10 +179,6 @@
                     <input id="bookingPositionsNr" type="text" placeholder="optional" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="bookingArticleLookup">Artikel</label>
-                    <input id="bookingArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikelnummer oder Bezeichnung wählen" autocomplete="off" />
-                  </div>
-                  <div>
                     <label for="bookingQuantity">Menge</label>
                     <input id="bookingQuantity" type="number" min="1" value="1" />
                   </div>
@@ -264,7 +251,8 @@
               </div>
               <div class="warehouse-preview" id="bookingPreview">
                 <div class="warehouse-preview__row"><span>Typ</span><strong>-</strong></div>
-                <div class="warehouse-preview__row"><span>Artikel</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Kunde</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Positionsnummer</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Lagerplatz</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Stellplätze</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Verpackung</span><strong>-</strong></div>
@@ -284,8 +272,9 @@
                 </div>
               </div>
               <div class="warehouse-toolbar">
-                <input id="inventorySearch" type="text" placeholder="Suche nach Artikel oder Lagerplatz" />
-                <input id="inventoryArticleFilter" type="text" list="warehouseArticleLookupList" placeholder="Artikel filtern" />
+                <input id="inventorySearch" type="text" placeholder="Suche nach Lagerplatz, Kunde oder Verpackung" />
+                <input id="inventoryPositionsFilter" type="text" placeholder="Positionsnummer filtern" />
+                <input id="inventoryCustomerFilter" type="text" list="warehouseCustomerLookupList" placeholder="Kunde filtern" />
                 <input id="inventoryLocationFilter" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz filtern" />
                 <button class="secondary" id="inventoryReloadBtn" type="button">Aktualisieren</button>
               </div>
@@ -310,10 +299,6 @@
                   <div>
                     <label for="inventorySlotNumber">Stellplatz</label>
                     <input id="inventorySlotNumber" type="number" min="1" value="1" />
-                  </div>
-                  <div>
-                    <label for="inventoryArticleLookup">Artikel</label>
-                    <input id="inventoryArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikel wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="inventoryPackagingType">Verpackungsart</label>
@@ -341,7 +326,7 @@
         </section>
 
         <section class="warehouse-section" id="warehouseTab-locations">
-          <div class="warehouse-grid warehouse-grid--split">
+          <div class="warehouse-grid">
             <article class="warehouse-card" id="locationEditorCard">
               <div class="warehouse-card__head">
                 <div>
@@ -395,7 +380,7 @@
         </section>
 
         <section class="warehouse-section" id="warehouseTab-masterdata">
-          <div class="warehouse-grid warehouse-grid--split">
+          <div class="warehouse-grid">
             <article class="warehouse-card" id="customerEditorCard">
               <div class="warehouse-card__head">
                 <div>
@@ -437,42 +422,6 @@
               <p class="warehouse-message" id="customerMsg" role="status" aria-live="polite"></p>
             </article>
 
-            <article class="warehouse-card" id="articleEditorCard">
-              <div class="warehouse-card__head">
-                <div>
-                  <span class="warehouse-section-kicker">Artikel</span>
-                  <h3>Artikelstamm</h3>
-                </div>
-              </div>
-              <form id="articleForm" class="warehouse-form">
-                <div class="warehouse-form-grid">
-                  <div>
-                    <label for="articleNumber">Artikelnummer</label>
-                    <input id="articleNumber" type="text" placeholder="z.B. ART-2048" autocomplete="off" />
-                  </div>
-                  <div>
-                    <label for="articleName">Bezeichnung</label>
-                    <input id="articleName" type="text" placeholder="Artikelbezeichnung" autocomplete="off" />
-                  </div>
-                  <div class="warehouse-form-span-2">
-                    <label for="articleDescription">Beschreibung</label>
-                    <textarea id="articleDescription" rows="4" placeholder="Kurzbeschreibung oder Lagerhinweis"></textarea>
-                  </div>
-                </div>
-                <div class="warehouse-form-actions">
-                  <button class="primary" id="articleSaveBtn" type="submit">Artikel speichern</button>
-                  <button class="secondary" id="articleResetBtn" type="button">Auswahl löschen</button>
-                  <button class="danger" id="articleDeleteBtn" type="button">Artikel löschen</button>
-                </div>
-              </form>
-              <div class="warehouse-toolbar">
-                <input id="articleSearch" type="text" placeholder="Suche nach Artikelnummer oder Bezeichnung" />
-              </div>
-              <div class="warehouse-table-wrap" id="articlesTableWrap">
-                <div class="warehouse-empty">Artikel werden geladen...</div>
-              </div>
-              <p class="warehouse-message" id="articleMsg" role="status" aria-live="polite"></p>
-            </article>
           </div>
         </section>
 
@@ -494,7 +443,7 @@
                   </div>
                   <div>
                     <label for="pickingBelegNr">Belegnummer</label>
-                    <input id="pickingBelegNr" type="text" placeholder="z.B. VS-2026-001" autocomplete="off" />
+                    <input id="pickingBelegNr" type="text" placeholder="optional" autocomplete="off" />
                   </div>
                   <div>
                     <label for="pickingDueDate">Fällig am</label>
@@ -532,7 +481,7 @@
               </div>
             </div>
             <div class="warehouse-toolbar">
-              <input id="pickingSearch" type="text" placeholder="Suche nach Beleg oder Kunde" />
+              <input id="pickingSearch" type="text" placeholder="Suche nach Beleg, Kunde oder Position" />
               <select id="pickingStatusFilter">
                 <option value="">Alle Status</option>
                 <option value="OFFEN">OFFEN</option>
@@ -560,7 +509,9 @@
               </div>
             </div>
             <div class="warehouse-toolbar warehouse-toolbar--history">
-              <input id="historySearch" type="text" placeholder="Suche nach Beleg, Kunde oder Artikel" />
+              <input id="historySearch" type="text" placeholder="Suche nach Beleg, Kunde, Position oder Stellplatz" />
+              <input id="historyPositionsFilter" type="text" placeholder="Positionsnummer filtern" />
+              <input id="historyCustomerFilter" type="text" list="warehouseCustomerLookupList" placeholder="Kunde filtern" />
               <select id="historyTypeFilter">
                 <option value="">Alle Typen</option>
                 <option value="IN">IN</option>
@@ -582,7 +533,6 @@
     </div>
   </main>
 
-  <datalist id="warehouseArticleLookupList"></datalist>
   <datalist id="warehouseCustomerLookupList"></datalist>
   <datalist id="warehouseLocationLookupList"></datalist>
 

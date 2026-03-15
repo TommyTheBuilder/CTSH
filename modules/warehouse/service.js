@@ -17,26 +17,48 @@ const INVENTORY_SELECT = `
     sl.kapazitaet AS storage_location_capacity,
     i.stellplatz_nr,
     i.verpackungsart,
-    i.article_id,
-    a.artikel_nr,
-    a.bezeichnung,
-    a.beschreibung,
     i.menge,
     i.created_at,
-    i.updated_at
+    i.updated_at,
+    tx.id AS last_transaction_id,
+    tx.typ AS last_transaction_type,
+    tx.datum AS last_transaction_datum,
+    tx.beleg_nr,
+    tx.positions_nr,
+    tx.verpackungsart AS last_transaction_verpackungsart,
+    tx.customer_id,
+    c.kunden_nr,
+    c.name AS customer_name,
+    tx.user_id AS stored_by_user_id,
+    u.username AS stored_by_username
   FROM inventory i
   INNER JOIN storage_locations sl ON sl.id = i.storage_location_id
-  INNER JOIN articles a ON a.id = i.article_id
+  LEFT JOIN LATERAL (
+    SELECT
+      t.id,
+      t.typ,
+      t.datum,
+      t.beleg_nr,
+      t.positions_nr,
+      t.verpackungsart,
+      t.customer_id,
+      t.user_id
+    FROM transaction_slot_assignments tsa
+    INNER JOIN transactions t ON t.id = tsa.transaction_id
+    WHERE tsa.phase = 'TARGET'
+      AND tsa.storage_location_id = i.storage_location_id
+      AND tsa.stellplatz_nr = i.stellplatz_nr
+    ORDER BY t.datum DESC, t.id DESC
+    LIMIT 1
+  ) tx ON TRUE
+  LEFT JOIN customers c ON c.id = tx.customer_id
+  LEFT JOIN users u ON u.id = tx.user_id
 `;
 
 const TRANSACTION_SELECT = `
   SELECT
     t.id,
     t.typ,
-    t.article_id,
-    a.artikel_nr,
-    a.bezeichnung,
-    a.beschreibung,
     t.menge,
     t.storage_location_from_id,
     slf.name AS storage_location_from_name,
@@ -55,7 +77,6 @@ const TRANSACTION_SELECT = `
     t.notiz,
     t.created_at
   FROM transactions t
-  INNER JOIN articles a ON a.id = t.article_id
   LEFT JOIN storage_locations slf ON slf.id = t.storage_location_from_id
   LEFT JOIN storage_locations slt ON slt.id = t.storage_location_to_id
   LEFT JOIN customers c ON c.id = t.customer_id
@@ -480,13 +501,10 @@ async function getPickingOrderById(executor, id) {
       SELECT
         poi.id,
         poi.order_id,
-        poi.article_id,
-        a.artikel_nr,
-        a.bezeichnung,
+        poi.positions_nr,
         poi.menge_soll,
         poi.menge_ist
       FROM picking_order_items poi
-      INNER JOIN articles a ON a.id = poi.article_id
       WHERE poi.order_id = $1
       ORDER BY poi.id ASC
       `,
@@ -500,7 +518,6 @@ async function getPickingOrderById(executor, id) {
 function normalizeMovementPayload(payload, options = {}) {
   const { requireAll = true } = options;
   const typ = normalizeEnum(payload.typ, TRANSACTION_TYPES, "typ", { required: requireAll });
-  const articleId = normalizeInteger(payload.article_id, "article_id", { required: requireAll, min: 1 });
   const menge = normalizeInteger(payload.menge, "menge", { required: requireAll, min: 1 });
   const storageLocationFromId = normalizeInteger(payload.storage_location_from_id, "storage_location_from_id", {
     required: false,
@@ -590,7 +607,6 @@ function normalizeMovementPayload(payload, options = {}) {
 
   return resolveMovementSlots({
     typ,
-    article_id: articleId,
     menge,
     stellplatz_nr: getRepresentativeTransactionSlot(typ, sourceSlots, targetSlots),
     source_stellplaetze: sourceSlots,
@@ -634,15 +650,14 @@ async function addInventoryOccupancy(client, movement, locationId, stellplatzNr)
     INSERT INTO inventory (
       storage_location_id,
       stellplatz_nr,
-      article_id,
       menge,
       verpackungsart,
       created_at,
       updated_at
     )
-    VALUES ($1, $2, $3, 1, $4, now(), now())
+    VALUES ($1, $2, 1, $3, now(), now())
     `,
-    [locationId, stellplatzNr, normalizedMovement.article_id, normalizedMovement.verpackungsart]
+    [locationId, stellplatzNr, normalizedMovement.verpackungsart]
   );
 }
 
@@ -653,7 +668,7 @@ async function removeInventoryOccupancy(client, movement, locationId, stellplatz
   const existing = await getOneOrNull(
     client,
     `
-    SELECT id, article_id, verpackungsart
+    SELECT id, verpackungsart
     FROM inventory
     WHERE storage_location_id = $1
       AND stellplatz_nr = $2
@@ -666,13 +681,6 @@ async function removeInventoryOccupancy(client, movement, locationId, stellplatz
     throw new WarehouseError(
       409,
       `Slot ${stellplatzNr} at storage location ${locationId} is not occupied`
-    );
-  }
-
-  if (Number(existing.article_id) !== Number(normalizedMovement.article_id)) {
-    throw new WarehouseError(
-      409,
-      `Slot ${stellplatzNr} at storage location ${locationId} is occupied by another article`
     );
   }
 
@@ -828,7 +836,10 @@ function normalizePickingItems(items, options = {}) {
   }
 
   return items.map((item, index) => ({
-    article_id: normalizeInteger(item?.article_id, `items[${index}].article_id`, { required: true, min: 1 }),
+    positions_nr: normalizeText(item?.positions_nr, `items[${index}].positions_nr`, {
+      required: true,
+      maxLength: 120
+    }),
     menge_soll: normalizeInteger(item?.menge_soll, `items[${index}].menge_soll`, { required: true, min: 1 }),
     menge_ist: normalizeInteger(item?.menge_ist ?? 0, `items[${index}].menge_ist`, { required: true, min: 0 })
   }));
@@ -849,8 +860,6 @@ function buildTransactionFilters(filters = {}, options = {}) {
         OR LOWER(COALESCE(t.positions_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.kunden_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
-        OR LOWER(COALESCE(a.artikel_nr, '')) LIKE $${idx}
-        OR LOWER(COALESCE(a.bezeichnung, '')) LIKE $${idx}
         OR LOWER(COALESCE(t.verpackungsart, '')) LIKE $${idx}
         OR CAST(COALESCE(t.stellplatz_nr, 0) AS TEXT) LIKE $${idx}
         OR EXISTS (
@@ -869,16 +878,16 @@ function buildTransactionFilters(filters = {}, options = {}) {
     where.push(`t.typ = $${values.length}`);
   }
 
-  const articleId = normalizeInteger(filters.article_id, "article_id", { required: false, min: 1, allowNull: true });
-  if (articleId) {
-    values.push(articleId);
-    where.push(`t.article_id = $${values.length}`);
-  }
-
   const customerId = normalizeInteger(filters.customer_id, "customer_id", { required: false, min: 1, allowNull: true });
   if (customerId) {
     values.push(customerId);
     where.push(`t.customer_id = $${values.length}`);
+  }
+
+  const positionsNr = normalizeText(filters.positions_nr, "positions_nr", { required: false, maxLength: 120 });
+  if (positionsNr) {
+    values.push(`%${positionsNr.toLowerCase()}%`);
+    where.push(`LOWER(COALESCE(t.positions_nr, '')) LIKE $${values.length}`);
   }
 
   const fromId = normalizeInteger(filters.storage_location_from_id, "storage_location_from_id", {
@@ -954,7 +963,6 @@ async function getDashboardSummary() {
         `
         SELECT
           (SELECT COUNT(*)::int FROM customers) AS customers_count,
-          (SELECT COUNT(*)::int FROM articles) AS articles_count,
           (SELECT COUNT(*)::int FROM storage_locations) AS storage_locations_count,
           (SELECT COUNT(*)::int FROM inventory) AS inventory_positions_count,
           (SELECT COALESCE(SUM(menge), 0)::int FROM inventory) AS inventory_quantity_total,
@@ -1135,149 +1143,6 @@ async function deleteCustomer(id) {
   }
 }
 
-async function listArticles(filters = {}) {
-  const values = [];
-  const where = [];
-  const search = normalizeText(filters.search, "search", { required: false, maxLength: 200 });
-  if (search) {
-    values.push(`%${search.toLowerCase()}%`);
-    const idx = values.length;
-    where.push(
-      `(LOWER(a.artikel_nr) LIKE $${idx} OR LOWER(a.bezeichnung) LIKE $${idx} OR LOWER(COALESCE(a.beschreibung, '')) LIKE $${idx})`
-    );
-  }
-
-  values.push(normalizeLimit(filters.limit));
-
-  try {
-    return (
-      await pool.query(
-        `
-        SELECT
-          a.id,
-          a.artikel_nr,
-          a.bezeichnung,
-          a.beschreibung,
-          a.created_at,
-          COALESCE(SUM(i.menge), 0)::int AS bestand_gesamt
-        FROM articles a
-        LEFT JOIN inventory i ON i.article_id = a.id
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        GROUP BY a.id
-        ORDER BY a.bezeichnung ASC, a.created_at DESC
-        LIMIT $${values.length}
-        `,
-        values
-      )
-    ).rows;
-  } catch (error) {
-    throw translateDbError(error);
-  }
-}
-
-async function getArticle(id) {
-  const articleId = normalizeInteger(id, "id", { required: true, min: 1 });
-  const row = await getOneOrNull(
-    pool,
-    `
-    SELECT
-      a.id,
-      a.artikel_nr,
-      a.bezeichnung,
-      a.beschreibung,
-      a.created_at,
-      COALESCE(SUM(i.menge), 0)::int AS bestand_gesamt
-    FROM articles a
-    LEFT JOIN inventory i ON i.article_id = a.id
-    WHERE a.id = $1
-    GROUP BY a.id
-    `,
-    [articleId]
-  );
-  if (!row) throw new WarehouseError(404, "Article not found");
-  return row;
-}
-
-async function createArticle(payload) {
-  const artikelNr = normalizeText(payload.artikel_nr, "artikel_nr", { required: true, maxLength: 120 });
-  const bezeichnung = normalizeText(payload.bezeichnung, "bezeichnung", { required: true, maxLength: 255 });
-  const beschreibung = normalizeText(payload.beschreibung, "beschreibung", { required: false, maxLength: 4000 });
-
-  try {
-    return (
-      await pool.query(
-        `
-        INSERT INTO articles (artikel_nr, bezeichnung, beschreibung)
-        VALUES ($1, $2, $3)
-        RETURNING id, artikel_nr, bezeichnung, beschreibung, created_at
-        `,
-        [artikelNr, bezeichnung, beschreibung]
-      )
-    ).rows[0];
-  } catch (error) {
-    throw translateDbError(error, { uniqueMessage: "Article number already exists" });
-  }
-}
-
-async function updateArticle(id, payload) {
-  const articleId = normalizeInteger(id, "id", { required: true, min: 1 });
-  const updates = [];
-  const values = [];
-
-  if (hasOwn(payload, "artikel_nr")) {
-    values.push(normalizeText(payload.artikel_nr, "artikel_nr", { required: true, maxLength: 120 }));
-    updates.push(`artikel_nr = $${values.length}`);
-  }
-  if (hasOwn(payload, "bezeichnung")) {
-    values.push(normalizeText(payload.bezeichnung, "bezeichnung", { required: true, maxLength: 255 }));
-    updates.push(`bezeichnung = $${values.length}`);
-  }
-  if (hasOwn(payload, "beschreibung")) {
-    values.push(normalizeText(payload.beschreibung, "beschreibung", { required: false, maxLength: 4000 }));
-    updates.push(`beschreibung = $${values.length}`);
-  }
-
-  if (!updates.length) throw new WarehouseError(400, "No article changes provided");
-
-  values.push(articleId);
-
-  try {
-    const result = await pool.query(
-      `
-      UPDATE articles
-      SET ${updates.join(", ")}
-      WHERE id = $${values.length}
-      RETURNING id, artikel_nr, bezeichnung, beschreibung, created_at
-      `,
-      values
-    );
-    if (!result.rowCount) throw new WarehouseError(404, "Article not found");
-    return result.rows[0];
-  } catch (error) {
-    throw translateDbError(error, { uniqueMessage: "Article number already exists" });
-  }
-}
-
-async function deleteArticle(id) {
-  const articleId = normalizeInteger(id, "id", { required: true, min: 1 });
-  try {
-    const result = await pool.query(
-      `
-      DELETE FROM articles
-      WHERE id = $1
-      RETURNING id
-      `,
-      [articleId]
-    );
-    if (!result.rowCount) throw new WarehouseError(404, "Article not found");
-    return { ok: true };
-  } catch (error) {
-    throw translateDbError(error, {
-      fkMessage: "Article is still referenced by inventory, transactions or picking orders"
-    });
-  }
-}
-
 async function listStorageLocations(filters = {}) {
   const values = [];
   const where = [];
@@ -1359,7 +1224,6 @@ async function listStorageLocationSlots(id, filters = {}) {
   const status = filters.status
     ? normalizeEnum(String(filters.status).toUpperCase(), SLOT_STATUS_TYPES, "status", { required: false })
     : null;
-  const articleId = normalizeInteger(filters.article_id, "article_id", { required: false, min: 1, allowNull: true });
 
   try {
     return (
@@ -1373,10 +1237,7 @@ async function listStorageLocationSlots(id, filters = {}) {
             sl.kapazitaet AS storage_location_capacity,
             gs.slot_no::int AS stellplatz_nr,
             i.id AS inventory_id,
-            i.article_id,
             i.verpackungsart,
-            a.artikel_nr,
-            a.bezeichnung,
             i.menge,
             i.created_at,
             i.updated_at
@@ -1385,7 +1246,6 @@ async function listStorageLocationSlots(id, filters = {}) {
           LEFT JOIN inventory i
             ON i.storage_location_id = sl.id
            AND i.stellplatz_nr = gs.slot_no
-          LEFT JOIN articles a ON a.id = i.article_id
           WHERE sl.id = $1
         )
         SELECT
@@ -1396,9 +1256,6 @@ async function listStorageLocationSlots(id, filters = {}) {
           sb.stellplatz_nr,
           CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END AS status,
           sb.inventory_id,
-          sb.article_id,
-          sb.artikel_nr,
-          sb.bezeichnung,
           sb.verpackungsart,
           sb.menge,
           sb.created_at,
@@ -1408,14 +1265,23 @@ async function listStorageLocationSlots(id, filters = {}) {
           tx.datum AS last_transaction_datum,
           tx.user_id AS stored_by_user_id,
           u.username AS stored_by_username,
-          tx.beleg_nr AS last_transaction_beleg_nr,
+          tx.beleg_nr,
+          tx.positions_nr,
           tx.verpackungsart AS last_transaction_verpackungsart,
           c.id AS customer_id,
           c.kunden_nr,
           c.name AS customer_name
         FROM slot_base sb
         LEFT JOIN LATERAL (
-          SELECT t.id, t.typ, t.datum, t.user_id, t.beleg_nr, t.customer_id, t.verpackungsart
+          SELECT
+            t.id,
+            t.typ,
+            t.datum,
+            t.user_id,
+            t.beleg_nr,
+            t.positions_nr,
+            t.customer_id,
+            t.verpackungsart
           FROM transaction_slot_assignments tsa
           INNER JOIN transactions t ON t.id = tsa.transaction_id
           WHERE tsa.phase = 'TARGET'
@@ -1427,15 +1293,14 @@ async function listStorageLocationSlots(id, filters = {}) {
         LEFT JOIN users u ON u.id = tx.user_id
         LEFT JOIN customers c ON c.id = tx.customer_id
         WHERE ($2::text IS NULL OR CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END = $2)
-          AND ($3::int IS NULL OR sb.article_id = $3)
         ORDER BY sb.stellplatz_nr ASC
         `,
-        [locationId, status, articleId]
+        [locationId, status]
       )
     ).rows;
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced article or storage location not found"
+      fkMessage: "Storage location not found"
     });
   }
 }
@@ -1530,18 +1395,24 @@ async function listInventory(filters = {}) {
     where.push(
       `(
         LOWER(sl.name) LIKE $${idx}
-        OR LOWER(a.artikel_nr) LIKE $${idx}
-        OR LOWER(a.bezeichnung) LIKE $${idx}
+        OR LOWER(COALESCE(tx.beleg_nr, '')) LIKE $${idx}
+        OR LOWER(COALESCE(tx.positions_nr, '')) LIKE $${idx}
+        OR LOWER(COALESCE(c.kunden_nr, '')) LIKE $${idx}
+        OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
         OR LOWER(COALESCE(i.verpackungsart, '')) LIKE $${idx}
         OR CAST(i.stellplatz_nr AS TEXT) LIKE $${idx}
       )`
     );
   }
 
-  const articleId = normalizeInteger(filters.article_id, "article_id", { required: false, min: 1, allowNull: true });
-  if (articleId) {
-    values.push(articleId);
-    where.push(`i.article_id = $${values.length}`);
+  const customerId = normalizeInteger(filters.customer_id, "customer_id", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+  if (customerId) {
+    values.push(customerId);
+    where.push(`tx.customer_id = $${values.length}`);
   }
 
   const locationId = normalizeInteger(filters.storage_location_id, "storage_location_id", {
@@ -1564,6 +1435,12 @@ async function listInventory(filters = {}) {
     where.push(`i.stellplatz_nr = $${values.length}`);
   }
 
+  const positionsNr = normalizeText(filters.positions_nr, "positions_nr", { required: false, maxLength: 120 });
+  if (positionsNr) {
+    values.push(`%${positionsNr.toLowerCase()}%`);
+    where.push(`LOWER(COALESCE(tx.positions_nr, '')) LIKE $${values.length}`);
+  }
+
   const verpackungsart = filters.verpackungsart
     ? normalizePackagingType(filters.verpackungsart, "verpackungsart", { required: false })
     : null;
@@ -1580,7 +1457,7 @@ async function listInventory(filters = {}) {
         `
         ${INVENTORY_SELECT}
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY sl.name ASC, i.stellplatz_nr ASC, a.bezeichnung ASC
+        ORDER BY sl.name ASC, i.stellplatz_nr ASC, tx.positions_nr ASC NULLS LAST
         LIMIT $${values.length}
         `,
         values
@@ -1600,7 +1477,6 @@ async function getInventoryRecord(id) {
 
 async function createInventoryRecord(payload) {
   const storageLocationId = normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 });
-  const articleId = normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 });
   const stellplatzNr = normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 });
   const menge = normalizeInteger(payload.menge, "menge", { required: true, min: 1 });
   const verpackungsart = normalizePackagingType(payload.verpackungsart, "verpackungsart", { required: true });
@@ -1617,23 +1493,22 @@ async function createInventoryRecord(payload) {
         INSERT INTO inventory (
           storage_location_id,
           stellplatz_nr,
-          article_id,
           menge,
           verpackungsart,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, now(), now())
+        VALUES ($1, $2, $3, $4, now(), now())
         RETURNING id
         `,
-        [storageLocationId, stellplatzNr, articleId, menge, verpackungsart]
+        [storageLocationId, stellplatzNr, menge, verpackungsart]
       );
       return getInventoryById(client, result.rows[0].id);
     });
   } catch (error) {
     throw translateDbError(error, {
       uniqueMessage: "Inventory record for this storage location and slot already exists",
-      fkMessage: "Article or storage location not found"
+      fkMessage: "Storage location not found"
     });
   }
 }
@@ -1646,7 +1521,7 @@ async function updateInventoryRecord(id, payload) {
       const current = await getOneOrNull(
         client,
         `
-        SELECT id, storage_location_id, stellplatz_nr, article_id, menge, verpackungsart
+        SELECT id, storage_location_id, stellplatz_nr, menge, verpackungsart
         FROM inventory
         WHERE id = $1
         FOR UPDATE
@@ -1662,9 +1537,6 @@ async function updateInventoryRecord(id, payload) {
       const nextStellplatzNr = hasOwn(payload, "stellplatz_nr")
         ? normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 })
         : current.stellplatz_nr;
-      const nextArticleId = hasOwn(payload, "article_id")
-        ? normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 })
-        : current.article_id;
       const nextMenge = hasOwn(payload, "menge")
         ? normalizeInteger(payload.menge, "menge", { required: true, min: 1 })
         : current.menge;
@@ -1679,7 +1551,6 @@ async function updateInventoryRecord(id, payload) {
       if (
         Number(nextStorageLocationId) === Number(current.storage_location_id)
         && Number(nextStellplatzNr) === Number(current.stellplatz_nr)
-        && Number(nextArticleId) === Number(current.article_id)
         && Number(nextMenge) === Number(current.menge)
         && (nextVerpackungsart || null) === (current.verpackungsart || null)
       ) {
@@ -1694,14 +1565,13 @@ async function updateInventoryRecord(id, payload) {
         SET
           storage_location_id = $1,
           stellplatz_nr = $2,
-          article_id = $3,
-          menge = $4,
-          verpackungsart = $5,
+          menge = $3,
+          verpackungsart = $4,
           updated_at = now()
-        WHERE id = $6
+        WHERE id = $5
         RETURNING id
         `,
-        [nextStorageLocationId, nextStellplatzNr, nextArticleId, nextMenge, nextVerpackungsart, inventoryId]
+        [nextStorageLocationId, nextStellplatzNr, nextMenge, nextVerpackungsart, inventoryId]
       );
 
       return getInventoryById(client, result.rows[0].id);
@@ -1709,7 +1579,7 @@ async function updateInventoryRecord(id, payload) {
   } catch (error) {
     throw translateDbError(error, {
       uniqueMessage: "Inventory record for this storage location and slot already exists",
-      fkMessage: "Article or storage location not found"
+      fkMessage: "Storage location not found"
     });
   }
 }
@@ -1787,7 +1657,6 @@ async function createTransactionRecord(payload, userId) {
         `
         INSERT INTO transactions (
           typ,
-          article_id,
           menge,
           storage_location_from_id,
           storage_location_to_id,
@@ -1800,12 +1669,11 @@ async function createTransactionRecord(payload, userId) {
           datum,
           notiz
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         `,
         [
           movement.typ,
-          movement.article_id,
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
@@ -1825,7 +1693,7 @@ async function createTransactionRecord(payload, userId) {
     });
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced article, customer, storage location or user not found",
+      fkMessage: "Referenced customer, storage location or user not found",
       checkMessage: "Transaction data is invalid"
     });
   }
@@ -1843,7 +1711,6 @@ async function updateTransactionRecord(id, payload) {
         SELECT
           id,
           typ,
-          article_id,
           menge,
           storage_location_from_id,
           storage_location_to_id,
@@ -1873,22 +1740,20 @@ async function updateTransactionRecord(id, payload) {
         UPDATE transactions
         SET
           typ = $1,
-          article_id = $2,
-          menge = $3,
-          storage_location_from_id = $4,
-          storage_location_to_id = $5,
-          stellplatz_nr = $6,
-          verpackungsart = $7,
-          customer_id = $8,
-          beleg_nr = $9,
-          positions_nr = $10,
-          datum = $11,
-          notiz = $12
-        WHERE id = $13
+          menge = $2,
+          storage_location_from_id = $3,
+          storage_location_to_id = $4,
+          stellplatz_nr = $5,
+          verpackungsart = $6,
+          customer_id = $7,
+          beleg_nr = $8,
+          positions_nr = $9,
+          datum = $10,
+          notiz = $11
+        WHERE id = $12
         `,
         [
           movement.typ,
-          movement.article_id,
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
@@ -1908,7 +1773,7 @@ async function updateTransactionRecord(id, payload) {
     });
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced article, customer or storage location not found",
+      fkMessage: "Referenced customer or storage location not found",
       checkMessage: "Transaction data is invalid"
     });
   }
@@ -1925,7 +1790,6 @@ async function deleteTransactionRecord(id) {
         SELECT
           id,
           typ,
-          article_id,
           menge,
           storage_location_from_id,
           storage_location_to_id,
@@ -1969,6 +1833,12 @@ async function listPickingOrders(filters = {}) {
         LOWER(COALESCE(po.beleg_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.kunden_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
+        OR EXISTS (
+          SELECT 1
+          FROM picking_order_items poi
+          WHERE poi.order_id = po.id
+            AND LOWER(COALESCE(poi.positions_nr, '')) LIKE $${idx}
+        )
       )`
     );
   }
@@ -2026,7 +1896,7 @@ async function createPickingOrder(payload, userId) {
     defaultValue: "OFFEN"
   });
   const customerId = normalizeInteger(payload.customer_id, "customer_id", { required: true, min: 1 });
-  const belegNr = normalizeText(payload.beleg_nr, "beleg_nr", { required: true, maxLength: 120 });
+  const belegNr = normalizeText(payload.beleg_nr, "beleg_nr", { required: false, maxLength: 120 });
   const bearbeiterUserId = normalizeInteger(payload.bearbeiter_user_id, "bearbeiter_user_id", {
     required: false,
     min: 1,
@@ -2056,10 +1926,10 @@ async function createPickingOrder(payload, userId) {
       for (const item of items) {
         await client.query(
           `
-          INSERT INTO picking_order_items (order_id, article_id, menge_soll, menge_ist)
+          INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
           VALUES ($1, $2, $3, $4)
           `,
-          [inserted.rows[0].id, item.article_id, item.menge_soll, item.menge_ist]
+          [inserted.rows[0].id, item.positions_nr, item.menge_soll, item.menge_ist]
         );
       }
 
@@ -2067,7 +1937,7 @@ async function createPickingOrder(payload, userId) {
     });
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced customer, article or user not found",
+      fkMessage: "Referenced customer or user not found",
       checkMessage: "Picking order data is invalid"
     });
   }
@@ -2089,7 +1959,7 @@ async function updatePickingOrder(id, payload) {
     updates.push(`customer_id = $${values.length}`);
   }
   if (hasOwn(payload, "beleg_nr")) {
-    values.push(normalizeText(payload.beleg_nr, "beleg_nr", { required: true, maxLength: 120 }));
+    values.push(normalizeText(payload.beleg_nr, "beleg_nr", { required: false, maxLength: 120 }));
     updates.push(`beleg_nr = $${values.length}`);
   }
   if (hasOwn(payload, "bearbeiter_user_id")) {
@@ -2131,10 +2001,10 @@ async function updatePickingOrder(id, payload) {
         for (const item of items) {
           await client.query(
             `
-            INSERT INTO picking_order_items (order_id, article_id, menge_soll, menge_ist)
+            INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
             VALUES ($1, $2, $3, $4)
             `,
-            [orderId, item.article_id, item.menge_soll, item.menge_ist]
+            [orderId, item.positions_nr, item.menge_soll, item.menge_ist]
           );
         }
       }
@@ -2143,7 +2013,7 @@ async function updatePickingOrder(id, payload) {
     });
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced customer, article or user not found",
+      fkMessage: "Referenced customer or user not found",
       checkMessage: "Picking order data is invalid"
     });
   }
@@ -2248,10 +2118,10 @@ async function completePickingOrder(id, payload, userId) {
         for (const item of items) {
           await client.query(
             `
-            INSERT INTO picking_order_items (order_id, article_id, menge_soll, menge_ist)
+            INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
             VALUES ($1, $2, $3, $4)
             `,
-            [orderId, item.article_id, item.menge_soll, item.menge_ist]
+            [orderId, item.positions_nr, item.menge_soll, item.menge_ist]
           );
         }
       }
@@ -2270,7 +2140,7 @@ async function completePickingOrder(id, payload, userId) {
     });
   } catch (error) {
     throw translateDbError(error, {
-      fkMessage: "Referenced article or user not found"
+      fkMessage: "Referenced user not found"
     });
   }
 }
@@ -2282,13 +2152,11 @@ module.exports = {
   TRANSACTION_TYPES,
   WarehouseError,
   completePickingOrder,
-  createArticle,
   createCustomer,
   createInventoryRecord,
   createPickingOrder,
   createStorageLocation,
   createTransactionRecord,
-  deleteArticle,
   deleteCustomer,
   deleteInventoryRecord,
   deletePickingOrder,
@@ -2297,12 +2165,10 @@ module.exports = {
   exportTransactions,
   fetchPickingOrder,
   fetchTransactionRecord,
-  getArticle,
   getCustomer,
   getDashboardSummary,
   getInventoryRecord,
   getStorageLocation,
-  listArticles,
   listCustomers,
   listInventory,
   listPickingOrders,
@@ -2310,7 +2176,6 @@ module.exports = {
   listStorageLocations,
   listTransactions,
   startPickingOrder,
-  updateArticle,
   updateCustomer,
   updateInventoryRecord,
   updatePickingOrder,

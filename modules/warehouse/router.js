@@ -5,13 +5,11 @@ const ExcelJS = require("exceljs");
 const {
   WarehouseError,
   completePickingOrder,
-  createArticle,
   createCustomer,
   createInventoryRecord,
   createPickingOrder,
   createStorageLocation,
   createTransactionRecord,
-  deleteArticle,
   deleteCustomer,
   deleteInventoryRecord,
   deletePickingOrder,
@@ -20,12 +18,10 @@ const {
   exportTransactions,
   fetchPickingOrder,
   fetchTransactionRecord,
-  getArticle,
   getCustomer,
   getDashboardSummary,
   getInventoryRecord,
   getStorageLocation,
-  listArticles,
   listCustomers,
   listInventory,
   listPickingOrders,
@@ -33,7 +29,6 @@ const {
   listStorageLocations,
   listTransactions,
   startPickingOrder,
-  updateArticle,
   updateCustomer,
   updateInventoryRecord,
   updatePickingOrder,
@@ -58,13 +53,11 @@ function buildExportRows(rows) {
     positions_nr: row.positions_nr || "",
     kunden_nr: row.kunden_nr || "",
     customer_name: row.customer_name || "",
-    artikel_nr: row.artikel_nr || "",
     stellplatz_nr: row.stellplatz_nr ?? "",
     stellplaetze: Array.isArray(row.stellplaetze) ? row.stellplaetze.join(", ") : "",
     source_stellplaetze: Array.isArray(row.source_stellplaetze) ? row.source_stellplaetze.join(", ") : "",
     target_stellplaetze: Array.isArray(row.target_stellplaetze) ? row.target_stellplaetze.join(", ") : "",
     verpackungsart: row.verpackungsart || "",
-    bezeichnung: row.bezeichnung || "",
     menge: row.menge,
     storage_location_from: row.storage_location_from_name || "",
     storage_location_to: row.storage_location_to_name || "",
@@ -140,46 +133,6 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
     requirePermission("warehouse.customers.manage"),
     handleRoute(async (req, res) => {
       res.json(await deleteCustomer(req.params.id));
-    })
-  );
-
-  router.get(
-    "/articles",
-    requirePermission("warehouse.articles.view"),
-    handleRoute(async (req, res) => {
-      res.json(await listArticles(req.query || {}));
-    })
-  );
-
-  router.get(
-    "/articles/:id",
-    requirePermission("warehouse.articles.view"),
-    handleRoute(async (req, res) => {
-      res.json(await getArticle(req.params.id));
-    })
-  );
-
-  router.post(
-    "/articles",
-    requirePermission("warehouse.articles.manage"),
-    handleRoute(async (req, res) => {
-      res.status(201).json(await createArticle(req.body || {}));
-    })
-  );
-
-  router.put(
-    "/articles/:id",
-    requirePermission("warehouse.articles.manage"),
-    handleRoute(async (req, res) => {
-      res.json(await updateArticle(req.params.id, req.body || {}));
-    })
-  );
-
-  router.delete(
-    "/articles/:id",
-    requirePermission("warehouse.articles.manage"),
-    handleRoute(async (req, res) => {
-      res.json(await deleteArticle(req.params.id));
     })
   );
 
@@ -285,13 +238,11 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
           "positions_nr",
           "kunden_nr",
           "customer_name",
-          "artikel_nr",
           "stellplatz_nr",
           "stellplaetze",
           "source_stellplaetze",
           "target_stellplaetze",
           "verpackungsart",
-          "bezeichnung",
           "menge",
           "storage_location_from",
           "storage_location_to",
@@ -322,13 +273,11 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
         { header: "Positionsnr.", key: "positions_nr", width: 18 },
         { header: "Kundennr.", key: "kunden_nr", width: 16 },
         { header: "Kunde", key: "customer_name", width: 26 },
-        { header: "Artikelnr.", key: "artikel_nr", width: 18 },
         { header: "Stellplatz", key: "stellplatz_nr", width: 12 },
         { header: "Stellplätze", key: "stellplaetze", width: 22 },
         { header: "Quelle Stellplätze", key: "source_stellplaetze", width: 22 },
         { header: "Ziel Stellplätze", key: "target_stellplaetze", width: 22 },
         { header: "Verpackungsart", key: "verpackungsart", width: 18 },
-        { header: "Artikel", key: "bezeichnung", width: 28 },
         { header: "Menge", key: "menge", width: 12 },
         { header: "Von Lagerplatz", key: "storage_location_from", width: 20 },
         { header: "Zu Lagerplatz", key: "storage_location_to", width: 20 },

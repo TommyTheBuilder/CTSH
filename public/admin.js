@@ -656,17 +656,6 @@ const ADMIN_PERMISSION_CARDS = [
     ]
   },
   {
-    key: "warehouse_articles",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Artikel",
-    description: "Artikelstamm getrennt lesen und pflegen.",
-    permissions: [
-      { id: "p_warehouse_articles_view", path: "warehouse.articles.view", label: "Artikel ansehen" },
-      { id: "p_warehouse_articles_manage", path: "warehouse.articles.manage", label: "Artikel verwalten" }
-    ]
-  },
-  {
     key: "warehouse_storage",
     group: "modules",
     eyebrow: "Warehouse",
@@ -765,7 +754,6 @@ function buildAdminDefaultPermissions() {
     warehouse: {
       dashboard: { view: false },
       customers: { view: false, manage: false },
-      articles: { view: false, manage: false },
       storage_locations: { view: false, manage: false },
       inventory: { view: false, manage: false },
       transactions: { create: false, view: false, export: false, manage: false },
