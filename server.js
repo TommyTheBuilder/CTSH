@@ -1136,8 +1136,8 @@ function getDashboardCaseActionLabel(action) {
   const labels = {
     create: "Vorgang angelegt",
     edit: "Vorgang bearbeitet",
-    claim: "Vorgang uebernommen",
-    submit: "Zur Pruefung eingereicht",
+    claim: "Vorgang übernommen",
+    submit: "Zur Prüfung eingereicht",
     approve: "Vorgang gebucht",
     cancel: "Vorgang storniert",
     set_translogica: "Translogica aktualisiert"
@@ -1147,10 +1147,10 @@ function getDashboardCaseActionLabel(action) {
 
 function getDashboardContainerEventLabel(type) {
   const labels = {
-    driver_register: "Container angemeldet",
-    admin_set_status: "Status aktualisiert",
-    admin_set_time: "Zeitfenster aktualisiert",
-    admin_reset_container: "Container zurueckgesetzt"
+    driver_register: "Container wurde angemeldet",
+    admin_set_status: "Containerstatus wurde aktualisiert",
+    admin_set_time: "Zeitfenster wurde aktualisiert",
+    admin_reset_container: "Containerdaten wurden zurückgesetzt"
   };
   return labels[type] || "Container-Vorgang aktualisiert";
 }
@@ -1161,13 +1161,13 @@ function buildContainerEventMeta(row) {
   const from = String(details.from || "").trim();
   const to = String(details.to || "").trim();
   const timeSlot = String(details.timeSlot || "").trim();
-  const changeLabel = row?.type === "admin_set_time" ? "Zeit" : "Status";
+  const changeLabel = row?.type === "admin_set_time" ? "Zeitfenster" : "Status";
   const pieces = [
-    row?.containerId ? `Container ${row.containerId}` : "",
-    row?.plate ? `Kennzeichen ${row.plate}` : "",
-    bookingNo ? `Buchung ${bookingNo}` : "",
-    from || to ? `${changeLabel} ${from || "-"} -> ${to || "-"}` : "",
-    timeSlot ? `Slot ${timeSlot}` : ""
+    row?.containerId ? `Container: ${row.containerId}` : "",
+    row?.plate ? `Kennzeichen: ${row.plate}` : "",
+    bookingNo ? `Buchungsnummer: ${bookingNo}` : "",
+    from || to ? `${changeLabel}: von ${from || "-"} auf ${to || "-"}` : "",
+    timeSlot ? `Zeitfenster: ${timeSlot}` : ""
   ];
   return dashboardFeedJoin(pieces);
 }
@@ -1228,13 +1228,13 @@ async function getDashboardLiveFeedItems(req, limit) {
       items.push({
         id: `booking-case-${row.id}`,
         app: "Paletten Buchungen",
-        title: row.receipt_no ? `Beleg ${row.receipt_no}` : "Paletten Buchung",
+        title: row.receipt_no ? `Palettenbuchung ${row.receipt_no}` : "Palettenbuchung",
         meta: dashboardFeedJoin([
-          row.license_plate ? `Kennzeichen ${row.license_plate}` : "",
-          row.entrepreneur || "",
-          `${Number(row.qty_in || 0)} IN / ${Number(row.qty_out || 0)} OUT`,
-          row.location_name,
-          row.department_name
+          row.license_plate ? `Kennzeichen: ${row.license_plate}` : "",
+          row.entrepreneur ? `Unternehmer: ${row.entrepreneur}` : "",
+          `Eingang: ${Number(row.qty_in || 0)}, Ausgang: ${Number(row.qty_out || 0)}`,
+          row.location_name ? `Standort: ${row.location_name}` : "",
+          row.department_name ? `Abteilung: ${row.department_name}` : ""
         ]),
         at: row.created_at
       });
@@ -1268,7 +1268,7 @@ async function getDashboardLiveFeedItems(req, limit) {
       items.push({
         id: `container-registration-${row.id}`,
         app: "Container Anmeldung",
-        title: bookingNo ? `Anmeldung ${bookingNo}` : "Container Anmeldung",
+        title: bookingNo ? `Container-Anmeldung ${bookingNo}` : "Container-Anmeldung",
         meta: buildContainerEventMeta(row),
         at: row.at
       });
@@ -1298,13 +1298,13 @@ async function getDashboardLiveFeedItems(req, limit) {
       items.push({
         id: `container-planning-${row.id}`,
         app: "Container und LKW Planung",
-        title: row.title ? `Planung erstellt: ${row.title}` : "Planungseintrag erstellt",
+        title: row.title ? `Planungsbuchung: ${row.title}` : "Planungsbuchung",
         meta: dashboardFeedJoin([
-          row.date || "",
-          row.containerNo ? `Container ${row.containerNo}` : "",
-          row.plate ? `Kennzeichen ${row.plate}` : "",
-          row.warehouse && row.warehouse !== "-" ? row.warehouse : "",
-          row.orderNo ? `Auftrag ${row.orderNo}` : ""
+          row.date ? `Termin: ${row.date}` : "",
+          row.containerNo ? `Container: ${row.containerNo}` : "",
+          row.plate ? `Kennzeichen: ${row.plate}` : "",
+          row.warehouse && row.warehouse !== "-" ? `Lager: ${row.warehouse}` : "",
+          row.orderNo ? `Auftrag: ${row.orderNo}` : ""
         ]),
         at: row.created_at
       });
