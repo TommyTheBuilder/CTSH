@@ -308,6 +308,25 @@ function hasWarehouseModulePermission(perms) {
   return Boolean(perms?.admin?.full_access || hasAnyPermission(perms?.warehouse));
 }
 
+function hasPalletModulePermission(perms) {
+  if (perms?.admin?.full_access) return true;
+  return Boolean(
+    hasAnyPermission(perms?.bookings)
+    || hasAnyPermission(perms?.stock)
+    || hasAnyPermission(perms?.cases)
+    || hasAnyPermission(perms?.filters)
+    || hasAnyPermission(perms?.masterdata)
+  );
+}
+
+function hasPalletModuleAdminPermission(perms) {
+  if (perms?.admin?.full_access) return true;
+  return Boolean(
+    perms?.masterdata?.manage
+    || perms?.masterdata?.entrepreneurs_manage
+  );
+}
+
 module.exports = {
   createPermissionDefaults,
   createFullAccessPermissions,
@@ -328,6 +347,8 @@ module.exports = {
   hasContainerStatusManagementPermission,
   hasContainerTimeManagementPermission,
   hasContainerViewerPermission,
+  hasPalletModuleAdminPermission,
+  hasPalletModulePermission,
   hasWarehouseModulePermission,
   normalizePermissions
 };
