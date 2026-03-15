@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { pool } = require("./db_pg");
+const { getUserContext, isAppAdmin } = require("./core/platform_access");
 
 const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").trim();
 
@@ -8,7 +8,7 @@ if (JWT_SECRET === "CHANGE_ME_SUPER_SECRET" && process.env.ALLOW_INSECURE_JWT !=
   throw new Error("JWT_SECRET must be set (or explicitly set ALLOW_INSECURE_JWT=true for local dev only)");
 }
 
-function authRequired(req, res, next) {
+async function authRequired(req, res, next) {
   const header = req.headers.authorization || "";
   const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   const cookieHeader = String(req.headers.cookie || "");
@@ -18,19 +18,21 @@ function authRequired(req, res, next) {
   if (!token) return res.status(401).json({ error: "Not authenticated" });
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const claims = jwt.verify(token, JWT_SECRET);
+    const user = await getUserContext(claims?.id);
+    if (!user || user.is_active !== true || user.customer_is_active === false) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    req.user = user;
     next();
-  } catch {
+  } catch (error) {
+    console.error("authRequired error:", error);
     return res.status(401).json({ error: "Invalid token" });
   }
 }
 
 async function hasAdminFullAccess(user) {
-  if (user?.role === "admin") return true;
-  if (!user?.role_id) return false;
-  const r = await pool.query(`SELECT permissions FROM roles WHERE id=$1`, [Number(user.role_id)]);
-  const perms = (r.rowCount ? r.rows[0].permissions : {}) || {};
-  return perms?.admin?.full_access === true;
+  return isAppAdmin(user);
 }
 
 async function adminRequired(req, res, next) {

@@ -41,7 +41,7 @@ async function submitLogin(event) {
 
     localStorage.setItem("token", data.token);
     setMessage("Login erfolgreich. Weiterleitung wird vorbereitet.", "success");
-    window.location.href = "/public/dashboard.html";
+      window.location.href = "/dashboard.html";
   } catch (error) {
     setMessage(error.message || "Login fehlgeschlagen");
   } finally {

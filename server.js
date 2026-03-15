@@ -14,12 +14,32 @@ const { requirePermission } = require("./middleware_permissions");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
 const { createWarehouseRouter } = require("./modules/warehouse/router");
 const permissionsConfig = require("./permissions_config");
+const {
+  buildDashboardModules,
+  canAccessAppAdmin,
+  canAccessCustomerAdmin,
+  canAccessModule,
+  canAccessModuleAdmin,
+  canAccessPalletModuleAdmin,
+  filterPermissionsByEnabledModules,
+  getCustomerById,
+  getEnabledModuleKeysForCustomer,
+  getUserContext,
+  getUserPermissions,
+  isAppAdmin,
+  listCustomers,
+  parseRequestedCustomerId,
+  resolveManagedCustomerId
+} = require("./core/platform_access");
+const { getModuleByKey, listModules } = require("./core/module_registry");
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
+const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
+const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
 const MODULE_CONTAINER_REGISTRATION_ADMIN_PATH = "/modules/container-registration/admin.html";
 const MODULE_CONTAINER_REGISTRATION_DRIVER_PATH = "/modules/container-registration/driver.html";
@@ -84,12 +104,13 @@ function getRequestToken(req, options = {}) {
   return "";
 }
 
-function getAuthenticatedPortalUser(req, options) {
+async function getAuthenticatedPortalUser(req, options) {
   const token = getRequestToken(req, options);
   if (!token) return null;
 
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const claims = jwt.verify(token, JWT_SECRET);
+    return await getUserContext(claims?.id);
   } catch {
     return null;
   }
@@ -97,14 +118,16 @@ function getAuthenticatedPortalUser(req, options) {
 
 function requireModulePageAccess(permissionResolver) {
   return async (req, res, next) => {
-    const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
+    const user = await getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
     if (!user) {
       return res.redirect("/login.html");
     }
 
     try {
       const perms = await getMyPermissions(user);
-      const allowed = typeof permissionResolver === "function" ? permissionResolver(user, perms) : true;
+      const allowed = typeof permissionResolver === "function"
+        ? await permissionResolver(user, perms, req)
+        : true;
       if (!allowed) {
         return res.redirect("/public/dashboard.html");
       }
@@ -151,28 +174,96 @@ app.use(cors({ origin: corsOriginResolver, credentials: true }));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 app.get("/", (req, res) => res.redirect("/login.html"));
 app.get("/login", (req, res) => res.redirect("/login.html"));
+app.use(async (req, res, next) => {
+  if (!req.path.endsWith(".html")) return next();
+
+  const gatedPages = new Set([
+    "/dashboard.html",
+    "/public/dashboard.html",
+    "/admin.html",
+    "/public/admin.html",
+    "/app-admin.html",
+    "/public/app-admin.html",
+    "/app.html",
+    "/public/app.html",
+    "/entrepreneurs.html",
+    "/public/entrepreneurs.html"
+  ]);
+
+  if (!gatedPages.has(req.path)) return next();
+
+  const user = await getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
+  if (!user) return res.redirect("/login.html");
+
+  const permissions = await getMyPermissions(user);
+  const enabledModuleKeys = await getActiveModuleKeysForUser(user);
+
+  if (req.path.endsWith("/dashboard.html")) return next();
+
+  if (req.path.endsWith("/admin.html")) {
+    if (!canAccessCustomerAdmin(user, permissions)) {
+      return res.redirect("/public/dashboard.html");
+    }
+    return next();
+  }
+
+  if (req.path.endsWith("/app-admin.html")) {
+    if (!canAccessAppAdmin(user)) {
+      return res.redirect("/public/dashboard.html");
+    }
+    return next();
+  }
+
+  if (req.path.endsWith("/app.html")) {
+    if (!canAccessModule("pallets", user, permissions, enabledModuleKeys)) {
+      return res.redirect("/public/dashboard.html");
+    }
+    return next();
+  }
+
+  if (req.path.endsWith("/entrepreneurs.html")) {
+    if (!canAccessModuleAdmin("pallets", user, permissions, enabledModuleKeys)) {
+      return res.redirect("/public/dashboard.html");
+    }
+    return next();
+  }
+
+  return next();
+});
 // Backward compatibility: some deployments still open pages via /public/*.html.
 // Mount static assets on both / and /public so relative links keep working.
 app.use("/public", express.static(path.join(__dirname, "public")));
 app.use("/modules", async (req, res, next) => {
   if (!req.path.endsWith(".html")) return next();
 
-  const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
+  const user = await getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
   if (!user) return res.redirect("/login.html");
 
   try {
     const perms = await getMyPermissions(user);
     let allowed = false;
-    if (req.path.startsWith("/container-planning")) {
-      allowed = hasContainerPlanningPermission(perms);
+    if (req.path === "/pallets/index.html") {
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModule("pallets", user, perms, enabledModuleKeys);
+    } else if (req.path === "/pallets/admin.html") {
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req, { allowRequestedCustomer: true });
+      allowed = canAccessModuleAdmin("pallets", user, perms, enabledModuleKeys);
+    } else if (req.path.startsWith("/container-planning")) {
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModule("container_planning", user, perms, enabledModuleKeys);
     } else if (req.path === "/container-registration/admin.html") {
-      allowed = hasContainerAdminPermission(user, perms);
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModuleAdmin("container_registration", user, perms, enabledModuleKeys);
     } else if (req.path === "/container-registration/driver.html") {
-      allowed = hasContainerRegistrationPermission(perms);
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModule("container_registration", user, perms, enabledModuleKeys);
     } else if (req.path === "/container-registration/viewer.html") {
-      allowed = hasContainerViewerPermission(perms);
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModule("container_registration", user, perms, enabledModuleKeys)
+        && hasContainerViewerPermission(perms);
     } else if (req.path.startsWith("/warehouse")) {
-      allowed = hasWarehouseModulePermission(perms);
+      const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+      allowed = canAccessModule("warehouse", user, perms, enabledModuleKeys);
     }
 
     if (!allowed) return res.redirect("/public/dashboard.html");
@@ -233,6 +324,75 @@ function normalizeProductType(value) {
     return { ok: false, msg: "product_type invalid" };
   }
   return { ok: true, productType: normalized };
+}
+
+function toPositiveInt(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function getUserCustomerId(user) {
+  return toPositiveInt(user?.app_customer_id);
+}
+
+async function getActiveModuleKeysForUser(user) {
+  return getEnabledModuleKeysForCustomer(getUserCustomerId(user));
+}
+
+async function getActiveModuleKeysForModuleRequest(user, req, options = {}) {
+  if (options.allowRequestedCustomer && isAppAdmin(user)) {
+    const requestedCustomerId = parseRequestedCustomerId(
+      req.query?.customerId
+      || req.body?.customer_id
+      || req.body?.app_customer_id
+      || req.params?.customerId
+    );
+    const managedCustomerId = await resolveManagedCustomerId(user, requestedCustomerId);
+    return getEnabledModuleKeysForCustomer(managedCustomerId);
+  }
+  return getActiveModuleKeysForUser(user);
+}
+
+async function isModuleEnabledForUser(user, moduleKey) {
+  const enabledModules = await getActiveModuleKeysForUser(user);
+  return enabledModules.includes(moduleKey);
+}
+
+async function assertRecordBelongsToCustomer(tableName, recordId, customerId, options = {}) {
+  const normalizedRecordId = toPositiveInt(recordId);
+  const normalizedCustomerId = toPositiveInt(customerId);
+  if (!normalizedRecordId || !normalizedCustomerId) return false;
+
+  const idColumn = options.idColumn || "id";
+  const result = await q(
+    `
+    SELECT 1
+    FROM ${tableName}
+    WHERE ${idColumn} = $1
+      AND app_customer_id = $2
+    `,
+    [normalizedRecordId, normalizedCustomerId]
+  );
+
+  return result.rowCount > 0;
+}
+
+function requireModuleEnabled(moduleKey) {
+  return async (req, res, next) => {
+    if (await isModuleEnabledForUser(req.user, moduleKey)) return next();
+    return res.status(403).json({ error: "Module not enabled" });
+  };
+}
+
+async function resolveRequestedCustomer(req) {
+  const requestedCustomerId = parseRequestedCustomerId(
+    req.query?.customerId
+      || req.body?.customer_id
+      || req.body?.app_customer_id
+      || req.params?.customerId
+  );
+  return resolveManagedCustomerId(req.user, requestedCustomerId);
 }
 
 // ---------- Helpers ----------
@@ -404,16 +564,26 @@ function buildSharedAuthJwt(payload) {
   return jwt.sign(payload, SHARED_AUTH_SECRET, { algorithm: "HS256" });
 }
 
-async function logCaseHistory({ caseId, locationId, departmentId, receiptNo = null, changedBy, action, changes = [] }) {
+async function logCaseHistory({
+  caseId,
+  locationId,
+  departmentId,
+  appCustomerId,
+  receiptNo = null,
+  changedBy,
+  action,
+  changes = []
+}) {
   await q(
     `
-    INSERT INTO booking_case_history (case_id, location_id, department_id, receipt_no, changed_by, action, changes)
-    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
+    INSERT INTO booking_case_history (case_id, location_id, department_id, app_customer_id, receipt_no, changed_by, action, changes)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
     `,
     [
       Number(caseId),
       Number(locationId),
       Number(departmentId),
+      Number(appCustomerId),
       receiptNo || null,
       Number(changedBy),
       String(action || "change"),
@@ -570,17 +740,7 @@ async function deleteNotificationsForCaseByTitle(caseId, title) {
 }
 
 async function getMyPermissions(user) {
-  if (user.role === "admin") {
-    return permissionsConfig.createFullAccessPermissions();
-  }
-
-  if (!user.role_id) {
-    return permissionsConfig.createPermissionDefaults();
-  }
-
-  const r = await q(`SELECT permissions FROM roles WHERE id=$1`, [user.role_id]);
-  const raw = (r.rowCount ? r.rows[0].permissions : {}) || {};
-  return permissionsConfig.normalizePermissions(raw);
+  return getUserPermissions(user);
 }
 
 // ---------- AUTH ----------
@@ -613,13 +773,21 @@ async function loginHandler(req, res) {
 
   clearFailedLogin(clientIp);
 
+  const userContext = await getUserContext(user.id);
+  if (!userContext) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
   const token = jwt.sign(
     {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      location_id: user.location_id,
-      role_id: user.role_id || null
+      id: userContext.id,
+      username: userContext.username,
+      role: userContext.role,
+      location_id: userContext.location_id,
+      role_id: userContext.role_id || null,
+      app_customer_id: userContext.app_customer_id,
+      fixed_department_id: userContext.fixed_department_id || null,
+      is_app_admin: Boolean(userContext.is_app_admin)
     },
     JWT_SECRET,
     { expiresIn: "12h" }
@@ -629,13 +797,7 @@ async function loginHandler(req, res) {
 
   return res.json({
     token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      location_id: user.location_id,
-      role_id: user.role_id || null
-    }
+    user: userContext
   });
 }
 
@@ -692,16 +854,24 @@ async function exchangeSsoToken(req, res) {
     return res.status(401).json({ error: "Invalid SSO token" });
   }
 
+  const userContext = await getUserContext(user.id);
+  if (!userContext) {
+    return res.status(401).json({ error: "Invalid SSO token" });
+  }
+
   const roleFromClaim = String(claims?.role || "").trim();
-  const tokenRole = roleFromClaim || user.role;
+  const tokenRole = roleFromClaim || userContext.role;
 
   const token = jwt.sign(
     {
-      id: user.id,
-      username: user.username,
+      id: userContext.id,
+      username: userContext.username,
       role: tokenRole,
-      location_id: user.location_id,
-      role_id: user.role_id || null
+      location_id: userContext.location_id,
+      role_id: userContext.role_id || null,
+      app_customer_id: userContext.app_customer_id,
+      fixed_department_id: userContext.fixed_department_id || null,
+      is_app_admin: Boolean(userContext.is_app_admin)
     },
     JWT_SECRET,
     { expiresIn: "12h" }
@@ -712,11 +882,14 @@ async function exchangeSsoToken(req, res) {
   return res.json({
     token,
     user: {
-      id: user.id,
-      username: user.username,
+      id: userContext.id,
+      username: userContext.username,
       role: tokenRole,
-      location_id: user.location_id,
-      role_id: user.role_id || null
+      location_id: userContext.location_id,
+      role_id: userContext.role_id || null,
+      app_customer_id: userContext.app_customer_id,
+      fixed_department_id: userContext.fixed_department_id || null,
+      is_app_admin: Boolean(userContext.is_app_admin)
     }
   });
 }
@@ -726,22 +899,10 @@ app.post("/api/auth/sso-forward-token", exchangeSsoToken);
 app.get("/api/auth/sso-forward-token", exchangeSsoToken);
 
 app.get("/api/me", authRequired, async (req, res) => {
-  const r = await q(
-    `SELECT u.id,
-            u.username,
-            u.role,
-            u.location_id,
-            u.role_id,
-            u.is_active,
-            ro.name AS business_role_name
-     FROM users u
-     LEFT JOIN roles ro ON ro.id = u.role_id
-     WHERE u.id=$1`,
-    [req.user.id]
-  );
-  const user = r.rows[0];
-  if (!user || user.is_active !== true) return res.status(401).json({ error: "Not authenticated" });
-  res.json(user);
+  if (!req.user || req.user.is_active !== true) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  res.json(req.user);
 });
 
 app.post("/api/logout", (_req, res) => {
@@ -821,11 +982,402 @@ app.get("/api/my-permissions", authRequired, async (req, res) => {
   res.json(perms);
 });
 
+function requireAppAdminArea(req, res, next) {
+  if (canAccessAppAdmin(req.user)) return next();
+  return res.status(403).json({ error: "App admin only" });
+}
+
+app.get("/api/core/context", authRequired, async (req, res) => {
+  const permissions = await getMyPermissions(req.user);
+  const activeModuleKeys = await getActiveModuleKeysForUser(req.user);
+  const customer = await getCustomerById(req.user.app_customer_id);
+
+  res.json({
+    user: req.user,
+    customer,
+    active_modules: activeModuleKeys,
+    dashboard_modules: buildDashboardModules({
+      user: req.user,
+      permissions,
+      enabledModuleKeys: activeModuleKeys
+    }),
+    admin: {
+      can_open_customer_admin: canAccessCustomerAdmin(req.user, permissions),
+      can_open_app_admin: canAccessAppAdmin(req.user),
+      can_open_pallet_admin: canAccessPalletModuleAdmin(req.user, permissions, activeModuleKeys)
+    }
+  });
+});
+
+app.get("/api/admin/context", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  const customer = await getCustomerById(req.managedCustomerId);
+  const locations = (await q(
+    `
+    SELECT id, name
+    FROM locations
+    WHERE app_customer_id = $1
+    ORDER BY name
+    `,
+    [req.managedCustomerId]
+  )).rows;
+  const departments = (await q(
+    `
+    SELECT id, name
+    FROM departments
+    WHERE app_customer_id = $1
+    ORDER BY name
+    `,
+    [req.managedCustomerId]
+  )).rows;
+
+  res.json({
+    user: req.user,
+    managed_customer: customer,
+    available_customers: isAppAdmin(req.user) ? await listCustomers() : [],
+    active_modules: req.activeModuleKeys,
+    locations,
+    departments,
+    permissions: req.portalPermissions,
+    admin: {
+      can_open_app_admin: isAppAdmin(req.user),
+      can_open_pallet_admin: canAccessModuleAdmin("pallets", req.user, req.portalPermissions, req.activeModuleKeys)
+    }
+  });
+});
+
+app.get("/api/app-admin/customers", authRequired, requireAppAdminArea, async (_req, res) => {
+  res.json(await listCustomers());
+});
+
+app.post("/api/app-admin/customers", authRequired, requireAppAdminArea, async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const slugInput = String(req.body?.slug || "").trim().toLowerCase();
+  const slug = (slugInput || name.toLowerCase())
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  if (!name || !slug) {
+    return res.status(400).json({ error: "name and slug required" });
+  }
+
+  const created = await q(
+    `
+    INSERT INTO app_customers (name, slug, is_active)
+    VALUES ($1, $2, TRUE)
+    RETURNING id, name, slug, is_active, created_at
+    `,
+    [name, slug]
+  );
+
+  const customerId = created.rows[0].id;
+  for (const moduleDefinition of listModules()) {
+    await q(
+      `
+      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (app_customer_id, module_key)
+      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
+      `,
+      [customerId, moduleDefinition.key, Boolean(moduleDefinition.enabledByDefault)]
+    );
+  }
+
+  res.status(201).json(created.rows[0]);
+});
+
+app.put("/api/app-admin/customers/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const customerId = toPositiveInt(req.params.customerId);
+  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+
+  const updates = [];
+  const values = [];
+  const nextName = String(req.body?.name || "").trim();
+  const nextSlug = String(req.body?.slug || "").trim().toLowerCase();
+
+  if (nextName) {
+    values.push(nextName);
+    updates.push(`name = $${values.length}`);
+  }
+  if (nextSlug) {
+    values.push(nextSlug);
+    updates.push(`slug = $${values.length}`);
+  }
+  if (typeof req.body?.is_active === "boolean") {
+    values.push(Boolean(req.body.is_active));
+    updates.push(`is_active = $${values.length}`);
+  }
+
+  if (!updates.length) {
+    return res.status(400).json({ error: "no customer changes provided" });
+  }
+
+  values.push(customerId);
+  const updated = await q(
+    `
+    UPDATE app_customers
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length}
+    RETURNING id, name, slug, is_active, created_at
+    `,
+    values
+  );
+
+  if (!updated.rowCount) return res.status(404).json({ error: "customer not found" });
+  res.json(updated.rows[0]);
+});
+
+app.get("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const customerId = toPositiveInt(req.params.customerId);
+  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+
+  const customer = await getCustomerById(customerId);
+  if (!customer) return res.status(404).json({ error: "customer not found" });
+
+  const enabledModuleKeys = await getEnabledModuleKeysForCustomer(customerId);
+  const enabledSet = new Set(enabledModuleKeys);
+  res.json({
+    customer,
+    modules: listModules().map((moduleDefinition) => ({
+      key: moduleDefinition.key,
+      name: moduleDefinition.name,
+      description: moduleDefinition.dashboard?.description || "",
+      is_enabled: enabledSet.has(moduleDefinition.key)
+    }))
+  });
+});
+
+app.put("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const customerId = toPositiveInt(req.params.customerId);
+  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+
+  const customer = await getCustomerById(customerId);
+  if (!customer) return res.status(404).json({ error: "customer not found" });
+
+  const modules = Array.isArray(req.body?.modules) ? req.body.modules : [];
+  for (const moduleEntry of modules) {
+    const moduleKey = String(moduleEntry?.key || "").trim();
+    if (!getModuleByKey(moduleKey)) continue;
+    await q(
+      `
+      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (app_customer_id, module_key)
+      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
+      `,
+      [customerId, moduleKey, Boolean(moduleEntry?.is_enabled)]
+    );
+  }
+
+  const enabledModuleKeys = await getEnabledModuleKeysForCustomer(customerId);
+  const enabledSet = new Set(enabledModuleKeys);
+  res.json({
+    customer,
+    modules: listModules().map((moduleDefinition) => ({
+      key: moduleDefinition.key,
+      name: moduleDefinition.name,
+      is_enabled: enabledSet.has(moduleDefinition.key)
+    }))
+  });
+});
+
+app.get("/api/app-admin/customer-options/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const customerId = toPositiveInt(req.params.customerId);
+  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+
+  const customer = await getCustomerById(customerId);
+  if (!customer) return res.status(404).json({ error: "customer not found" });
+
+  const [rolesResult, locationsResult, departmentsResult] = await Promise.all([
+    q(
+      `
+      SELECT id, name
+      FROM roles
+      WHERE app_customer_id = $1
+      ORDER BY name
+      `,
+      [customerId]
+    ),
+    q(
+      `
+      SELECT id, name
+      FROM locations
+      WHERE app_customer_id = $1
+      ORDER BY name
+      `,
+      [customerId]
+    ),
+    q(
+      `
+      SELECT id, name
+      FROM departments
+      WHERE app_customer_id = $1
+      ORDER BY name
+      `,
+      [customerId]
+    )
+  ]);
+
+  res.json({
+    customer,
+    active_modules: await getEnabledModuleKeysForCustomer(customerId),
+    roles: rolesResult.rows,
+    locations: locationsResult.rows,
+    departments: departmentsResult.rows
+  });
+});
+
+app.get("/api/app-admin/users", authRequired, requireAppAdminArea, async (_req, res) => {
+  const result = await q(
+    `
+    SELECT
+      u.id,
+      u.username,
+      u.email,
+      u.role,
+      u.role_id,
+      u.location_id,
+      u.fixed_department_id,
+      u.is_active,
+      u.is_app_admin,
+      u.app_customer_id,
+      c.name AS customer_name,
+      ro.name AS business_role_name,
+      l.name AS location_name,
+      d.name AS fixed_department_name
+    FROM users u
+    LEFT JOIN app_customers c ON c.id = u.app_customer_id
+    LEFT JOIN roles ro ON ro.id = u.role_id
+    LEFT JOIN locations l ON l.id = u.location_id
+    LEFT JOIN departments d ON d.id = u.fixed_department_id
+    ORDER BY c.name, u.username
+    `
+  );
+  res.json(result.rows);
+});
+
+app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const userId = toPositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "invalid user id" });
+
+  const existingUser = await getUserContext(userId);
+  if (!existingUser) return res.status(404).json({ error: "user not found" });
+
+  const updates = [];
+  const values = [];
+  let nextCustomerId = Number(existingUser.app_customer_id || 0) || null;
+  let effectiveRoleId = existingUser.role_id ? Number(existingUser.role_id) : null;
+  let effectiveLocationId = existingUser.location_id ? Number(existingUser.location_id) : null;
+  let effectiveFixedDepartmentId = existingUser.fixed_department_id ? Number(existingUser.fixed_department_id) : null;
+
+  if (req.body?.app_customer_id !== undefined) {
+    const customerId = toPositiveInt(req.body.app_customer_id);
+    if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+    values.push(customerId);
+    updates.push(`app_customer_id = $${values.length}`);
+    nextCustomerId = customerId;
+  }
+
+  if (req.body?.role_id !== undefined) {
+    const roleId = req.body.role_id === null || req.body.role_id === "" ? null : toPositiveInt(req.body.role_id);
+    if (roleId) {
+      const roleExists = await q(`SELECT 1 FROM roles WHERE id = $1 AND app_customer_id = $2`, [roleId, nextCustomerId]);
+      if (!roleExists.rowCount) return res.status(400).json({ error: "invalid role for customer" });
+    }
+    values.push(roleId);
+    updates.push(`role_id = $${values.length}`);
+    effectiveRoleId = roleId;
+  }
+
+  if (req.body?.location_id !== undefined) {
+    const locationId = req.body.location_id === null || req.body.location_id === "" ? null : toPositiveInt(req.body.location_id);
+    if (locationId) {
+      const locationExists = await q(`SELECT 1 FROM locations WHERE id = $1 AND app_customer_id = $2`, [locationId, nextCustomerId]);
+      if (!locationExists.rowCount) return res.status(400).json({ error: "invalid location for customer" });
+    }
+    values.push(locationId);
+    updates.push(`location_id = $${values.length}`);
+    effectiveLocationId = locationId;
+  }
+
+  if (req.body?.fixed_department_id !== undefined) {
+    const fixedDepartmentId = req.body.fixed_department_id === null || req.body.fixed_department_id === "" ? null : toPositiveInt(req.body.fixed_department_id);
+    if (fixedDepartmentId) {
+      const departmentExists = await q(`SELECT 1 FROM departments WHERE id = $1 AND app_customer_id = $2`, [fixedDepartmentId, nextCustomerId]);
+      if (!departmentExists.rowCount) return res.status(400).json({ error: "invalid department for customer" });
+    }
+    values.push(fixedDepartmentId);
+    updates.push(`fixed_department_id = $${values.length}`);
+    effectiveFixedDepartmentId = fixedDepartmentId;
+  }
+
+  if (typeof req.body?.is_active === "boolean") {
+    values.push(Boolean(req.body.is_active));
+    updates.push(`is_active = $${values.length}`);
+  }
+
+  if (typeof req.body?.is_app_admin === "boolean") {
+    values.push(Boolean(req.body.is_app_admin));
+    updates.push(`is_app_admin = $${values.length}`);
+  }
+
+  if (req.body?.app_customer_id !== undefined) {
+    if (req.body?.role_id === undefined && effectiveRoleId) {
+      const roleExists = await q(`SELECT 1 FROM roles WHERE id = $1 AND app_customer_id = $2`, [effectiveRoleId, nextCustomerId]);
+      if (!roleExists.rowCount) {
+        values.push(null);
+        updates.push(`role_id = $${values.length}`);
+      }
+    }
+
+    if (req.body?.location_id === undefined && effectiveLocationId) {
+      const locationExists = await q(`SELECT 1 FROM locations WHERE id = $1 AND app_customer_id = $2`, [effectiveLocationId, nextCustomerId]);
+      if (!locationExists.rowCount) {
+        values.push(null);
+        updates.push(`location_id = $${values.length}`);
+      }
+    }
+
+    if (req.body?.fixed_department_id === undefined && effectiveFixedDepartmentId) {
+      const departmentExists = await q(`SELECT 1 FROM departments WHERE id = $1 AND app_customer_id = $2`, [effectiveFixedDepartmentId, nextCustomerId]);
+      if (!departmentExists.rowCount) {
+        values.push(null);
+        updates.push(`fixed_department_id = $${values.length}`);
+      }
+    }
+  }
+
+  if (!updates.length) {
+    return res.status(400).json({ error: "no user changes provided" });
+  }
+
+  values.push(userId);
+  const updated = await q(
+    `
+    UPDATE users
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length}
+    RETURNING id
+    `,
+    values
+  );
+
+  if (!updated.rowCount) return res.status(404).json({ error: "user not found" });
+  const userContext = await getUserContext(userId);
+  res.json(userContext);
+});
+
 app.use("/api/warehouse", createWarehouseRouter({ authRequired, requirePermission }));
 
 async function createContainerRegistrationSession(req, res) {
   const perms = await getMyPermissions(req.user);
-  const canOpenContainerRegistration = hasContainerRegistrationModuleAccess(perms);
+  const enabledModuleKeys = await getActiveModuleKeysForUser(req.user);
+  const canOpenContainerRegistration = canAccessModule(
+    "container_registration",
+    req.user,
+    perms,
+    enabledModuleKeys
+  );
 
   if (!canOpenContainerRegistration) {
     return res.status(403).json({ error: "No Permissions" });
@@ -849,7 +1401,8 @@ app.get("/api/sso/container-session", authRequired, createContainerRegistrationS
 
 async function createContainerPlanningSession(req, res) {
   const perms = await getMyPermissions(req.user);
-  if (!hasContainerPlanningPermission(perms)) {
+  const enabledModuleKeys = await getActiveModuleKeysForUser(req.user);
+  if (!canAccessModule("container_planning", req.user, perms, enabledModuleKeys)) {
     return res.status(403).json({ error: "No Permissions" });
   }
 
@@ -868,31 +1421,82 @@ async function createContainerPlanningSession(req, res) {
 app.get("/api/container-planning-session", authRequired, createContainerPlanningSession);
 app.get("/api/sso/container-planning-session", authRequired, createContainerPlanningSession);
 
-app.get("/container-planning", requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (_req, res) => {
+app.get("/pallets", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("pallets", user, perms, enabledModuleKeys);
+}), (_req, res) => {
+  res.redirect(MODULE_PALLETS_PATH);
+});
+app.get("/pallets/admin", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req, { allowRequestedCustomer: true });
+  return canAccessModuleAdmin("pallets", user, perms, enabledModuleKeys);
+}), (req, res) => {
+  const search = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  res.redirect(`${MODULE_PALLETS_ADMIN_PATH}${search}`);
+});
+app.get("/container-planning", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_planning", user, perms, enabledModuleKeys);
+}), (_req, res) => {
   res.redirect(MODULE_CONTAINER_PLANNING_PATH);
 });
-app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationModuleAccess(perms)), (req, res) => {
+app.get("/container-registration", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys);
+}), (req, res) => {
   const targetUrl = hasContainerAdminPermission(req.user, req.portalPermissions)
     ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
     : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
   res.redirect(targetUrl);
 });
-app.get("/warehouse", requireModulePageAccess((_user, perms) => hasWarehouseModulePermission(perms)), (_req, res) => {
+app.get("/warehouse", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("warehouse", user, perms, enabledModuleKeys);
+}), (_req, res) => {
   res.redirect("/modules/warehouse/index.html");
 });
-app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (req, res) => {
+app.get(MODULE_PALLETS_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("pallets", user, perms, enabledModuleKeys);
+}), (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "pallets", "index.html"));
+});
+app.get(MODULE_PALLETS_ADMIN_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req, { allowRequestedCustomer: true });
+  return canAccessModuleAdmin("pallets", user, perms, enabledModuleKeys);
+}), (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "pallets", "admin.html"));
+});
+app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_planning", user, perms, enabledModuleKeys);
+}), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-planning", "index.html"));
 });
-app.get(MODULE_CONTAINER_REGISTRATION_ADMIN_PATH, requireModulePageAccess((user, perms) => hasContainerAdminPermission(user, perms)), (req, res) => {
+app.get(MODULE_CONTAINER_REGISTRATION_ADMIN_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModuleAdmin("container_registration", user, perms, enabledModuleKeys);
+}), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "admin.html"));
 });
-app.get(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH, requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
+app.get(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys);
+}), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "driver.html"));
 });
-app.get(MODULE_CONTAINER_REGISTRATION_VIEWER_PATH, requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
+app.get(MODULE_CONTAINER_REGISTRATION_VIEWER_PATH, requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
+    && hasContainerViewerPermission(perms);
+}), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer.html"));
 });
-app.get("/container-registration/viewer-sw.js", requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
+app.get("/container-registration/viewer-sw.js", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
+    && hasContainerViewerPermission(perms);
+}), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer-sw.js"));
 });
 
@@ -1159,9 +1763,9 @@ async function getDashboardLiveFeedItems(req, limit) {
   const items = [];
 
   if (perms?.bookings?.view) {
-    const params = [];
-    const where = ["1=1"];
-    let idx = 1;
+    const params = [req.user.app_customer_id];
+    const where = ["b.app_customer_id = $1"];
+    let idx = 2;
 
     if (lockedLocationId) {
       where.push(`b.location_id = $${idx++}`);
@@ -1187,8 +1791,8 @@ async function getDashboardLiveFeedItems(req, limit) {
         COALESCE(l.name, 'Standort') AS location_name,
         COALESCE(d.name, 'Abteilung') AS department_name
       FROM bookings b
-      LEFT JOIN locations l ON l.id = b.location_id
-      LEFT JOIN departments d ON d.id = b.department_id
+      LEFT JOIN locations l ON l.id = b.location_id AND l.app_customer_id = b.app_customer_id
+      LEFT JOIN departments d ON d.id = b.department_id AND d.app_customer_id = b.app_customer_id
       WHERE ${where.join(" AND ")}
       GROUP BY
         COALESCE(NULLIF(b.receipt_no, ''), CONCAT('booking-', b.id::text)),
@@ -1222,68 +1826,74 @@ async function getDashboardLiveFeedItems(req, limit) {
     || hasContainerRegistrationPermission(perms)
     || hasContainerAdminPermission(req.user, perms)
   ) {
-    const rows = (await q(
-      `
-      SELECT
-        id,
-        at,
-        type,
-        container_id AS "containerId",
-        plate,
-        details
-      FROM container_registration_history
-      WHERE type = 'driver_register'
-      ORDER BY at DESC, id DESC
-      LIMIT $1
-      `,
-      [perSourceLimit]
-    )).rows;
+    // Container registration history is not customer-scoped yet.
+    if (isAppAdmin(req.user)) {
+      const rows = (await q(
+        `
+        SELECT
+          id,
+          at,
+          type,
+          container_id AS "containerId",
+          plate,
+          details
+        FROM container_registration_history
+        WHERE type = 'driver_register'
+        ORDER BY at DESC, id DESC
+        LIMIT $1
+        `,
+        [perSourceLimit]
+      )).rows;
 
-    for (const row of rows) {
-      const bookingNo = String(row?.details?.bookingNo || "").trim();
-      items.push({
-        id: `container-registration-${row.id}`,
-        app: "Container Anmeldung",
-        title: bookingNo ? `Container-Anmeldung ${bookingNo}` : "Container-Anmeldung",
-        meta: buildContainerEventMeta(row),
-        at: row.at
-      });
+      for (const row of rows) {
+        const bookingNo = String(row?.details?.bookingNo || "").trim();
+        items.push({
+          id: `container-registration-${row.id}`,
+          app: "Container Anmeldung",
+          title: bookingNo ? `Container-Anmeldung ${bookingNo}` : "Container-Anmeldung",
+          meta: buildContainerEventMeta(row),
+          at: row.at
+        });
+      }
     }
   }
 
   if (hasContainerPlanningPermission(perms)) {
-    const rows = (await q(
-      `
-      SELECT
-        id,
-        title,
-        container_no AS "containerNo",
-        plate,
-        warehouse,
-        order_no AS "orderNo",
-        booking_date::text AS date,
-        created_at
-      FROM container_planning_bookings
-      ORDER BY created_at DESC, id DESC
-      LIMIT $1
-      `,
-      [perSourceLimit]
-    )).rows;
+    // Planning data is not customer-scoped yet.
+    if (isAppAdmin(req.user)) {
+      const rows = (await q(
+        `
+        SELECT
+          id,
+          title,
+          container_no AS "containerNo",
+          plate,
+          warehouse,
+          order_no AS "orderNo",
+          booking_date::text AS date,
+          created_at
+        FROM container_planning_bookings
+        ORDER BY created_at DESC, id DESC
+        LIMIT $1
+        `,
+        [perSourceLimit]
+      )).rows;
 
-    for (const row of rows) {
-      items.push({
-        id: `container-planning-${row.id}`,
-        app: "Container und LKW Planung",
-        title: row.title ? `Planungsbuchung: ${row.title}` : "Planungsbuchung",
-        meta: dashboardFeedJoin([
-          row.date ? `Termin: ${row.date}` : "",
-          row.containerNo ? `Container: ${row.containerNo}` : "",
-          row.plate ? `Kennzeichen: ${row.plate}` : "",
-          row.warehouse && row.warehouse !== "-" ? `Lager: ${row.warehouse}` : "",
-          row.orderNo ? `Auftrag: ${row.orderNo}` : ""
-        ]),
-        at: row.created_at
-      });
+      for (const row of rows) {
+        items.push({
+          id: `container-planning-${row.id}`,
+          app: "Container und LKW Planung",
+          title: row.title ? `Planungsbuchung: ${row.title}` : "Planungsbuchung",
+          meta: dashboardFeedJoin([
+            row.date ? `Termin: ${row.date}` : "",
+            row.containerNo ? `Container: ${row.containerNo}` : "",
+            row.plate ? `Kennzeichen: ${row.plate}` : "",
+            row.warehouse && row.warehouse !== "-" ? `Lager: ${row.warehouse}` : "",
+            row.orderNo ? `Auftrag: ${row.orderNo}` : ""
+          ]),
+          at: row.created_at
+        });
+      }
     }
   }
 
@@ -1739,86 +2349,224 @@ app.put("/api/notifications/:id/read", authRequired, async (req, res) => {
   res.json({ ok: true });
 });
 
+async function requireCustomerAdminAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!canAccessCustomerAdmin(req.user, perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
+  req.portalPermissions = perms;
+  req.managedCustomerId = await resolveRequestedCustomer(req);
+  if (!req.managedCustomerId) {
+    return res.status(400).json({ error: "customer context missing" });
+  }
+  req.activeModuleKeys = await getEnabledModuleKeysForCustomer(req.managedCustomerId);
+  return next();
+}
+
+async function requirePalletModuleAdminAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  const targetCustomerId = isAppAdmin(req.user)
+    ? await resolveRequestedCustomer(req)
+    : req.user.app_customer_id;
+  if (!targetCustomerId) {
+    return res.status(400).json({ error: "customer context missing" });
+  }
+  const activeModuleKeys = await getEnabledModuleKeysForCustomer(targetCustomerId);
+  if (!canAccessModuleAdmin("pallets", req.user, perms, activeModuleKeys)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  req.activeModuleKeys = activeModuleKeys;
+  req.moduleCustomerId = targetCustomerId;
+  return next();
+}
+
 // ---------- LOCATIONS ----------
-app.get("/api/locations", authRequired, async (req, res) => {
-  res.json((await q(`SELECT id, name FROM locations ORDER BY name`)).rows);
+app.get("/api/locations", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  res.json((await q(
+    `SELECT id, name
+     FROM locations
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.user.app_customer_id]
+  )).rows);
 });
 
-app.post("/api/admin/locations", authRequired, adminRequired, async (req, res) => {
+app.get("/api/modules/pallets/admin/context", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  res.json({
+    user: req.user,
+    managed_customer: await getCustomerById(req.moduleCustomerId),
+    available_customers: isAppAdmin(req.user) ? await listCustomers() : [],
+    active_modules: req.activeModuleKeys,
+    admin: {
+      can_open_app_admin: isAppAdmin(req.user),
+      can_open_customer_admin: canAccessCustomerAdmin(req.user, req.portalPermissions)
+    }
+  });
+});
+
+app.get("/api/modules/pallets/admin/locations", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  res.json((await q(
+    `SELECT id, name
+     FROM locations
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.moduleCustomerId]
+  )).rows);
+});
+
+app.post("/api/modules/pallets/admin/locations", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name required" });
 
   const nm = String(name).trim();
-  const r = await q(`INSERT INTO locations (name) VALUES ($1) RETURNING id`, [nm]);
-  res.json({ id: r.rows[0].id, name: nm });
+  const r = await q(
+    `INSERT INTO locations (name, app_customer_id)
+     VALUES ($1, $2)
+     RETURNING id, name`,
+    [nm, req.moduleCustomerId]
+  );
+  res.json(r.rows[0]);
 });
 
-app.delete("/api/admin/locations/:id", authRequired, adminRequired, async (req, res) => {
+app.delete("/api/modules/pallets/admin/locations/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertRecordBelongsToCustomer("locations", id, req.moduleCustomerId))) {
+    return res.status(404).json({ error: "Standort nicht gefunden" });
+  }
 
-  const used = await q(`SELECT 1 FROM bookings WHERE location_id=$1 LIMIT 1`, [id]);
+  const used = await q(`SELECT 1 FROM bookings WHERE location_id=$1 AND app_customer_id=$2 LIMIT 1`, [id, req.moduleCustomerId]);
   if (used.rowCount > 0) return res.status(400).json({ error: "Standort hat bereits Buchungen und kann nicht gelöscht werden" });
 
-  const usedCases = await q(`SELECT 1 FROM booking_cases WHERE location_id=$1 LIMIT 1`, [id]);
+  const usedCases = await q(`SELECT 1 FROM booking_cases WHERE location_id=$1 AND app_customer_id=$2 LIMIT 1`, [id, req.moduleCustomerId]);
   if (usedCases.rowCount > 0) return res.status(400).json({ error: "Standort hat bereits Vorgänge und kann nicht gelöscht werden" });
 
-  await q(`DELETE FROM locations WHERE id=$1`, [id]);
+  await q(`DELETE FROM locations WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
   res.json({ ok: true });
 });
 
 // ---------- DEPARTMENTS ----------
-app.get("/api/departments", authRequired, async (req, res) => {
-  res.json((await q(`SELECT id, name FROM departments ORDER BY name`)).rows);
+app.get("/api/departments", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  res.json((await q(
+    `SELECT id, name
+     FROM departments
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.user.app_customer_id]
+  )).rows);
 });
 
-app.post("/api/admin/departments", authRequired, adminRequired, async (req, res) => {
+app.get("/api/modules/pallets/admin/departments", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  res.json((await q(
+    `SELECT id, name
+     FROM departments
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.moduleCustomerId]
+  )).rows);
+});
+
+app.post("/api/modules/pallets/admin/departments", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name required" });
 
   const nm = String(name).trim();
-  const r = await q(`INSERT INTO departments (name) VALUES ($1) RETURNING id`, [nm]);
-  res.json({ id: r.rows[0].id, name: nm });
+  const r = await q(
+    `INSERT INTO departments (name, app_customer_id)
+     VALUES ($1, $2)
+     RETURNING id, name`,
+    [nm, req.moduleCustomerId]
+  );
+  res.json(r.rows[0]);
 });
 
-app.delete("/api/admin/departments/:id", authRequired, adminRequired, async (req, res) => {
+app.delete("/api/modules/pallets/admin/departments/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertRecordBelongsToCustomer("departments", id, req.moduleCustomerId))) {
+    return res.status(404).json({ error: "Abteilung nicht gefunden" });
+  }
 
-  await q(`DELETE FROM departments WHERE id=$1`, [id]);
+  await q(`DELETE FROM departments WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
   res.json({ ok: true });
 });
 
 // ---------- ENTREPRENEURS ----------
-app.get("/api/entrepreneurs", authRequired, async (req, res) => {
-  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
+app.get("/api/entrepreneurs", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  res.json((await q(
+    `SELECT id, name, street, postal_code, city
+     FROM entrepreneurs
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.user.app_customer_id]
+  )).rows);
 });
 
-app.post("/api/entrepreneurs", authRequired, async (req, res) => {
+app.post("/api/entrepreneurs", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const name = safeTrim(req.body?.name);
   const street = safeTrim(req.body?.street);
   const postal_code = safeTrim(req.body?.postal_code);
   const city = safeTrim(req.body?.city);
   if (!name) return res.status(400).json({ error: "Name erforderlich" });
 
-  const r = await q(
-    `INSERT INTO entrepreneurs (name, street, postal_code, city)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (name) DO UPDATE
-     SET street = COALESCE(EXCLUDED.street, entrepreneurs.street),
-         postal_code = COALESCE(EXCLUDED.postal_code, entrepreneurs.postal_code),
-         city = COALESCE(EXCLUDED.city, entrepreneurs.city)
-     RETURNING id, name, street, postal_code, city`,
-    [name, street, postal_code, city]
+  const existing = await q(
+    `
+    SELECT id
+    FROM entrepreneurs
+    WHERE app_customer_id = $1
+      AND LOWER(name) = LOWER($2)
+    LIMIT 1
+    `,
+    [req.user.app_customer_id, name]
   );
-  res.json(r.rows[0]);
+
+  if (existing.rowCount > 0) {
+    const updated = await q(
+      `
+      UPDATE entrepreneurs
+      SET street = COALESCE($1, street),
+          postal_code = COALESCE($2, postal_code),
+          city = COALESCE($3, city)
+      WHERE id = $4
+      RETURNING id, name, street, postal_code, city
+      `,
+      [street, postal_code, city, existing.rows[0].id]
+    );
+    return res.json(updated.rows[0]);
+  }
+
+  const inserted = await q(
+    `INSERT INTO entrepreneurs (name, street, postal_code, city, app_customer_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, street, postal_code, city`,
+    [name, street, postal_code, city, req.user.app_customer_id]
+  );
+  res.json(inserted.rows[0]);
 });
 
-app.get("/api/entrepreneurs/manage", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
-  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
+app.get("/api/entrepreneurs/manage", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  res.json((await q(
+    `SELECT id, name, street, postal_code, city
+     FROM entrepreneurs
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.moduleCustomerId]
+  )).rows);
 });
 
-app.post("/api/entrepreneurs/manage", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+app.get("/api/modules/pallets/admin/entrepreneurs", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  res.json((await q(
+    `SELECT id, name, street, postal_code, city
+     FROM entrepreneurs
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.moduleCustomerId]
+  )).rows);
+});
+
+app.post("/api/entrepreneurs/manage", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const name = safeTrim(req.body?.name);
   const street = safeTrim(req.body?.street);
   const postal_code = safeTrim(req.body?.postal_code);
@@ -1827,10 +2575,10 @@ app.post("/api/entrepreneurs/manage", authRequired, requirePermission("masterdat
 
   try {
     const r = await q(
-      `INSERT INTO entrepreneurs (name, street, postal_code, city)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO entrepreneurs (name, street, postal_code, city, app_customer_id)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, street, postal_code, city`,
-      [name, street, postal_code, city]
+      [name, street, postal_code, city, req.moduleCustomerId]
     );
     res.json(r.rows[0]);
   } catch (e) {
@@ -1839,9 +2587,28 @@ app.post("/api/entrepreneurs/manage", authRequired, requirePermission("masterdat
   }
 });
 
-app.put("/api/entrepreneurs/manage/:id", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+app.post("/api/modules/pallets/admin/entrepreneurs", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  const r = await q(
+    `INSERT INTO entrepreneurs (name, street, postal_code, city, app_customer_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, street, postal_code, city`,
+    [name, street, postal_code, city, req.moduleCustomerId]
+  );
+  res.json(r.rows[0]);
+});
+
+app.put("/api/entrepreneurs/manage/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertRecordBelongsToCustomer("entrepreneurs", id, req.moduleCustomerId))) {
+    return res.status(404).json({ error: "Unternehmer nicht gefunden" });
+  }
 
   const name = safeTrim(req.body?.name);
   const street = safeTrim(req.body?.street);
@@ -1853,9 +2620,9 @@ app.put("/api/entrepreneurs/manage/:id", authRequired, requirePermission("master
     const r = await q(
       `UPDATE entrepreneurs
        SET name=$1, street=$2, postal_code=$3, city=$4
-       WHERE id=$5
+       WHERE id=$5 AND app_customer_id=$6
        RETURNING id, name, street, postal_code, city`,
-      [name, street, postal_code, city, id]
+      [name, street, postal_code, city, id, req.moduleCustomerId]
     );
     if (!r.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
     res.json(r.rows[0]);
@@ -1865,90 +2632,94 @@ app.put("/api/entrepreneurs/manage/:id", authRequired, requirePermission("master
   }
 });
 
-app.delete("/api/entrepreneurs/manage/:id", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+app.put("/api/modules/pallets/admin/entrepreneurs/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
-  await q(`DELETE FROM entrepreneurs WHERE id=$1`, [id]);
-  res.json({ ok: true });
-});
-
-app.get("/api/admin/entrepreneurs", authRequired, adminRequired, async (req, res) => {
-  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
-});
-
-app.post("/api/admin/entrepreneurs", authRequired, adminRequired, async (req, res) => {
-  const name = safeTrim(req.body?.name);
-  const street = safeTrim(req.body?.street);
-  const postal_code = safeTrim(req.body?.postal_code);
-  const city = safeTrim(req.body?.city);
-  if (!name) return res.status(400).json({ error: "Name erforderlich" });
-
-  try {
-    const r = await q(
-      `INSERT INTO entrepreneurs (name, street, postal_code, city)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, street, postal_code, city`,
-      [name, street, postal_code, city]
-    );
-    res.json(r.rows[0]);
-  } catch (e) {
-    if (e && e.code === "23505") return res.status(400).json({ error: "Unternehmer existiert bereits" });
-    throw e;
+  if (!(await assertRecordBelongsToCustomer("entrepreneurs", id, req.moduleCustomerId))) {
+    return res.status(404).json({ error: "Unternehmer nicht gefunden" });
   }
-});
-
-app.put("/api/admin/entrepreneurs/:id", authRequired, adminRequired, async (req, res) => {
-  const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: "invalid id" });
 
   const name = safeTrim(req.body?.name);
   const street = safeTrim(req.body?.street);
   const postal_code = safeTrim(req.body?.postal_code);
   const city = safeTrim(req.body?.city);
-
   if (!name) return res.status(400).json({ error: "Name erforderlich" });
 
-  await q(
+  const r = await q(
     `UPDATE entrepreneurs
      SET name=$1, street=$2, postal_code=$3, city=$4
-     WHERE id=$5`,
-    [name, street, postal_code, city, id]
+     WHERE id=$5 AND app_customer_id=$6
+     RETURNING id, name, street, postal_code, city`,
+    [name, street, postal_code, city, id, req.moduleCustomerId]
   );
-  res.json({ ok: true });
+  if (!r.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
+  res.json(r.rows[0]);
 });
 
-app.delete("/api/admin/entrepreneurs/:id", authRequired, adminRequired, async (req, res) => {
+app.delete("/api/entrepreneurs/manage/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
-  await q(`DELETE FROM entrepreneurs WHERE id=$1`, [id]);
+  await q(`DELETE FROM entrepreneurs WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
   res.json({ ok: true });
 });
 
+app.delete("/api/modules/pallets/admin/entrepreneurs/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+  await q(`DELETE FROM entrepreneurs WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  res.json({ ok: true });
+});
+
+function sanitizeManagedRolePermissions(permissions, activeModuleKeys) {
+  const normalized = permissionsConfig.normalizePermissions(
+    (permissions && typeof permissions === "object") ? permissions : {}
+  );
+  const filtered = filterPermissionsByEnabledModules(normalized, activeModuleKeys, { appAdmin: false });
+  if (filtered?.admin?.full_access) {
+    filtered.admin.full_access = false;
+  }
+  return filtered;
+}
+
 // ---------- ROLES (Admin) ----------
-app.get("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
-  const rows = (await q(`SELECT id, name, permissions, created_at FROM roles ORDER BY name`)).rows;
+app.get("/api/admin/roles", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.roles?.manage && !req.portalPermissions?.users?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
+  const rows = (await q(
+    `SELECT id, name, permissions, created_at
+     FROM roles
+     WHERE app_customer_id = $1
+     ORDER BY name`,
+    [req.managedCustomerId]
+  )).rows;
   res.json(rows.map((row) => ({
     ...row,
-    permissions: permissionsConfig.normalizePermissions(row.permissions)
+    permissions: sanitizeManagedRolePermissions(row.permissions, req.activeModuleKeys)
   })));
 });
 
-app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
+app.post("/api/admin/roles", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.roles?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const { name, permissions } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: "name required" });
 
   const roleName = String(name).trim();
-  const perms = permissionsConfig.normalizePermissions((permissions && typeof permissions === "object") ? permissions : {});
+  const perms = sanitizeManagedRolePermissions(permissions, req.activeModuleKeys);
 
   try {
       const r = await q(
-        `INSERT INTO roles (name, permissions) VALUES ($1, $2::jsonb)
+        `INSERT INTO roles (name, permissions, app_customer_id) VALUES ($1, $2::jsonb, $3)
          RETURNING id, name, permissions`,
-        [roleName, JSON.stringify(perms)]
+        [roleName, JSON.stringify(perms), req.managedCustomerId]
       );
       res.json({
         ...r.rows[0],
-        permissions: permissionsConfig.normalizePermissions(r.rows[0].permissions)
+        permissions: sanitizeManagedRolePermissions(r.rows[0].permissions, req.activeModuleKeys)
       });
   } catch (e) {
     if (e && e.code === "23505") return res.status(400).json({ error: "role name already exists" });
@@ -1956,66 +2727,83 @@ app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
   }
 });
 
-app.put("/api/admin/roles/:id", authRequired, adminRequired, async (req, res) => {
+app.put("/api/admin/roles/:id", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.roles?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
   const { name, permissions } = req.body || {};
   const roleName = name ? String(name).trim() : null;
   const perms = (permissions && typeof permissions === "object")
-    ? permissionsConfig.normalizePermissions(permissions)
+    ? sanitizeManagedRolePermissions(permissions, req.activeModuleKeys)
     : null;
 
   await q(
     `UPDATE roles
      SET name = COALESCE($1, name),
          permissions = COALESCE($2::jsonb, permissions)
-     WHERE id=$3`,
-    [roleName, perms ? JSON.stringify(perms) : null, id]
+     WHERE id=$3
+       AND app_customer_id = $4`,
+    [roleName, perms ? JSON.stringify(perms) : null, id, req.managedCustomerId]
   );
 
   res.json({ ok: true });
 });
 
-app.delete("/api/admin/roles/:id", authRequired, adminRequired, async (req, res) => {
+app.delete("/api/admin/roles/:id", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.roles?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const used = await q(`SELECT 1 FROM users WHERE role_id=$1 LIMIT 1`, [id]);
+  const used = await q(`SELECT 1 FROM users WHERE role_id=$1 AND app_customer_id=$2 LIMIT 1`, [id, req.managedCustomerId]);
   if (used.rowCount > 0) return res.status(400).json({ error: "role is assigned to users" });
 
-  await q(`DELETE FROM roles WHERE id=$1`, [id]);
+  await q(`DELETE FROM roles WHERE id=$1 AND app_customer_id=$2`, [id, req.managedCustomerId]);
   res.json({ ok: true });
 });
 
 // ---------- USERS (Admin) ----------
-app.get("/api/admin/users", authRequired, async (req, res) => {
-  if (req.user.role === "admin") {
+app.get("/api/admin/users", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  const canManageUsers = Boolean(isAppAdmin(req.user) || req.portalPermissions?.users?.manage);
+  const canViewDepartment = Boolean(req.portalPermissions?.users?.view_department);
+  if (!canManageUsers && !canViewDepartment) return res.status(403).json({ error: "No Permissions" });
+
+  if (!canManageUsers) {
+    const fixedDepartmentId = req.user.fixed_department_id;
+    if (!fixedDepartmentId) return res.status(400).json({ error: "Kein fixe Abteilung gesetzt" });
+
     const rows = (await q(
-      `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id
+      `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id, app_customer_id
        FROM users
-       ORDER BY username`
+       WHERE app_customer_id = $1
+         AND fixed_department_id = $2
+       ORDER BY username`,
+      [req.managedCustomerId, fixedDepartmentId]
     )).rows;
     return res.json(rows);
   }
 
-  const perms = await getMyPermissions(req.user);
-  if (!perms?.users?.view_department) return res.status(403).json({ error: "No Permissions" });
-
-  const fixedDepartmentId = req.user.fixed_department_id;
-  if (!fixedDepartmentId) return res.status(400).json({ error: "Kein fixe Abteilung gesetzt" });
-
   const rows = (await q(
-    `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id
+    `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id, app_customer_id
      FROM users
-     WHERE fixed_department_id=$1
+     WHERE app_customer_id = $1
      ORDER BY username`,
-    [fixedDepartmentId]
+    [req.managedCustomerId]
   )).rows;
   return res.json(rows);
 });
 
-app.post("/api/admin/users", authRequired, adminRequired, async (req, res) => {
+app.post("/api/admin/users", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.users?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const {
     username,
     password,
@@ -2034,30 +2822,37 @@ app.post("/api/admin/users", authRequired, adminRequired, async (req, res) => {
   if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
   const roleId = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
   if (!roleId) return res.status(400).json({ error: "business role required" });
-  const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1`, [roleId]);
+  const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2`, [roleId, req.managedCustomerId]);
   if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
+
+  const locationId = (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id);
+  if (locationId) {
+    const locExists = await q(`SELECT 1 FROM locations WHERE id=$1 AND app_customer_id=$2`, [locationId, req.managedCustomerId]);
+    if (locExists.rowCount === 0) return res.status(400).json({ error: "Standort nicht gefunden" });
+  }
 
   const fixedDepartmentId = (fixed_department_id === null || fixed_department_id === undefined || fixed_department_id === "")
     ? null
     : Number(fixed_department_id);
   if (fixedDepartmentId) {
-    const depExists = await q(`SELECT 1 FROM departments WHERE id=$1`, [fixedDepartmentId]);
+    const depExists = await q(`SELECT 1 FROM departments WHERE id=$1 AND app_customer_id=$2`, [fixedDepartmentId, req.managedCustomerId]);
     if (depExists.rowCount === 0) return res.status(400).json({ error: "Abteilung nicht gefunden" });
   }
 
   try {
     const r = await q(
-      `INSERT INTO users (username, password_hash, role, location_id, role_id, is_active, email, fixed_department_id)
-       VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7)
-       RETURNING id, username, role, location_id, role_id, is_active, email, fixed_department_id`,
+      `INSERT INTO users (username, password_hash, role, location_id, role_id, is_active, email, fixed_department_id, app_customer_id, is_app_admin)
+       VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7,$8,FALSE)
+       RETURNING id, username, role, location_id, role_id, is_active, email, fixed_department_id, app_customer_id`,
       [
         name,
         hash,
         "disponent",
-        (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id),
+        locationId,
         roleId,
         emailCheck?.email || null,
-        fixedDepartmentId
+        fixedDepartmentId,
+        req.managedCustomerId
       ]
     );
     res.json(r.rows[0]);
@@ -2067,9 +2862,16 @@ app.post("/api/admin/users", authRequired, adminRequired, async (req, res) => {
   }
 });
 
-app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) => {
+app.put("/api/admin/users/:id", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.users?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
 
   const { location_id, is_active, role_id, email, fixed_department_id } = req.body || {};
 
@@ -2080,6 +2882,10 @@ app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) =>
 
   if (Object.prototype.hasOwnProperty.call(req.body || {}, "location_id")) {
     const locValue = (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id);
+    if (locValue) {
+      const locExists = await q(`SELECT 1 FROM locations WHERE id=$1 AND app_customer_id=$2`, [locValue, req.managedCustomerId]);
+      if (locExists.rowCount === 0) return res.status(400).json({ error: "Standort nicht gefunden" });
+    }
     updates.push(`location_id=$${idx++}`);
     values.push(locValue);
   }
@@ -2093,7 +2899,7 @@ app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) =>
   if (Object.prototype.hasOwnProperty.call(req.body || {}, "role_id")) {
     const roleValue = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
     if (!roleValue) return res.status(400).json({ error: "business role required" });
-    const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1`, [roleValue]);
+    const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2`, [roleValue, req.managedCustomerId]);
     if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
     updates.push(`role_id=$${idx++}`);
     values.push(roleValue);
@@ -2111,7 +2917,7 @@ app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) =>
       ? null
       : Number(fixed_department_id);
     if (fixedDepartmentId) {
-      const depExists = await q(`SELECT 1 FROM departments WHERE id=$1`, [fixedDepartmentId]);
+      const depExists = await q(`SELECT 1 FROM departments WHERE id=$1 AND app_customer_id=$2`, [fixedDepartmentId, req.managedCustomerId]);
       if (depExists.rowCount === 0) return res.status(400).json({ error: "Abteilung nicht gefunden" });
     }
     updates.push(`fixed_department_id=$${idx++}`);
@@ -2122,35 +2928,49 @@ app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) =>
 
   values.push(id);
   await q(
-    `UPDATE users SET ${updates.join(", ")} WHERE id=$${idx}`,
-    values
+    `UPDATE users SET ${updates.join(", ")} WHERE id=$${idx} AND app_customer_id = $${idx + 1}`,
+    [...values, req.managedCustomerId]
   );
 
   res.json({ ok: true });
 });
 
-app.delete("/api/admin/users/:id", authRequired, adminRequired, async (req, res) => {
+app.delete("/api/admin/users/:id", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.users?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
   if (id === req.user.id) return res.status(400).json({ error: "cannot delete yourself" });
+  if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
 
-  await q(`DELETE FROM users WHERE id=$1`, [id]);
+  await q(`DELETE FROM users WHERE id=$1 AND app_customer_id=$2`, [id, req.managedCustomerId]);
   res.json({ ok: true });
 });
 
-app.post("/api/admin/users/:id/reset-password", authRequired, adminRequired, async (req, res) => {
+app.post("/api/admin/users/:id/reset-password", authRequired, requireCustomerAdminAccess, async (req, res) => {
+  if (!isAppAdmin(req.user) && !req.portalPermissions?.users?.manage) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
   const id = Number(req.params.id);
   const { password } = req.body || {};
   if (!id) return res.status(400).json({ error: "invalid id" });
   if (!password) return res.status(400).json({ error: "password required" });
+  if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
 
   const hash = await bcrypt.hash(String(password), 10);
-  await q(`UPDATE users SET password_hash=$1 WHERE id=$2`, [hash, id]);
+  await q(`UPDATE users SET password_hash=$1 WHERE id=$2 AND app_customer_id=$3`, [hash, id, req.managedCustomerId]);
   res.json({ ok: true });
 });
 
 // ---------- WORKFLOW CASES (Status 1-4) ----------
-app.get("/api/cases", authRequired, async (req, res) => {
+app.get("/api/cases", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const status = req.query.status ? Number(req.query.status) : null;
   const translogicaRaw = req.query.translogica_transferred;
@@ -2169,9 +2989,9 @@ app.get("/api/cases", authRequired, async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const where = ["1=1"];
-  const params = [];
-  let idx = 1;
+  const where = ["c.app_customer_id=$1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
   if (!isAllLocations) {
     where.push(`c.location_id=$${idx}`);
     params.push(location_id);
@@ -2236,7 +3056,7 @@ app.get("/api/cases", authRequired, async (req, res) => {
   res.json(rows);
 });
 
-app.get("/api/cases/:id", authRequired, async (req, res) => {
+app.get("/api/cases/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
@@ -2258,9 +3078,10 @@ app.get("/api/cases/:id", authRequired, async (req, res) => {
     LEFT JOIN users su ON su.id=c.submitted_by
     LEFT JOIN users au ON au.id=c.approved_by
     WHERE c.id=$1
+      AND c.app_customer_id=$2
     LIMIT 1
     `,
-    [id]
+    [id, req.user.app_customer_id]
   );
 
   if (result.rowCount === 0) return res.status(404).json({ error: "Not found" });
@@ -2273,7 +3094,7 @@ app.get("/api/cases/:id", authRequired, async (req, res) => {
   res.json(row);
 });
 
-app.post("/api/cases", authRequired, async (req, res) => {
+app.post("/api/cases", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const perms = await getMyPermissions(req.user);
   if (!perms?.cases?.create) return res.status(403).json({ error: "Keine Berechtigung" });
 
@@ -2304,22 +3125,29 @@ app.post("/api/cases", authRequired, async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
+  if (!(await assertRecordBelongsToCustomer("locations", locId, req.user.app_customer_id))) {
+    return res.status(400).json({ error: "Standort nicht gefunden" });
+  }
+  if (!(await assertRecordBelongsToCustomer("departments", depId, req.user.app_customer_id))) {
+    return res.status(400).json({ error: "Abteilung nicht gefunden" });
+  }
+
   const r = await q(
     `
-    INSERT INTO booking_cases (location_id, department_id, created_by, status, license_plate, entrepreneur, note, qty_in, qty_out, employee_code, product_type)
-    VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10)
+    INSERT INTO booking_cases (location_id, department_id, created_by, status, license_plate, entrepreneur, note, qty_in, qty_out, employee_code, product_type, app_customer_id)
+    VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10,$11)
     RETURNING id
     `,
-    [locId, depId, req.user.id, plateCheck.plate, safeTrim(entrepreneur), safeTrim(note), inQty, outQty, employeeCodeCheck?.code || null, productTypeCheck.productType]
+    [locId, depId, req.user.id, plateCheck.plate, safeTrim(entrepreneur), safeTrim(note), inQty, outQty, employeeCodeCheck?.code || null, productTypeCheck.productType, req.user.app_customer_id]
   );
 
   if (safeTrim(entrepreneur)) {
     await q(
       `
-      INSERT INTO entrepreneur_history (location_id, department_id, created_by, entrepreneur, license_plate, qty_in, qty_out, product_type)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      INSERT INTO entrepreneur_history (location_id, department_id, created_by, entrepreneur, license_plate, qty_in, qty_out, product_type, app_customer_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       `,
-      [locId, depId, req.user.id, safeTrim(entrepreneur), plateCheck.plate, inQty, outQty, productTypeCheck.productType]
+      [locId, depId, req.user.id, safeTrim(entrepreneur), plateCheck.plate, inQty, outQty, productTypeCheck.productType, req.user.app_customer_id]
     );
   }
 
@@ -2328,6 +3156,7 @@ app.post("/api/cases", authRequired, async (req, res) => {
     caseId,
     locationId: locId,
     departmentId: depId,
+    appCustomerId: req.user.app_customer_id,
     changedBy: req.user.id,
     action: "create",
     changes: [
@@ -2351,7 +3180,7 @@ app.post("/api/cases", authRequired, async (req, res) => {
   res.json({ id: caseId });
 });
 
-app.post("/api/internal-transfers", authRequired, async (req, res) => {
+app.post("/api/internal-transfers", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const perms = await getMyPermissions(req.user);
   if (!perms?.cases?.internal_transfer) return res.status(403).json({ error: "Keine Berechtigung" });
 
@@ -2376,6 +3205,12 @@ app.post("/api/internal-transfers", authRequired, async (req, res) => {
     if (toLocationId !== userLocationLock) return res.status(403).json({ error: "Forbidden" });
     if (fromLocationId && fromLocationId !== userLocationLock) return res.status(403).json({ error: "Forbidden" });
   }
+  if (!(await assertRecordBelongsToCustomer("locations", toLocationId, req.user.app_customer_id))) {
+    return res.status(400).json({ error: "Standort nicht gefunden" });
+  }
+  if (fromLocationId && !(await assertRecordBelongsToCustomer("locations", fromLocationId, req.user.app_customer_id))) {
+    return res.status(400).json({ error: "Standort nicht gefunden" });
+  }
 
   const groupId = crypto.randomUUID();
   let line = 1;
@@ -2383,20 +3218,20 @@ app.post("/api/internal-transfers", authRequired, async (req, res) => {
   if (fromLocationId) {
     await q(
       `
-      INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
-      VALUES ($1,NULL,$2,'OUT',$3,$4,NULL,NULL,NULL,$5,$6,$7)
+      INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type, app_customer_id)
+      VALUES ($1,NULL,$2,'OUT',$3,$4,NULL,NULL,NULL,$5,$6,$7,$8)
       `,
-      [fromLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType]
+      [fromLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType, req.user.app_customer_id]
     );
     line += 1;
   }
 
   await q(
     `
-    INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
-    VALUES ($1,NULL,$2,'IN',$3,$4,NULL,NULL,NULL,$5,$6,$7)
+    INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type, app_customer_id)
+    VALUES ($1,NULL,$2,'IN',$3,$4,NULL,NULL,NULL,$5,$6,$7,$8)
     `,
-    [toLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType]
+    [toLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType, req.user.app_customer_id]
   );
 
   if (fromLocationId) {
@@ -2409,11 +3244,11 @@ app.post("/api/internal-transfers", authRequired, async (req, res) => {
   res.json({ ok: true, mode: fromLocationId ? "transfer" : "in_only" });
 });
 
-app.put("/api/cases/:id", authRequired, async (req, res) => {
+app.put("/api/cases/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1`, [id]);
+  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
   const c = existing.rows[0];
 
@@ -2447,6 +3282,9 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(req.body || {}, "department_id")) {
       const depId = Number(department_id || 0);
       if (!depId) return res.status(400).json({ error: "department_id invalid" });
+      if (!(await assertRecordBelongsToCustomer("departments", depId, req.user.app_customer_id))) {
+        return res.status(400).json({ error: "Abteilung nicht gefunden" });
+      }
     }
 
     const nextInQty = inQty !== null ? inQty : Number(c.qty_in || 0);
@@ -2540,6 +3378,7 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
         caseId: id,
         locationId: c.location_id,
         departmentId: Number(department_id) || Number(c.department_id),
+        appCustomerId: c.app_customer_id,
         receiptNo: c.receipt_no || null,
         changedBy: req.user.id,
         action: "edit",
@@ -2564,6 +3403,7 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       caseId: id,
       locationId: c.location_id,
       departmentId: c.department_id,
+      appCustomerId: c.app_customer_id,
       receiptNo: c.receipt_no || null,
       changedBy: req.user.id,
       action: "claim",
@@ -2622,6 +3462,7 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       caseId: id,
       locationId: c.location_id,
       departmentId: c.department_id,
+      appCustomerId: c.app_customer_id,
       receiptNo: c.receipt_no || null,
       changedBy: req.user.id,
       action: "submit",
@@ -2657,10 +3498,10 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
 
       await client.query(
         `
-        INSERT INTO booking_case_history (case_id, location_id, department_id, receipt_no, changed_by, action, changes)
-        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
+        INSERT INTO booking_case_history (case_id, location_id, department_id, app_customer_id, receipt_no, changed_by, action, changes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
         `,
-        [id, c.location_id, c.department_id, receipt_no, req.user.id, "approve", JSON.stringify([
+        [id, c.location_id, c.department_id, c.app_customer_id, receipt_no, req.user.id, "approve", JSON.stringify([
           { field: "status", from: Number(c.status), to: 4 },
           { field: "receipt_no", from: c.receipt_no || null, to: receipt_no }
         ])]
@@ -2675,10 +3516,10 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       if (bookedInQty > 0) {
         await client.query(
           `
-          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
-          VALUES ($1,$2,$3,'IN',$4,$5,$6,$7,$8,$9,$10,$11)
+          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type, app_customer_id)
+          VALUES ($1,$2,$3,'IN',$4,$5,$6,$7,$8,$9,$10,$11,$12)
           `,
-          [c.location_id, c.department_id, req.user.id, bookedInQty, c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro"]
+          [c.location_id, c.department_id, req.user.id, bookedInQty, c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro", req.user.app_customer_id]
         );
         line++;
       }
@@ -2686,10 +3527,10 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       if (Number(c.qty_out) > 0) {
         await client.query(
           `
-          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
-          VALUES ($1,$2,$3,'OUT',$4,$5,$6,$7,$8,$9,$10,$11)
+          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type, app_customer_id)
+          VALUES ($1,$2,$3,'OUT',$4,$5,$6,$7,$8,$9,$10,$11,$12)
           `,
-          [c.location_id, c.department_id, req.user.id, Number(c.qty_out), c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro"]
+          [c.location_id, c.department_id, req.user.id, Number(c.qty_out), c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro", req.user.app_customer_id]
         );
       }
 
@@ -2732,6 +3573,7 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       caseId: id,
       locationId: c.location_id,
       departmentId: c.department_id,
+      appCustomerId: c.app_customer_id,
       receiptNo: c.receipt_no || null,
       changedBy: req.user.id,
       action: "set_translogica",
@@ -2756,6 +3598,7 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
       caseId: id,
       locationId: c.location_id,
       departmentId: c.department_id,
+      appCustomerId: c.app_customer_id,
       receiptNo: c.receipt_no || null,
       changedBy: req.user.id,
       action: "cancel",
@@ -2771,11 +3614,11 @@ app.put("/api/cases/:id", authRequired, async (req, res) => {
   return res.status(400).json({ error: "unknown action" });
 });
 
-app.delete("/api/cases/:id", authRequired, async (req, res) => {
+app.delete("/api/cases/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1`, [id]);
+  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
   const c = existing.rows[0];
 
@@ -2785,14 +3628,14 @@ app.delete("/api/cases/:id", authRequired, async (req, res) => {
 
   const perms = await getMyPermissions(req.user);
   if (!perms?.cases?.delete) return res.status(403).json({ error: "Keine Berechtigung" });
-  await q(`DELETE FROM booking_cases WHERE id=$1`, [id]);
+  await q(`DELETE FROM booking_cases WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   await deleteNotificationsForCase(id);
 
   io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
   res.json({ ok: true });
 });
 
-app.get("/api/cases/:id/receipt", authRequired, requirePermission("bookings.receipt"), async (req, res) => {
+app.get("/api/cases/:id/receipt", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.receipt"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
@@ -2811,11 +3654,12 @@ app.get("/api/cases/:id/receipt", authRequired, requirePermission("bookings.rece
     JOIN locations l ON l.id=c.location_id
     LEFT JOIN departments d ON d.id=c.department_id
     LEFT JOIN users u ON u.id=c.created_by
-    LEFT JOIN entrepreneurs e ON e.name=c.entrepreneur
+    LEFT JOIN entrepreneurs e ON e.name=c.entrepreneur AND e.app_customer_id=c.app_customer_id
     WHERE c.id=$1
+      AND c.app_customer_id=$2
     LIMIT 1
     `,
-    [id]
+    [id, req.user.app_customer_id]
   );
 
   if (r.rowCount === 0) return res.status(404).json({ error: "Not found" });
@@ -2859,7 +3703,7 @@ app.get("/api/cases/:id/receipt", authRequired, requirePermission("bookings.rece
 });
 
 // ---------- STOCK ----------
-app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req, res) => {
+app.get("/api/stock", authRequired, requireModuleEnabled("pallets"), requirePermission("stock.view"), async (req, res) => {
   const mode = (req.query.mode || "location").toLowerCase();
   const productTypeCheck = normalizeProductType(req.query.product_type || "euro");
   if (!productTypeCheck.ok) return res.status(400).json({ error: productTypeCheck.msg });
@@ -2877,12 +3721,15 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
         COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
         COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
       FROM bookings b
-      JOIN entrepreneurs e ON e.name=b.entrepreneur
-      WHERE b.entrepreneur IS NOT NULL AND b.entrepreneur <> '' AND COALESCE(b.product_type, 'euro')=$1
+      JOIN entrepreneurs e ON e.name=b.entrepreneur AND e.app_customer_id=$2
+      WHERE b.entrepreneur IS NOT NULL
+        AND b.entrepreneur <> ''
+        AND b.app_customer_id=$2
+        AND COALESCE(b.product_type, 'euro')=$1
       GROUP BY COALESCE(b.entrepreneur, '')
       ORDER BY COALESCE(b.entrepreneur, '')
       `,
-      [productType]
+      [productType, req.user.app_customer_id]
     )).rows;
 
     return res.json(rows);
@@ -2900,7 +3747,8 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
                COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
                COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
         FROM departments d
-        LEFT JOIN bookings b ON b.department_id=d.id AND b.location_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+        LEFT JOIN bookings b ON b.department_id=d.id AND b.app_customer_id=$1 AND b.location_id=$2 AND COALESCE(b.product_type, 'euro')=$3
+        WHERE d.app_customer_id=$1
         GROUP BY d.id
         ORDER BY d.name
       `
@@ -2911,12 +3759,18 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
                COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
                COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
         FROM departments d
-        LEFT JOIN bookings b ON b.department_id=d.id AND COALESCE(b.product_type, 'euro')=$1
+        LEFT JOIN bookings b ON b.department_id=d.id AND b.app_customer_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+        WHERE d.app_customer_id=$1
         GROUP BY d.id
         ORDER BY d.name
       `;
 
-    return res.json((await q(sql, userLocationLock ? [userLocationLock, productType] : [productType])).rows);
+    return res.json((await q(
+      sql,
+      userLocationLock
+        ? [req.user.app_customer_id, userLocationLock, productType]
+        : [req.user.app_customer_id, productType]
+    )).rows);
   }
 
   if (mode === "location_total") {
@@ -2928,8 +3782,8 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
                COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
                COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
         FROM locations l
-        LEFT JOIN bookings b ON b.location_id=l.id AND COALESCE(b.product_type, 'euro')=$2
-        WHERE l.id=$1
+        LEFT JOIN bookings b ON b.location_id=l.id AND b.app_customer_id=$1 AND COALESCE(b.product_type, 'euro')=$3
+        WHERE l.app_customer_id=$1 AND l.id=$2
         GROUP BY l.id
         ORDER BY l.name
       `
@@ -2940,12 +3794,18 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
                COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
                COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
         FROM locations l
-        LEFT JOIN bookings b ON b.location_id=l.id AND COALESCE(b.product_type, 'euro')=$1
+        LEFT JOIN bookings b ON b.location_id=l.id AND b.app_customer_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+        WHERE l.app_customer_id=$1
         GROUP BY l.id
         ORDER BY l.name
       `;
 
-    return res.json((await q(sql, userLocationLock ? [userLocationLock, productType] : [productType])).rows);
+    return res.json((await q(
+      sql,
+      userLocationLock
+        ? [req.user.app_customer_id, userLocationLock, productType]
+        : [req.user.app_customer_id, productType]
+    )).rows);
   }
 
   const location_id = Number(req.query.location_id || 0);
@@ -2960,18 +3820,19 @@ app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req,
            COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
            COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
     FROM departments d
-    LEFT JOIN bookings b ON b.department_id=d.id AND b.location_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+    LEFT JOIN bookings b ON b.department_id=d.id AND b.location_id=$1 AND b.app_customer_id=$2 AND COALESCE(b.product_type, 'euro')=$3
+    WHERE d.app_customer_id=$2
     GROUP BY d.id
     ORDER BY d.name
     `,
-    [location_id, productType]
+    [location_id, req.user.app_customer_id, productType]
   )).rows;
 
   res.json(rows);
 });
 
 // ---------- BOOKINGS LIST (Historie aggregiert pro Beleg) ----------
-app.get("/api/bookings", authRequired, requirePermission("bookings.view"), async (req, res) => {
+app.get("/api/bookings", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.view"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const department_id = Number(req.query.department_id || 0);
   const date_from = (req.query.date_from || "").trim();
@@ -2996,9 +3857,9 @@ app.get("/api/bookings", authRequired, requirePermission("bookings.view"), async
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const where = ["1=1"];
-  const params = [];
-  let idx = 1;
+  const where = ["b.app_customer_id=$1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
 
   if (department_id > 0) {
     where.push(`b.department_id=$${idx}`);
@@ -3061,7 +3922,7 @@ app.get("/api/bookings", authRequired, requirePermission("bookings.view"), async
 });
 
 // ---------- ENTREPRENEUR HISTORY ----------
-app.get("/api/entrepreneur-history", authRequired, requirePermission("bookings.view"), async (req, res) => {
+app.get("/api/entrepreneur-history", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.view"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const department_id = Number(req.query.department_id || 0);
   const entrepreneur = (req.query.entrepreneur || "").trim();
@@ -3079,9 +3940,9 @@ app.get("/api/entrepreneur-history", authRequired, requirePermission("bookings.v
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const where = [`c.status <> 0`];
-  const params = [];
-  let idx = 1;
+  const where = [`c.status <> 0`, `c.app_customer_id = $1`];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
   if (!isAllLocations) {
     where.push(`c.location_id=$${idx}`);
     params.push(location_id);
@@ -3118,7 +3979,7 @@ app.get("/api/entrepreneur-history", authRequired, requirePermission("bookings.v
   res.json(rows);
 });
 
-app.get("/api/entrepreneur-history/plates", authRequired, requirePermission("bookings.view"), async (req, res) => {
+app.get("/api/entrepreneur-history/plates", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.view"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const department_id = Number(req.query.department_id || 0);
 
@@ -3134,9 +3995,9 @@ app.get("/api/entrepreneur-history/plates", authRequired, requirePermission("boo
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const where = ["1=1"];
-  const params = [];
-  let idx = 1;
+  const where = ["eh.app_customer_id=$1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
   if (!isAllLocations) {
     where.push(`eh.location_id=$${idx}`);
     params.push(location_id);
@@ -3157,11 +4018,11 @@ app.get("/api/entrepreneur-history/plates", authRequired, requirePermission("boo
   res.json(rows);
 });
 
-app.get("/api/cases/:id/history", authRequired, requirePermission("bookings.view"), async (req, res) => {
+app.get("/api/cases/:id/history", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.view"), async (req, res) => {
   const id = Number(req.params.id || 0);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const base = await q(`SELECT id, location_id FROM booking_cases WHERE id=$1`, [id]);
+  const base = await q(`SELECT id, location_id FROM booking_cases WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   if (base.rowCount === 0) return res.status(404).json({ error: "Not found" });
   const caseRow = base.rows[0];
 
@@ -3184,16 +4045,17 @@ app.get("/api/cases/:id/history", authRequired, requirePermission("bookings.view
     FROM booking_case_history h
     LEFT JOIN users u ON u.id=h.changed_by
     WHERE h.case_id=$1
+      AND h.app_customer_id=$2
     ORDER BY h.created_at DESC, h.id DESC
     `,
-    [id]
+    [id, req.user.app_customer_id]
   )).rows;
 
   res.json(rows);
 });
 
 // ---------- BOOKINGS EDIT (Ledger) ----------
-app.put("/api/bookings/:id", authRequired, requirePermission("bookings.edit"), async (req, res) => {
+app.put("/api/bookings/:id", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.edit"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
@@ -3212,7 +4074,7 @@ app.put("/api/bookings/:id", authRequired, requirePermission("bookings.edit"), a
     plate = check.plate;
   }
 
-  const existing = await q(`SELECT id, location_id, department_id, receipt_no FROM bookings WHERE id=$1`, [id]);
+  const existing = await q(`SELECT id, location_id, department_id, receipt_no FROM bookings WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
 
   const row = existing.rows[0];
@@ -3227,14 +4089,15 @@ app.put("/api/bookings/:id", authRequired, requirePermission("bookings.edit"), a
         note = COALESCE($2, note),
         entrepreneur = COALESCE($3, entrepreneur),
         license_plate = COALESCE($4, license_plate)
-    WHERE id=$5
+    WHERE id=$5 AND app_customer_id=$6
     `,
     [
       qty,
       (note !== undefined ? safeTrim(note) : null),
       (entrepreneur !== undefined ? safeTrim(entrepreneur) : null),
       plate,
-      id
+      id,
+      req.user.app_customer_id
     ]
   );
 
@@ -3251,10 +4114,10 @@ app.put("/api/bookings/:id", authRequired, requirePermission("bookings.edit"), a
 });
 
 // ---------- RECEIPT ----------
-app.get("/api/receipt/:bookingId", authRequired, requirePermission("bookings.receipt"), async (req, res) => {
+app.get("/api/receipt/:bookingId", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.receipt"), async (req, res) => {
   const id = Number(req.params.bookingId);
 
-  const base = await q(`SELECT receipt_no FROM bookings WHERE id=$1`, [id]);
+  const base = await q(`SELECT receipt_no FROM bookings WHERE id=$1 AND app_customer_id=$2`, [id, req.user.app_customer_id]);
   if (base.rowCount === 0) return res.status(404).json({ error: "Not found" });
   const receiptNo = base.rows[0].receipt_no;
 
@@ -3277,13 +4140,14 @@ app.get("/api/receipt/:bookingId", authRequired, requirePermission("bookings.rec
     LEFT JOIN users u ON u.id=b.user_id
     JOIN locations l ON l.id=b.location_id
     LEFT JOIN departments d ON d.id=b.department_id
-    LEFT JOIN entrepreneurs e ON e.name=b.entrepreneur
-    LEFT JOIN booking_cases bc ON bc.receipt_no=b.receipt_no
+    LEFT JOIN entrepreneurs e ON e.name=b.entrepreneur AND e.app_customer_id=b.app_customer_id
+    LEFT JOIN booking_cases bc ON bc.receipt_no=b.receipt_no AND bc.app_customer_id=b.app_customer_id
     LEFT JOIN users uc ON uc.id=bc.created_by
     WHERE b.receipt_no = $1
+      AND b.app_customer_id = $2
     ORDER BY COALESCE(b.line_no, 999999) ASC, b.id ASC
     `,
-    [receiptNo]
+    [receiptNo, req.user.app_customer_id]
   );
 
   const rows = r.rows;
@@ -3323,7 +4187,7 @@ app.get("/api/receipt/:bookingId", authRequired, requirePermission("bookings.rec
 });
 
 // ---------- EXPORTS ----------
-app.get("/api/export/csv", authRequired, requirePermission("bookings.export"), async (req, res) => {
+app.get("/api/export/csv", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.export"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const department_id = Number(req.query.department_id || 0);
   if (!location_id) return res.status(400).json({ error: "location_id required" });
@@ -3340,21 +4204,21 @@ app.get("/api/export/csv", authRequired, requirePermission("bookings.export"), a
 
   let locLabel = "Alle Standorte";
   if (!isAllLocations) {
-    const loc = await q(`SELECT name FROM locations WHERE id=$1`, [location_id]);
+    const loc = await q(`SELECT name FROM locations WHERE id=$1 AND app_customer_id=$2`, [location_id, req.user.app_customer_id]);
     if (loc.rowCount === 0) return res.status(404).json({ error: "location not found" });
     locLabel = loc.rows[0].name;
   }
 
   let depLabel = "Alle Abteilungen";
   if (department_id > 0) {
-    const dep = await q(`SELECT name FROM departments WHERE id=$1`, [department_id]);
+    const dep = await q(`SELECT name FROM departments WHERE id=$1 AND app_customer_id=$2`, [department_id, req.user.app_customer_id]);
     if (dep.rowCount === 0) return res.status(404).json({ error: "department not found" });
     depLabel = dep.rows[0].name;
   }
 
-  const where = ["1=1"];
-  const params = [];
-  let idx = 1;
+  const where = ["b.app_customer_id=$1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
 
   if (!isAllLocations) {
     where.push(`b.location_id=$${idx}`);
@@ -3386,7 +4250,7 @@ app.get("/api/export/csv", authRequired, requirePermission("bookings.export"), a
   res.send(csv);
 });
 
-app.get("/api/export/xlsx", authRequired, requirePermission("bookings.export"), async (req, res) => {
+app.get("/api/export/xlsx", authRequired, requireModuleEnabled("pallets"), requirePermission("bookings.export"), async (req, res) => {
   const location_id = Number(req.query.location_id || 0);
   const department_id = Number(req.query.department_id || 0);
   if (!location_id) return res.status(400).json({ error: "location_id required" });
@@ -3403,21 +4267,21 @@ app.get("/api/export/xlsx", authRequired, requirePermission("bookings.export"), 
 
   let locLabel = "Alle Standorte";
   if (!isAllLocations) {
-    const loc = await q(`SELECT name FROM locations WHERE id=$1`, [location_id]);
+    const loc = await q(`SELECT name FROM locations WHERE id=$1 AND app_customer_id=$2`, [location_id, req.user.app_customer_id]);
     if (loc.rowCount === 0) return res.status(404).json({ error: "location not found" });
     locLabel = loc.rows[0].name;
   }
 
   let depLabel = "Alle Abteilungen";
   if (department_id > 0) {
-    const dep = await q(`SELECT name FROM departments WHERE id=$1`, [department_id]);
+    const dep = await q(`SELECT name FROM departments WHERE id=$1 AND app_customer_id=$2`, [department_id, req.user.app_customer_id]);
     if (dep.rowCount === 0) return res.status(404).json({ error: "department not found" });
     depLabel = dep.rows[0].name;
   }
 
-  const where = ["1=1"];
-  const params = [];
-  let idx = 1;
+  const where = ["b.app_customer_id=$1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
 
   if (!isAllLocations) {
     where.push(`b.location_id=$${idx}`);

@@ -1,9 +1,4 @@
-const { pool } = require("./db_pg");
-const {
-  createFullAccessPermissions,
-  createPermissionDefaults,
-  normalizePermissions
-} = require("./permissions_config");
+const { isAppAdmin, getUserPermissions } = require("./core/platform_access");
 
 function hasPerm(perms, permPath) {
   if (perms?.admin?.full_access) return true;
@@ -16,27 +11,13 @@ function hasPerm(perms, permPath) {
   return current === true;
 }
 
-async function loadPermissionsForUser(user) {
-  if (user?.role === "admin") {
-    return createFullAccessPermissions();
-  }
-
-  if (!user?.role_id) {
-    return createPermissionDefaults();
-  }
-
-  const result = await pool.query(`SELECT permissions FROM roles WHERE id=$1`, [Number(user.role_id)]);
-  const raw = (result.rowCount ? result.rows[0].permissions : {}) || {};
-  return normalizePermissions(raw);
-}
-
 function requirePermission(permissionPath) {
   return async (req, res, next) => {
     try {
-      if (req.user?.role === "admin") return next();
+      if (isAppAdmin(req.user)) return next();
 
       if (!req.user.permissions) {
-        req.user.permissions = await loadPermissionsForUser(req.user);
+        req.user.permissions = await getUserPermissions(req.user);
       }
 
       if (!hasPerm(req.user.permissions, permissionPath)) {

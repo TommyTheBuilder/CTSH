@@ -3381,3 +3381,121 @@ body.darkmode .nav-icon--symbol {
     min-height: 56px;
   }
 }
+
+.topbar-brand-link {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hub-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.module-stat-card {
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(6px);
+}
+
+.module-stat-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.1rem;
+}
+
+.dashboard-split-grid,
+.module-admin-grid,
+.app-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.module-card-footer {
+  gap: 10px;
+}
+
+.module-card-open,
+.module-card-admin {
+  width: auto;
+}
+
+.admin-module-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-sections-host {
+  display: grid;
+  gap: 14px;
+}
+
+.permission-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.permission-check input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.module-checklist {
+  display: grid;
+  gap: 12px;
+}
+
+.module-checklist__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dbe3f0;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.module-checklist__item input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.module-checklist__item strong,
+.module-checklist__item small {
+  display: block;
+}
+
+.module-admin-action {
+  display: flex;
+  align-items: flex-end;
+}
+
+.module-admin-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.module-admin-inline-actions button {
+  width: auto;
+}
+
+body.darkmode .module-stat-card,
+body.darkmode .permission-check,
+body.darkmode .module-checklist__item {
+  border-color: #334155;
+  background: rgba(15, 23, 42, 0.7);
+}

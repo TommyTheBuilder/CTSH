@@ -1,172 +1,9 @@
 let token = localStorage.getItem("token");
-let currentPermissions = {};
-let liveFeedPollTimer = null;
+let coreContext = null;
+let liveFeedTimer = null;
 
-function $(id) { return document.getElementById(id); }
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function formatFeedTimestamp(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function updateDashboardHero() {
-  const now = new Date();
-  const currentMinutes = (now.getHours() * 60) + now.getMinutes();
-  let greeting = "Guten Abend";
-
-  if (currentMinutes >= 120 && currentMinutes < 570) greeting = "Guten Morgen";
-  else if (currentMinutes >= 570 && currentMinutes < 690) greeting = "Guten Tag";
-  else if (currentMinutes >= 690 && currentMinutes < 780) greeting = "Mahlzeit";
-  else if (currentMinutes >= 780 && currentMinutes < 960) greeting = "Guten Tag";
-
-  const greetingEl = $("dashboardGreeting");
-
-  if (greetingEl) greetingEl.textContent = greeting;
-}
-
-function hasAnyPermission(value) {
-  if (value === true) return true;
-  if (!value || typeof value !== "object") return false;
-  return Object.values(value).some((entry) => hasAnyPermission(entry));
-}
-
-function renderDashboardLiveFeed(items = [], message = "") {
-  const feedEl = $("dashboardLiveFeed");
-  if (!feedEl) return;
-
-  if (message) {
-    feedEl.innerHTML = `<div class="module-feed__empty">${escapeHtml(message)}</div>`;
-    return;
-  }
-
-  if (!items.length) {
-    feedEl.innerHTML = '<div class="module-feed__empty">Keine Live-Vorgänge vorhanden.</div>';
-    return;
-  }
-
-  feedEl.innerHTML = items.map((item) => `
-    <article class="module-feed__item">
-      <div class="module-feed__top">
-        <span class="module-feed__app">${escapeHtml(item.app || "Feed")}</span>
-        <span class="module-feed__time">${escapeHtml(formatFeedTimestamp(item.at))}</span>
-      </div>
-      <div class="module-feed__title">${escapeHtml(item.title || "")}</div>
-      <div class="module-feed__meta">${escapeHtml(item.meta || "")}</div>
-    </article>
-  `).join("");
-}
-
-async function loadDashboardLiveFeed() {
-  const feedEl = $("dashboardLiveFeed");
-  if (!feedEl) return;
-
-  try {
-    const response = await api("/api/dashboard/live-feed?limit=10", { method: "GET", headers: {} });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      renderDashboardLiveFeed([], data?.error || "Der Live-Feed konnte nicht geladen werden.");
-      return;
-    }
-
-    renderDashboardLiveFeed(Array.isArray(data?.items) ? data.items : []);
-  } catch {
-    renderDashboardLiveFeed([], "Der Live-Feed konnte nicht geladen werden.");
-  }
-}
-
-function startDashboardLiveFeedPolling() {
-  if (liveFeedPollTimer) window.clearInterval(liveFeedPollTimer);
-  void loadDashboardLiveFeed();
-  liveFeedPollTimer = window.setInterval(() => {
-    if (!document.hidden) void loadDashboardLiveFeed();
-  }, 30000);
-}
-
-function getVisibleModuleLinks() {
-  return Array.from(document.querySelectorAll(".module-grid .module-button")).filter((link) => {
-    if (link.hidden) return false;
-    if (link.style.display === "none") return false;
-    return window.getComputedStyle(link).display !== "none";
-  });
-}
-
-function refreshModuleSummary() {
-  const visibleLinks = getVisibleModuleLinks();
-  const count = visibleLinks.length;
-  const countEl = $("moduleCount");
-  const stateEl = $("moduleAccessState");
-  const primaryEl = $("dashboardPrimaryModule");
-  const msgEl = $("moduleMsg");
-  const firstLink = visibleLinks[0];
-  const firstName = firstLink?.dataset?.moduleName || "Kein Modul verfügbar";
-  const firstSummary = firstLink?.dataset?.moduleSummary || "Aktuell ist kein Bereich für dieses Konto freigeschaltet.";
-
-  if (countEl) countEl.textContent = String(count);
-  if (stateEl) stateEl.textContent = count > 0 ? `${count} Bereich${count === 1 ? "" : "e"} aktiv` : "Keine Freigabe";
-  if (primaryEl) primaryEl.textContent = count > 0 ? `${firstName}: ${firstSummary}` : firstSummary;
-
-  if (msgEl && msgEl.dataset.messageType === "summary") {
-    msgEl.dataset.messageType = "";
-    msgEl.style.color = "";
-    msgEl.textContent = "";
-  }
-}
-
-function sanitizeDashboardUrl() {
-  const url = new URL(window.location.href);
-  const hadSsoToken = url.searchParams.has("ssoToken");
-  const hadSessionToken = url.searchParams.has("session");
-  const hadToken = url.searchParams.has("token");
-  if (!hadSsoToken && !hadSessionToken && !hadToken) return;
-
-  url.searchParams.delete("ssoToken");
-  url.searchParams.delete("session");
-  url.searchParams.delete("token");
-  url.searchParams.delete("user");
-  history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-}
-
-async function trySsoIntake() {
-  const params = new URLSearchParams(window.location.search);
-  const ssoToken = String(params.get("token") || params.get("ssoToken") || params.get("session") || "").trim();
-  if (!ssoToken) return false;
-
-  try {
-    const response = await fetch("/api/auth/sso-exchange", {
-      credentials: "include",
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: ssoToken })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.token) {
-      await logout();
-      return false;
-    }
-
-    localStorage.setItem("token", data.token);
-    token = data.token;
-    sanitizeDashboardUrl();
-    return true;
-  } catch {
-    await logout();
-    return false;
-  }
+function $(id) {
+  return document.getElementById(id);
 }
 
 function api(path, opts = {}) {
@@ -181,22 +18,30 @@ function api(path, opts = {}) {
   });
 }
 
-function setMsg(elId, text, ok = false) {
-  const el = $(elId);
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setMsg(id, text, ok = false) {
+  const el = $(id);
   if (!el) return;
-  el.dataset.messageType = text ? (ok ? "success" : "error") : "";
   el.style.color = ok ? "#0a7a2f" : "#b00020";
   el.textContent = text || "";
 }
 
-async function logout() {
-  try {
-    await api("/api/logout", { method: "POST", headers: {} });
-  } catch {
-    // ignore transport errors
-  }
-  localStorage.removeItem("token");
-  window.location.href = "/login.html";
+function closeSettingsMenu() {
+  $("settingsMenu")?.classList.remove("open");
+  $("settingsTriggerBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function openSettingsMenu() {
+  $("settingsMenu")?.classList.add("open");
+  $("settingsTriggerBtn")?.setAttribute("aria-expanded", "true");
 }
 
 function showPasswordModal(show) {
@@ -206,34 +51,43 @@ function showPasswordModal(show) {
   back.setAttribute("aria-hidden", show ? "false" : "true");
 }
 
-function closeSettingsMenu() {
-  const menu = $("settingsMenu");
-  const trigger = $("settingsTriggerBtn");
-  if (!menu || !trigger) return;
-  menu.classList.remove("open");
-  trigger.setAttribute("aria-expanded", "false");
+function formatFeedTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }
 
-function openSettingsMenu() {
-  const menu = $("settingsMenu");
-  const trigger = $("settingsTriggerBtn");
-  if (!menu || !trigger) return;
-  menu.classList.add("open");
-  trigger.setAttribute("aria-expanded", "true");
+function updateGreeting() {
+  const now = new Date();
+  const minutes = (now.getHours() * 60) + now.getMinutes();
+  let greeting = "Guten Abend";
+  if (minutes >= 120 && minutes < 570) greeting = "Guten Morgen";
+  else if (minutes >= 570 && minutes < 960) greeting = "Guten Tag";
+  $("dashboardGreeting").textContent = greeting;
+}
+
+function showPasswordForm() {
+  closeSettingsMenu();
+  setMsg("passwordModalMsg", "", true);
+  $("currentPassword").value = "";
+  $("newPassword").value = "";
+  $("confirmPassword").value = "";
+  showPasswordModal(true);
 }
 
 function bindSettingsMenu() {
   const trigger = $("settingsTriggerBtn");
   const wrap = $("settingsMenuWrap");
-  const menu = $("settingsMenu");
-  const darkmodeBtn = $("menuDarkmodeBtn");
-  const openPasswordBtn = $("openChangePasswordBtn");
-  const openAdminBtn = $("openAdminBtn");
-  if (!trigger || !wrap || !menu) return;
+  if (!trigger || !wrap) return;
 
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (menu.classList.contains("open")) closeSettingsMenu();
+    if ($("settingsMenu")?.classList.contains("open")) closeSettingsMenu();
     else openSettingsMenu();
   });
 
@@ -248,187 +102,236 @@ function bindSettingsMenu() {
     }
   });
 
-  darkmodeBtn?.addEventListener("click", () => {
+  $("openCustomerAdminBtn")?.addEventListener("click", () => {
+    closeSettingsMenu();
+    window.location.href = "/admin.html";
+  });
+  $("openPalletAdminBtn")?.addEventListener("click", () => {
+    closeSettingsMenu();
+    window.location.href = "/modules/pallets/admin.html";
+  });
+  $("openAppAdminBtn")?.addEventListener("click", () => {
+    closeSettingsMenu();
+    window.location.href = "/app-admin.html";
+  });
+  $("openChangePasswordBtn")?.addEventListener("click", showPasswordForm);
+  $("menuDarkmodeBtn")?.addEventListener("click", () => {
     $("themeToggleBtn")?.click();
     closeSettingsMenu();
   });
-
-  openPasswordBtn?.addEventListener("click", () => {
+  $("logoutBtn")?.addEventListener("click", async () => {
     closeSettingsMenu();
-    setMsg("passwordModalMsg", "", true);
-    $("currentPassword").value = "";
-    $("newPassword").value = "";
-    $("confirmPassword").value = "";
-    showPasswordModal(true);
-  });
-
-  openAdminBtn?.addEventListener("click", () => {
-    closeSettingsMenu();
-    window.location.href = "/public/admin.html";
+    try {
+      await api("/api/logout", { method: "POST", headers: {} });
+    } catch {}
+    localStorage.removeItem("token");
+    window.location.href = "/login.html";
   });
 }
 
 function bindPasswordModal() {
-  const back = $("passwordModalBack");
-  const closeBtn = $("closePasswordModalBtn");
-  const cancelBtn = $("cancelPasswordBtn");
-  const saveBtn = $("savePasswordBtn");
-  if (!back || !closeBtn || !cancelBtn || !saveBtn) return;
-
-  const close = () => showPasswordModal(false);
-  closeBtn.addEventListener("click", close);
-  cancelBtn.addEventListener("click", close);
-  back.addEventListener("click", (event) => {
-    if (event.target === back) close();
+  $("closePasswordModalBtn")?.addEventListener("click", () => showPasswordModal(false));
+  $("cancelPasswordBtn")?.addEventListener("click", () => showPasswordModal(false));
+  $("passwordModalBack")?.addEventListener("click", (event) => {
+    if (event.target === $("passwordModalBack")) showPasswordModal(false);
   });
 
-  saveBtn.addEventListener("click", async () => {
+  $("savePasswordBtn")?.addEventListener("click", async () => {
     const current_password = String($("currentPassword").value || "").trim();
     const new_password = String($("newPassword").value || "").trim();
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
-      return;
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
     }
     if (new_password.length < 8) {
-      setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
-      return;
+      return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      setMsg("passwordModalMsg", "Die neuen Passwörter stimmen nicht überein.");
-      return;
+      return setMsg("passwordModalMsg", "Die Passwoerter stimmen nicht ueberein.");
     }
 
-    saveBtn.disabled = true;
-    setMsg("passwordModalMsg", "Passwort wird gespeichert ...", true);
-    try {
-      const r = await api("/api/change-password", {
-        method: "POST",
-        body: JSON.stringify({ current_password, new_password })
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht geändert werden.");
-        return;
-      }
-      setMsg("passwordModalMsg", "Passwort erfolgreich geändert.", true);
-      setTimeout(() => showPasswordModal(false), 700);
-    } catch {
-      setMsg("passwordModalMsg", "Netzwerkfehler. Bitte erneut versuchen.");
-    } finally {
-      saveBtn.disabled = false;
+    const response = await api("/api/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht gespeichert werden.");
     }
+    setMsg("passwordModalMsg", "Passwort gespeichert.", true);
+    window.setTimeout(() => showPasswordModal(false), 700);
   });
 }
 
-async function bindModuleLink(linkId, endpoint, loadingText, unavailableText) {
-  const link = $(linkId);
-  if (!link) return;
+function moduleCardClass(moduleKey) {
+  if (moduleKey === "pallets") return "module-button module-button--stacked module-button--pallet";
+  if (moduleKey === "warehouse") return "module-button module-button--stacked";
+  if (moduleKey === "container_registration") return "module-button module-button--stacked module-button--registration";
+  if (moduleKey === "container_planning") return "module-button module-button--stacked module-button--planning";
+  return "module-button module-button--stacked";
+}
 
-  link.addEventListener("click", async (event) => {
-    event.preventDefault();
-    if (link.dataset.loading === "1") return;
+function moduleIcon(moduleKey) {
+  if (moduleKey === "pallets") {
+    return `
+      <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
+        <rect x="13" y="8" width="38" height="48" rx="2" fill="#FFE2A0" stroke="#0B0B12" stroke-width="3"></rect>
+        <rect x="19" y="12" width="6" height="40" fill="#FFC24D"></rect>
+        <rect x="31" y="12" width="6" height="40" fill="#FFC24D"></rect>
+        <rect x="43" y="12" width="6" height="40" fill="#FFC24D"></rect>
+      </svg>
+    `;
+  }
+  if (moduleKey === "warehouse") {
+    return `
+      <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+        <rect x="16" y="12" width="64" height="36" rx="4" fill="#E6FFFB" stroke="#08131F" stroke-width="3"></rect>
+        <rect x="24" y="20" width="12" height="20" fill="#5EEAD4"></rect>
+        <rect x="42" y="20" width="12" height="20" fill="#2DD4BF"></rect>
+        <rect x="60" y="20" width="12" height="20" fill="#14B8A6"></rect>
+      </svg>
+    `;
+  }
+  if (moduleKey === "container_registration") {
+    return `
+      <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+        <path d="M12 45V30h11l6-7h17v22z" fill="#FF5A7F" stroke="#09090F" stroke-width="3" stroke-linejoin="round"></path>
+        <rect x="31" y="17" width="40" height="26" fill="#FFD369" stroke="#09090F" stroke-width="3"></rect>
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
+      <path d="M12 43V27h12l6-7h18v23z" fill="#3D8CFF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+      <rect x="31" y="13" width="47" height="30" rx="2" fill="#FF4457" stroke="#11111A" stroke-width="3"></rect>
+    </svg>
+  `;
+}
 
-    link.dataset.loading = "1";
-    const originalContent = link.innerHTML;
-    link.setAttribute("aria-busy", "true");
-    link.innerHTML = `<span class="module-button__loading">${loadingText}</span>`;
+function renderModules() {
+  const host = $("dashboardModuleGrid");
+  const modules = Array.isArray(coreContext?.dashboard_modules) ? coreContext.dashboard_modules : [];
+  $("moduleCount").textContent = String(modules.length);
+  host.innerHTML = modules.length ? modules.map((module) => `
+    <article class="${moduleCardClass(module.key)}" data-module-launch="${escapeHtml(module.launchPath)}">
+      <div class="module-button__top">
+        <span class="module-button__icon ${module.key === "pallets" ? "module-button__icon--square" : "module-button__icon--wide"}">${moduleIcon(module.key)}</span>
+        <span class="module-button__tag">${escapeHtml(module.dashboard?.tag || "Modul")}</span>
+      </div>
+      <div class="module-button__copy">
+        <span class="module-button__eyebrow">${escapeHtml(module.dashboard?.eyebrow || "Bereich")}</span>
+        <span class="module-button__title">${escapeHtml(module.name)}</span>
+        <span class="module-button__description">${escapeHtml(module.dashboard?.description || "")}</span>
+      </div>
+      <div class="module-button__footer module-card-footer">
+        <button class="secondary module-card-open" type="button" data-module-launch="${escapeHtml(module.launchPath)}">Modul oeffnen</button>
+        ${module.adminPath ? `<button class="secondary module-card-admin" type="button" data-module-admin="${escapeHtml(module.adminPath)}">Modul-Admin</button>` : ""}
+      </div>
+    </article>
+  `).join("") : '<div class="module-feed__empty">Fuer diesen Kunden sind aktuell keine Module freigeschaltet.</div>';
 
-    try {
-      const r = await api(endpoint, { method: "GET", headers: {} });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data?.url) {
-        setMsg("moduleMsg", data?.error || unavailableText);
-        return;
-      }
-      window.location.href = data.url;
-    } catch {
-      setMsg("moduleMsg", unavailableText);
-    } finally {
-      link.dataset.loading = "0";
-      link.removeAttribute("aria-busy");
-      link.innerHTML = originalContent;
-    }
+  document.querySelectorAll("[data-module-launch]").forEach((button) => {
+    button.addEventListener("click", () => {
+      window.location.href = button.dataset.moduleLaunch;
+    });
+  });
+  document.querySelectorAll("[data-module-admin]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      window.location.href = button.dataset.moduleAdmin;
+    });
   });
 }
 
-async function loadMeAndPermissions() {
-  const meResponse = await api("/api/me", { method: "GET", headers: {} });
-  if (!meResponse.ok) {
-    await logout();
+function renderLiveFeed(items, message = "") {
+  const host = $("dashboardLiveFeed");
+  if (!host) return;
+  if (message) {
+    host.innerHTML = `<div class="module-feed__empty">${escapeHtml(message)}</div>`;
+    return;
+  }
+  if (!items.length) {
+    host.innerHTML = '<div class="module-feed__empty">Keine Aktivitaeten vorhanden.</div>';
+    return;
+  }
+  host.innerHTML = items.map((item) => `
+    <article class="module-feed__item">
+      <div class="module-feed__top">
+        <span class="module-feed__app">${escapeHtml(item.app || "Feed")}</span>
+        <span class="module-feed__time">${escapeHtml(formatFeedTimestamp(item.at))}</span>
+      </div>
+      <div class="module-feed__title">${escapeHtml(item.title || "")}</div>
+      <div class="module-feed__meta">${escapeHtml(item.meta || "")}</div>
+    </article>
+  `).join("");
+}
+
+async function loadLiveFeed() {
+  const response = await api("/api/dashboard/live-feed?limit=8", { method: "GET", headers: {} });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    renderLiveFeed([], data?.error || "Live Feed konnte nicht geladen werden.");
+    return;
+  }
+  renderLiveFeed(Array.isArray(data?.items) ? data.items : []);
+}
+
+function startLiveFeed() {
+  if (liveFeedTimer) window.clearInterval(liveFeedTimer);
+  void loadLiveFeed();
+  liveFeedTimer = window.setInterval(() => {
+    if (!document.hidden) void loadLiveFeed();
+  }, 30000);
+}
+
+function applyContextUi() {
+  updateGreeting();
+  $("me").textContent = coreContext?.user
+    ? `${coreContext.user.username} • ${coreContext.user.business_role_name || "-"}`
+    : "-";
+  $("customerName").textContent = coreContext?.customer?.name || "Kein Kunde";
+  $("accessSummary").textContent = coreContext?.user?.is_app_admin ? "App Admin" : "Kundenkontext";
+
+  const canCustomerAdmin = Boolean(coreContext?.admin?.can_open_customer_admin);
+  const canPalletAdmin = Boolean(coreContext?.admin?.can_open_pallet_admin);
+  const canAppAdmin = Boolean(coreContext?.admin?.can_open_app_admin);
+
+  $("openCustomerAdminBtn").style.display = canCustomerAdmin ? "" : "none";
+  $("quickCustomerAdminBtn").style.display = canCustomerAdmin ? "" : "none";
+  $("openPalletAdminBtn").style.display = canPalletAdmin ? "" : "none";
+  $("quickPalletAdminBtn").style.display = canPalletAdmin ? "" : "none";
+  $("openAppAdminBtn").style.display = canAppAdmin ? "" : "none";
+  $("quickAppAdminBtn").style.display = canAppAdmin ? "" : "none";
+
+  $("quickCustomerAdminBtn")?.addEventListener("click", () => window.location.href = "/admin.html");
+  $("quickPalletAdminBtn")?.addEventListener("click", () => window.location.href = "/modules/pallets/admin.html");
+  $("quickAppAdminBtn")?.addEventListener("click", () => window.location.href = "/app-admin.html");
+
+  renderModules();
+}
+
+async function loadCoreContext() {
+  const response = await api("/api/core/context", { method: "GET", headers: {} });
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/login.html";
+      return false;
+    }
+    const data = await response.json().catch(() => ({}));
+    setMsg("moduleMsg", data?.error || "Dashboard konnte nicht geladen werden.");
     return false;
   }
-
-  const me = await meResponse.json();
-  $("me").textContent = `${me.username} • ${me.business_role_name || "-"}`;
-
-  const permsResponse = await api("/api/my-permissions", { method: "GET", headers: {} });
-  currentPermissions = permsResponse.ok ? await permsResponse.json() : {};
-
-  const canOpenAdmin = !!(
-    me.role === "admin"
-    || currentPermissions?.admin?.full_access
-    || currentPermissions?.roles?.manage
-    || currentPermissions?.users?.manage
-  );
-    const canUseContainerRegistration = !!(
-      currentPermissions?.modules?.container_registration?.open
-      || currentPermissions?.modules?.container_registration?.history
-      || currentPermissions?.modules?.container_registration?.manage_time
-      || currentPermissions?.modules?.container_registration?.manage_status
-      || currentPermissions?.modules?.container_registration?.reset_container
-      || currentPermissions?.modules?.container_registration?.reset_all
-    );
-    const canUseContainerPlanning = !!(
-      currentPermissions?.modules?.container_planning?.open
-      || currentPermissions?.modules?.container_planning?.create
-      || currentPermissions?.modules?.container_planning?.edit
-      || currentPermissions?.modules?.container_planning?.delete
-    );
-  const canUseWarehouse = hasAnyPermission(currentPermissions?.warehouse);
-
-  if ($("openAdminBtn")) $("openAdminBtn").style.display = canOpenAdmin ? "" : "none";
-  if ($("warehouseModuleLink")) $("warehouseModuleLink").style.display = canUseWarehouse ? "" : "none";
-  if ($("containerAdminLink")) $("containerAdminLink").style.display = canUseContainerRegistration ? "" : "none";
-  if ($("containerPlanningLink")) $("containerPlanningLink").style.display = canUseContainerPlanning ? "" : "none";
-  refreshModuleSummary();
-
+  coreContext = await response.json();
+  applyContextUi();
   return true;
 }
 
-$("logoutBtn")?.addEventListener("click", () => {
-  closeSettingsMenu();
-  logout();
-});
-
-(async () => {
+(async function init() {
   bindSettingsMenu();
   bindPasswordModal();
-  updateDashboardHero();
-  refreshModuleSummary();
-
-  await trySsoIntake();
-
-  if (!token) {
-    window.location.href = "/login.html";
-    return;
-  }
-
-  const ready = await loadMeAndPermissions();
-  if (!ready) return;
-  startDashboardLiveFeedPolling();
-
-  await bindModuleLink(
-    "containerAdminLink",
-    "/api/container-registration-session",
-    "Container Anmeldung wird geöffnet ...",
-    "Container Anmeldung ist aktuell nicht verfügbar."
-  );
-  await bindModuleLink(
-    "containerPlanningLink",
-    "/api/container-planning-session",
-    "Container und LKW Planung wird geöffnet ...",
-    "Container und LKW Planung ist aktuell nicht verfügbar."
-  );
+  const ok = await loadCoreContext();
+  if (!ok) return;
+  startLiveFeed();
 })();

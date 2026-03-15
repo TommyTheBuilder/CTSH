@@ -72,10 +72,10 @@
         if (window.history.length > 1) {
           window.history.back();
           setTimeout(() => {
-            if (!document.hidden) window.location.href = "/app.html";
+            if (!document.hidden) window.location.href = "/pallets";
           }, 200);
         } else {
-          window.location.href = "/app.html";
+          window.location.href = "/pallets";
         }
       }
     }, 120);
