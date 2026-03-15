@@ -25,10 +25,14 @@ function formatFeedTimestamp(value) {
 }
 
 function updateDashboardHero() {
-  const hours = new Date().getHours();
+  const now = new Date();
+  const currentMinutes = (now.getHours() * 60) + now.getMinutes();
   let greeting = "Guten Abend";
-  if (hours >= 2 && hours < 12) greeting = "Guten Morgen";
-  else if (hours >= 12 && hours < 16) greeting = "Mahlzeit";
+
+  if (currentMinutes >= 120 && currentMinutes < 570) greeting = "Guten Morgen";
+  else if (currentMinutes >= 570 && currentMinutes < 690) greeting = "Guten Tag";
+  else if (currentMinutes >= 690 && currentMinutes < 780) greeting = "Mahlzeit";
+  else if (currentMinutes >= 780 && currentMinutes < 960) greeting = "Guten Tag";
 
   const greetingEl = $("dashboardGreeting");
 
