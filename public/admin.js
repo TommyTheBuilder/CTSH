@@ -66,48 +66,131 @@ function applyModuleNaming() {
 }
 const PERMISSION_CARD_META = {
   bookings: {
+    group: "portal",
     eyebrow: "Operativ",
     description: "Rechte für Erfassung, Einsicht und Belegbearbeitung."
   },
   "Bestände": {
+    group: "portal",
     eyebrow: "Reporting",
     description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
   },
   "Vorgänge": {
+    group: "portal",
     eyebrow: "Workflow",
     description: "Rechte für den kompletten Lebenszyklus von Fällen."
   },
   master: {
+    group: "admin",
     eyebrow: "Grunddaten",
     description: "Pflege von Standorten, Abteilungen und Transportpartnern."
   },
   users: {
+    group: "admin",
     eyebrow: "Zugriff",
     description: "Steuert Benutzerpflege und Abteilungsfokus im Admin-Bereich."
   },
   roles: {
+    group: "admin",
     eyebrow: "Governance",
     description: "Steuert Rollenpflege und optionalen Vollzugriff."
   },
   filters: {
+    group: "portal",
     eyebrow: "Navigation",
     description: "Erweitert Auswahlmöglichkeiten über zugewiesene Standorte hinaus."
   },
   integrations: {
+    group: "modules",
     eyebrow: "Module",
     description: "Steuert direkte Zugriffe auf angebundene Container-Module."
   }
 };
 
 PERMISSION_CARD_META.stock = {
+  group: "portal",
   eyebrow: "Reporting",
   description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
 };
 
 PERMISSION_CARD_META.cases = {
+  group: "portal",
   eyebrow: "Workflow",
   description: "Rechte für den kompletten Lebenszyklus von Fällen."
 };
+
+const PERMISSION_GROUP_ORDER = ["portal", "admin", "modules"];
+const PERMISSION_GROUP_META = {
+  portal: {
+    eyebrow: "Portal",
+    title: "Operative Bereiche",
+    description: "Buchungen, Bestände, Vorgänge und Filter für das Tagesgeschäft."
+  },
+  admin: {
+    eyebrow: "Administration",
+    title: "Verwaltung und Governance",
+    description: "Stammdaten, Benutzer und Rollen zentral pflegen."
+  },
+  modules: {
+    eyebrow: "Module",
+    title: "Angebundene Module",
+    description: "Externe Container-Module und deren Adminzugriffe separat steuern."
+  }
+};
+
+function getPermissionMeta(box) {
+  const firstCheckboxId = box.querySelector('input[type="checkbox"]')?.id || "";
+  const metaKey = firstCheckboxId.split("_")[1] || "";
+  return PERMISSION_CARD_META[metaKey] || {
+    group: "portal",
+    eyebrow: "Bereich",
+    description: "Berechtigungen für diesen Bereich."
+  };
+}
+
+function buildPermissionSection(groupKey) {
+  const meta = PERMISSION_GROUP_META[groupKey] || PERMISSION_GROUP_META.portal;
+  const section = document.createElement("section");
+  section.className = "permission-section";
+  section.dataset.permissionGroup = groupKey;
+  section.innerHTML = `
+    <div class="permission-section-head">
+      <div>
+        <span class="section-eyebrow">${meta.eyebrow}</span>
+        <h4>${meta.title}</h4>
+        <p>${meta.description}</p>
+      </div>
+      <span class="permission-section-count">0/0 Rechte</span>
+    </div>
+    <div class="permission-section-grid"></div>
+  `;
+  return section;
+}
+
+function ensurePermissionSections() {
+  const container = document.querySelector(".permissions-grid");
+  if (!container || container.dataset.grouped === "true") return;
+
+  const boxes = Array.from(container.querySelectorAll(".permBox"));
+  const sectionMap = new Map();
+  const fragment = document.createDocumentFragment();
+
+  PERMISSION_GROUP_ORDER.forEach((groupKey) => {
+    const section = buildPermissionSection(groupKey);
+    sectionMap.set(groupKey, section);
+    fragment.appendChild(section);
+  });
+
+  container.replaceChildren(fragment);
+  boxes.forEach((box) => {
+    const meta = getPermissionMeta(box);
+    const groupKey = meta.group || "portal";
+    const section = sectionMap.get(groupKey) || sectionMap.get("portal");
+    section?.querySelector(".permission-section-grid")?.appendChild(box);
+  });
+
+  container.dataset.grouped = "true";
+}
 
 function enhancePermissionCards() {
   document.querySelectorAll(".permBox").forEach((box) => {
@@ -115,14 +198,10 @@ function enhancePermissionCards() {
     if (!titleEl || box.querySelector(".permBox-head")) return;
 
     const rawTitle = titleEl.textContent.trim();
-    const firstCheckboxId = box.querySelector('input[type="checkbox"]')?.id || "";
-    const metaKey = firstCheckboxId.split("_")[1] || "";
-    const meta = PERMISSION_CARD_META[metaKey] || {
-      eyebrow: "Bereich",
-      description: "Berechtigungen für diesen Bereich."
-    };
+    const meta = getPermissionMeta(box);
 
     box.dataset.permGroup = box.dataset.permGroup || rawTitle;
+    box.dataset.permSection = meta.group || "portal";
 
     const head = document.createElement("div");
     head.className = "permBox-head";
@@ -144,6 +223,50 @@ function getPermissionBoxes() {
   const boxes = document.querySelectorAll(".permissions-grid .permBox");
   if (boxes.length) return Array.from(boxes);
   return Array.from(document.querySelectorAll(".modern-perm-grid .permBox"));
+}
+
+function updatePermissionSections() {
+  document.querySelectorAll(".permission-section").forEach((section) => {
+    const boxes = Array.from(section.querySelectorAll(".permBox"));
+    const visibleBoxes = boxes.filter((box) => !box.classList.contains("is-empty"));
+    const checkboxes = boxes.flatMap((box) => Array.from(box.querySelectorAll('input[type="checkbox"]')));
+    const checked = checkboxes.filter((input) => input.checked).length;
+    const total = checkboxes.length;
+    const countEl = section.querySelector(".permission-section-count");
+    if (countEl) countEl.textContent = `${checked}/${total} Rechte`;
+    section.classList.toggle("is-hidden", visibleBoxes.length === 0);
+  });
+}
+
+function updatePermissionOverview() {
+  const boxes = getPermissionBoxes();
+  const roleSelect = $("roleSelect");
+  const selectedRole = roleSelect?.selectedOptions?.[0]?.textContent?.trim() || "";
+  const checkboxes = boxes.flatMap((box) => Array.from(box.querySelectorAll('input[type="checkbox"]')));
+  const enabled = checkboxes.filter((input) => input.checked).length;
+  const total = checkboxes.length;
+  const visibleSections = Array.from(document.querySelectorAll(".permission-section"))
+    .filter((section) => !section.classList.contains("is-hidden")).length;
+  const visibleBoxes = boxes.filter((box) => !box.classList.contains("is-empty")).length;
+
+  if ($("rightsSummaryRole")) $("rightsSummaryRole").textContent = selectedRole || "-";
+  if ($("rightsSummaryRoleHint")) {
+    $("rightsSummaryRoleHint").textContent = selectedRole
+      ? `${visibleBoxes} Rechtekarten stehen aktuell zur Bearbeitung bereit.`
+      : "Bitte zuerst eine Rolle auswaehlen.";
+  }
+  if ($("rightsSummaryEnabled")) $("rightsSummaryEnabled").textContent = String(enabled);
+  if ($("rightsSummaryEnabledHint")) {
+    $("rightsSummaryEnabledHint").textContent = total
+      ? `Von ${total} verfuegbaren Rechten aktiviert.`
+      : "Noch keine Rechte verfuegbar.";
+  }
+  if ($("rightsSummaryVisible")) $("rightsSummaryVisible").textContent = String(visibleSections);
+  if ($("rightsSummaryVisibleHint")) {
+    $("rightsSummaryVisibleHint").textContent = visibleSections
+      ? `Filter zeigt aktuell ${visibleSections} Bereiche mit ${visibleBoxes} Karten.`
+      : "Filter zeigt aktuell 0 Bereiche.";
+  }
 }
 
 function updatePermissionCardCounts() {
@@ -180,20 +303,28 @@ function applyPermissionFilters() {
 
     box.classList.toggle("is-empty", visibleCount === 0);
   });
+
+  updatePermissionSections();
+  updatePermissionOverview();
+}
+
+function refreshPermissionPanel() {
+  updatePermissionCardCounts();
+  applyPermissionFilters();
 }
 
 function bindPermissionPanel() {
   getPermissionBoxes().forEach((box) => {
     box.querySelectorAll('input[type="checkbox"]').forEach((input) => {
       input.addEventListener("change", () => {
-        updatePermissionCardCounts();
-        applyPermissionFilters();
+        refreshPermissionPanel();
       });
     });
   });
 
   $("permissionSearch")?.addEventListener("input", applyPermissionFilters);
   $("permissionShowEnabledOnly")?.addEventListener("change", applyPermissionFilters);
+  $("roleSelect")?.addEventListener("change", updatePermissionOverview);
 }
 
 function setMsg(id, text, ok = false) {
@@ -808,8 +939,7 @@ async function loadRoles() {
   // apply permissions for currently selected
   if (sel && sel.value) applyRoleToCheckboxes(Number(sel.value));
   else {
-    updatePermissionCardCounts();
-    applyPermissionFilters();
+    refreshPermissionPanel();
   }
 }
 
@@ -1049,13 +1179,11 @@ function applyRoleToCheckboxes(roleId) {
   const role = ROLES.find(r => Number(r.id) === Number(roleId));
   if (!role) {
     setPermCheckboxes({});
-    updatePermissionCardCounts();
-    applyPermissionFilters();
+    refreshPermissionPanel();
     return;
   }
   setPermCheckboxes(role.permissions || {});
-  updatePermissionCardCounts();
-  applyPermissionFilters();
+  refreshPermissionPanel();
 }
 
 // ---------------- Actions ----------------
@@ -1332,8 +1460,9 @@ $("saveUserBtn")?.addEventListener("click", async () => {
     bindPasswordModal();
     applyModuleNaming();
     enhancePermissionCards();
+    ensurePermissionSections();
     bindPermissionPanel();
-    updatePermissionCardCounts();
+    refreshPermissionPanel();
     await loadMe();
     await loadPerms();
 
