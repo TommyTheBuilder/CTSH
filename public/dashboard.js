@@ -176,35 +176,49 @@ function moduleIcon(moduleKey) {
   if (moduleKey === "pallets") {
     return `
       <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
-        <rect x="13" y="8" width="38" height="48" rx="2" fill="#FFE2A0" stroke="#0B0B12" stroke-width="3"></rect>
-        <rect x="19" y="12" width="6" height="40" fill="#FFC24D"></rect>
-        <rect x="31" y="12" width="6" height="40" fill="#FFC24D"></rect>
-        <rect x="43" y="12" width="6" height="40" fill="#FFC24D"></rect>
+        <rect x="8" y="42" width="48" height="6" rx="2" fill="#8B5A2B"></rect>
+        <rect x="12" y="48" width="8" height="6" rx="1.5" fill="#6B4423"></rect>
+        <rect x="28" y="48" width="8" height="6" rx="1.5" fill="#6B4423"></rect>
+        <rect x="44" y="48" width="8" height="6" rx="1.5" fill="#6B4423"></rect>
+        <rect x="12" y="22" width="14" height="18" rx="2" fill="#FFD66E" stroke="#0B0B12" stroke-width="3"></rect>
+        <rect x="25" y="18" width="14" height="22" rx="2" fill="#FFC24D" stroke="#0B0B12" stroke-width="3"></rect>
+        <rect x="38" y="22" width="14" height="18" rx="2" fill="#FFB347" stroke="#0B0B12" stroke-width="3"></rect>
+        <path d="M19 22v18M32 18v22M45 22v18" stroke="#FFF4D1" stroke-width="2.5" stroke-linecap="round"></path>
       </svg>
     `;
   }
   if (moduleKey === "warehouse") {
     return `
       <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
-        <rect x="16" y="12" width="64" height="36" rx="4" fill="#E6FFFB" stroke="#08131F" stroke-width="3"></rect>
-        <rect x="24" y="20" width="12" height="20" fill="#5EEAD4"></rect>
-        <rect x="42" y="20" width="12" height="20" fill="#2DD4BF"></rect>
-        <rect x="60" y="20" width="12" height="20" fill="#14B8A6"></rect>
+        <path d="M14 28L48 10l34 18v26H14z" fill="#FFF0C9" stroke="#0B1320" stroke-width="3" stroke-linejoin="round"></path>
+        <rect x="22" y="28" width="18" height="24" rx="2" fill="#5EEAD4" stroke="#0B1320" stroke-width="3"></rect>
+        <rect x="40" y="28" width="18" height="24" rx="2" fill="#E7FFF8" stroke="#0B1320" stroke-width="3"></rect>
+        <rect x="58" y="28" width="16" height="24" rx="2" fill="#2DD4BF" stroke="#0B1320" stroke-width="3"></rect>
+        <path d="M22 38h18M40 38h18M58 38h16" stroke="#0B1320" stroke-width="3"></path>
+        <path d="M31 28v24M49 28v24M66 28v24" stroke="#0B1320" stroke-width="3"></path>
       </svg>
     `;
   }
   if (moduleKey === "container_registration") {
     return `
       <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
-        <path d="M12 45V30h11l6-7h17v22z" fill="#FF5A7F" stroke="#09090F" stroke-width="3" stroke-linejoin="round"></path>
-        <rect x="31" y="17" width="40" height="26" fill="#FFD369" stroke="#09090F" stroke-width="3"></rect>
+        <path d="M10 46h76" stroke="#0C1020" stroke-width="3" stroke-linecap="round"></path>
+        <path d="M18 42V18h10v24" stroke="#0C1020" stroke-width="3" stroke-linecap="round"></path>
+        <path d="M68 42V18h10v24" stroke="#0C1020" stroke-width="3" stroke-linecap="round"></path>
+        <rect x="24" y="20" width="28" height="18" rx="2" fill="#FFD369" stroke="#0C1020" stroke-width="3"></rect>
+        <path d="M52 38V28h10l6-6h12v16z" fill="#FF5A7F" stroke="#0C1020" stroke-width="3" stroke-linejoin="round"></path>
+        <path d="M30 29l5 5 10-12" fill="none" stroke="#0C1020" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path>
       </svg>
     `;
   }
   return `
     <svg viewBox="0 0 96 64" focusable="false" aria-hidden="true">
-      <path d="M12 43V27h12l6-7h18v23z" fill="#3D8CFF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
-      <rect x="31" y="13" width="47" height="30" rx="2" fill="#FF4457" stroke="#11111A" stroke-width="3"></rect>
+      <rect x="14" y="12" width="28" height="40" rx="4" fill="#EAF2FF" stroke="#11111A" stroke-width="3"></rect>
+      <path d="M14 24h28" stroke="#11111A" stroke-width="3"></path>
+      <path d="M22 16v8M34 16v8" stroke="#5B8CFF" stroke-width="4" stroke-linecap="round"></path>
+      <path d="M20 31h16M20 39h12" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"></path>
+      <path d="M44 44V29h12l6-7h20v22z" fill="#4C79FF" stroke="#11111A" stroke-width="3" stroke-linejoin="round"></path>
+      <rect x="62" y="19" width="20" height="20" rx="2" fill="#FF5568" stroke="#11111A" stroke-width="3"></rect>
     </svg>
   `;
 }
@@ -284,8 +298,13 @@ function applyContextUi() {
   $("me").textContent = coreContext?.user
     ? `${coreContext.user.username} - ${coreContext.user.business_role_name || "-"}`
     : "-";
-  $("installationName").textContent = coreContext?.installation?.name || coreContext?.customer?.name || "Keine Installation";
-  $("accessSummary").textContent = coreContext?.user?.is_app_admin ? "App Admin" : "Organisationskontext";
+  if ($("installationName")) {
+    $("installationName").textContent = coreContext?.installation?.name || coreContext?.customer?.name || "Keine Installation";
+  }
+  if ($("dashboardLead")) {
+    $("dashboardLead").textContent = "";
+    $("dashboardLead").style.display = "none";
+  }
 
   const canCustomerAdmin = Boolean(coreContext?.admin?.can_open_customer_admin);
   const canPalletAdmin = Boolean(coreContext?.admin?.can_open_pallet_admin);
