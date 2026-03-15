@@ -53,11 +53,19 @@ WHERE entrepreneurs.app_customer_id IS NULL
   AND c.slug = 'standardkunde';
 
 UPDATE bookings b
-SET app_customer_id = COALESCE(u.app_customer_id, l.app_customer_id)
-FROM users u
-LEFT JOIN locations l ON l.id = b.location_id
-WHERE b.app_customer_id IS NULL
-  AND u.id = b.user_id;
+SET app_customer_id = COALESCE(
+  (
+    SELECT u.app_customer_id
+    FROM users u
+    WHERE u.id = b.user_id
+  ),
+  (
+    SELECT l.app_customer_id
+    FROM locations l
+    WHERE l.id = b.location_id
+  )
+)
+WHERE b.app_customer_id IS NULL;
 
 UPDATE bookings b
 SET app_customer_id = l.app_customer_id
@@ -66,11 +74,19 @@ WHERE b.app_customer_id IS NULL
   AND l.id = b.location_id;
 
 UPDATE entrepreneur_history eh
-SET app_customer_id = COALESCE(u.app_customer_id, l.app_customer_id)
-FROM users u
-LEFT JOIN locations l ON l.id = eh.location_id
-WHERE eh.app_customer_id IS NULL
-  AND u.id = eh.created_by;
+SET app_customer_id = COALESCE(
+  (
+    SELECT u.app_customer_id
+    FROM users u
+    WHERE u.id = eh.created_by
+  ),
+  (
+    SELECT l.app_customer_id
+    FROM locations l
+    WHERE l.id = eh.location_id
+  )
+)
+WHERE eh.app_customer_id IS NULL;
 
 UPDATE entrepreneur_history eh
 SET app_customer_id = l.app_customer_id
@@ -79,11 +95,19 @@ WHERE eh.app_customer_id IS NULL
   AND l.id = eh.location_id;
 
 UPDATE booking_cases bc
-SET app_customer_id = COALESCE(u.app_customer_id, l.app_customer_id)
-FROM users u
-LEFT JOIN locations l ON l.id = bc.location_id
-WHERE bc.app_customer_id IS NULL
-  AND u.id = bc.created_by;
+SET app_customer_id = COALESCE(
+  (
+    SELECT u.app_customer_id
+    FROM users u
+    WHERE u.id = bc.created_by
+  ),
+  (
+    SELECT l.app_customer_id
+    FROM locations l
+    WHERE l.id = bc.location_id
+  )
+)
+WHERE bc.app_customer_id IS NULL;
 
 UPDATE booking_cases bc
 SET app_customer_id = l.app_customer_id
@@ -92,11 +116,19 @@ WHERE bc.app_customer_id IS NULL
   AND l.id = bc.location_id;
 
 UPDATE booking_case_history bch
-SET app_customer_id = COALESCE(bc.app_customer_id, u.app_customer_id)
-FROM booking_cases bc
-LEFT JOIN users u ON u.id = bch.changed_by
-WHERE bch.app_customer_id IS NULL
-  AND bc.id = bch.case_id;
+SET app_customer_id = COALESCE(
+  (
+    SELECT bc.app_customer_id
+    FROM booking_cases bc
+    WHERE bc.id = bch.case_id
+  ),
+  (
+    SELECT u.app_customer_id
+    FROM users u
+    WHERE u.id = bch.changed_by
+  )
+)
+WHERE bch.app_customer_id IS NULL;
 
 UPDATE users
 SET is_app_admin = TRUE
