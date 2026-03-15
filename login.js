@@ -26,7 +26,7 @@ async function submitLogin(event) {
   }
 
   loginBtn.disabled = true;
-  loginBtn.textContent = "Anmeldung laeuft...";
+  loginBtn.textContent = "Anmeldung l\u00e4uft...";
 
   try {
     const response = await fetch("/api/login", {
