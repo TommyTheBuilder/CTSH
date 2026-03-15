@@ -3,16 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lagersystem</title>
+  <title>Lager-Versandsystem</title>
   <link rel="stylesheet" href="/public/styles.css" />
   <link rel="stylesheet" href="/modules/warehouse/warehouse.css" />
 </head>
 <body class="light">
   <header class="topbar topbar-modern warehouse-topbar">
-    <div class="system-logo-wrap">
-      <img src="/public/logo.png" alt="ICS Logo" class="system-logo" />
-      <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
-    </div>
+    <a href="/public/dashboard.html" class="warehouse-topbar-brand" aria-label="Zum Dashboard">Lager-Versandsystem</a>
     <div class="warehouse-topbar-spacer" aria-hidden="true"></div>
     <div class="row topbar-actions" style="align-items:center;">
       <div class="settings-menu-wrap" id="settingsMenuWrap">
@@ -32,9 +29,9 @@
   <main class="warehouse-main">
     <section class="warehouse-page-header">
       <div class="warehouse-page-header__copy">
-        <span class="warehouse-page-header__eyebrow">Warehouse Management System</span>
+        <span class="warehouse-page-header__eyebrow">Lager-Versandsystem</span>
         <div class="warehouse-page-title-row">
-          <h1>Lagersystem</h1>
+          <h1>Lager-Versandsystem</h1>
           <span class="pill" id="warehouseMe">-</span>
         </div>
         <p class="warehouse-page-header__lead">
@@ -203,12 +200,34 @@
                     <input id="bookingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="optional" autocomplete="off" />
                   </div>
                   <div id="bookingSourceField">
-                    <label for="bookingSourceLookup">Lagerplatz Quelle</label>
-                    <input id="bookingSourceLookup" type="text" list="warehouseLocationLookupList" placeholder="Quell-Lagerplatz wählen" autocomplete="off" />
+                    <label for="bookingSourceSelect">Lagerplatz Quelle</label>
+                    <select id="bookingSourceSelect">
+                      <option value="">Quell-Lagerplatz wählen</option>
+                    </select>
                   </div>
                   <div id="bookingDestinationField">
-                    <label for="bookingDestinationLookup">Lagerplatz Ziel</label>
-                    <input id="bookingDestinationLookup" type="text" list="warehouseLocationLookupList" placeholder="Ziel-Lagerplatz wählen" autocomplete="off" />
+                    <label for="bookingDestinationSelect">Ziel-Lagerplatz</label>
+                    <select id="bookingDestinationSelect">
+                      <option value="">Ziel-Lagerplatz wählen</option>
+                    </select>
+                  </div>
+                  <div id="bookingSourceSlotsField">
+                    <label for="bookingSourceSlots">Stellplätze Quelle</label>
+                    <select id="bookingSourceSlots" multiple size="8"></select>
+                    <p class="warehouse-field-help" id="bookingSourceSlotsHelp">Belegte Stellplätze werden geladen, sobald ein Quell-Lagerplatz gewählt wurde.</p>
+                  </div>
+                  <div id="bookingDestinationSlotsField">
+                    <label for="bookingDestinationSlots">Stellplätze Ziel</label>
+                    <select id="bookingDestinationSlots" multiple size="8"></select>
+                    <p class="warehouse-field-help" id="bookingDestinationSlotsHelp">Freie Stellplätze werden geladen, sobald ein Ziel-Lagerplatz gewählt wurde.</p>
+                  </div>
+                  <div>
+                    <label for="bookingPackagingType">Verpackungsart</label>
+                    <select id="bookingPackagingType">
+                      <option value="">Verpackungsart wählen</option>
+                      <option value="Karton groß">Karton groß</option>
+                      <option value="Karton klein">Karton klein</option>
+                    </select>
                   </div>
                   <div>
                     <label for="bookingDate">Datum</label>
@@ -219,6 +238,9 @@
                     <textarea id="bookingNote" rows="3" placeholder="z.B. Lieferschein, Besonderheit oder Hinweis"></textarea>
                   </div>
                 </div>
+                <p class="warehouse-field-help warehouse-field-help--status" id="bookingValidationHint">
+                  Wählen Sie exakt so viele Stellplätze aus, wie unter Menge eingetragen ist.
+                </p>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="bookingSubmitBtn" type="submit">Buchung speichern</button>
                   <button class="secondary" id="bookingResetBtn" type="button">Formular leeren</button>
@@ -235,7 +257,7 @@
                 </div>
               </div>
               <p class="warehouse-card__lead">
-                Alle Lagerplätze werden mit belegter Menge, freiem Platz und Auslastung angezeigt. So sieht das Lagerteam sofort, welche Plätze voll, knapp oder frei sind.
+                Klicken Sie auf einen Lagerplatz, um das Stellplatz-Raster mit freien und belegten Feldern zu öffnen. So sieht das Lagerteam sofort, welche Plätze voll, knapp oder direkt nutzbar sind.
               </p>
               <div class="warehouse-capacity-grid" id="bookingLocationCapacity">
                 <div class="warehouse-empty">Lagerplätze werden geladen...</div>
@@ -244,6 +266,8 @@
                 <div class="warehouse-preview__row"><span>Typ</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Artikel</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Lagerplatz</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Stellplätze</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Verpackung</span><strong>-</strong></div>
                 <div class="warehouse-preview__row"><span>Menge</span><strong>-</strong></div>
               </div>
             </article>
@@ -284,14 +308,27 @@
                     <input id="inventoryLocationLookup" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz wählen" autocomplete="off" />
                   </div>
                   <div>
+                    <label for="inventorySlotNumber">Stellplatz</label>
+                    <input id="inventorySlotNumber" type="number" min="1" value="1" />
+                  </div>
+                  <div>
                     <label for="inventoryArticleLookup">Artikel</label>
                     <input id="inventoryArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikel wählen" autocomplete="off" />
                   </div>
                   <div>
+                    <label for="inventoryPackagingType">Verpackungsart</label>
+                    <select id="inventoryPackagingType">
+                      <option value="">Verpackungsart wählen</option>
+                      <option value="Karton groß">Karton groß</option>
+                      <option value="Karton klein">Karton klein</option>
+                    </select>
+                  </div>
+                  <div>
                     <label for="inventoryQuantity">Menge</label>
-                    <input id="inventoryQuantity" type="number" min="1" value="1" />
+                    <input id="inventoryQuantity" type="number" min="1" value="1" readonly />
                   </div>
                 </div>
+                <p class="warehouse-field-help">Ein Bestandsdatensatz belegt genau einen Stellplatz mit Menge 1.</p>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="inventorySaveBtn" type="submit">Datensatz speichern</button>
                   <button class="secondary" id="inventoryResetBtn" type="button">Auswahl löschen</button>
@@ -548,6 +585,29 @@
   <datalist id="warehouseArticleLookupList"></datalist>
   <datalist id="warehouseCustomerLookupList"></datalist>
   <datalist id="warehouseLocationLookupList"></datalist>
+
+  <div class="warehouse-slot-modal-back" id="slotModalBack" aria-hidden="true">
+    <div class="warehouse-slot-modal" role="dialog" aria-modal="true" aria-labelledby="slotModalTitle">
+      <div class="warehouse-slot-modal__head">
+        <div>
+          <span class="warehouse-section-kicker">Stellplatz-Ebene</span>
+          <h3 id="slotModalTitle">Lagerplatzdetails</h3>
+        </div>
+        <button class="secondary" id="slotModalCloseBtn" type="button">Schließen</button>
+      </div>
+      <p class="warehouse-slot-modal__lead" id="slotModalLead">
+        Belegte und freie Stellplätze werden geladen.
+      </p>
+      <div class="warehouse-slot-legend">
+        <span class="warehouse-slot-legend__item"><span class="warehouse-slot-legend__swatch warehouse-slot-legend__swatch--free"></span>Frei</span>
+        <span class="warehouse-slot-legend__item"><span class="warehouse-slot-legend__swatch warehouse-slot-legend__swatch--occupied"></span>Belegt</span>
+      </div>
+      <div class="warehouse-slot-modal__grid" id="slotModalGrid"></div>
+      <div class="warehouse-slot-modal__detail" id="slotModalDetail">
+        <div class="warehouse-empty">Wählen Sie einen Stellplatz aus oder fahren Sie mit der Maus über ein belegtes Feld.</div>
+      </div>
+    </div>
+  </div>
 
   <div class="modalBack" id="passwordModalBack" aria-hidden="true">
     <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">

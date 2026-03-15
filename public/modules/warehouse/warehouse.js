@@ -1,6 +1,8 @@
 const token = localStorage.getItem("token");
 if (!token) window.location.href = "/login.html";
 
+const PACKAGING_OPTIONS = ["Karton groß", "Karton klein"];
+
 const state = {
   activeTab: "dashboard",
   me: null,
@@ -14,6 +16,13 @@ const state = {
   inventory: [],
   transactions: [],
   pickingOrders: [],
+  locationSlotCache: {},
+  bookingSlotSyncId: 0,
+  slotModal: {
+    locationId: null,
+    locationName: "",
+    rows: []
+  },
   selected: {
     customerId: null,
     articleId: null,
@@ -189,8 +198,451 @@ function locationLabel(location) {
   return `${location.name} (${location.typ})`;
 }
 
+function setSelectValue(selectEl, value) {
+  if (!selectEl) return;
+  const normalized = value === null || value === undefined ? "" : String(value);
+  const hasValue = Array.from(selectEl.options).some((option) => option.value === normalized);
+  selectEl.value = hasValue ? normalized : "";
+}
+
+function selectedValues(selectId) {
+  const select = $(selectId);
+  if (!select) return [];
+  return Array.from(select.selectedOptions || [])
+    .map((option) => Number(option.value))
+    .filter((value) => Number.isInteger(value));
+}
+
+function formatSlotList(values = []) {
+  return values.length ? values.map((value) => formatNumber(value)).join(", ") : "-";
+}
+
+function formatTransactionSlotSummary(row) {
+  if (!row) return "-";
+  if (row.typ === "OUT") return formatSlotList(row.source_stellplaetze || []);
+  if (row.typ === "TRANSFER") {
+    return `Quelle: ${formatSlotList(row.source_stellplaetze || [])} | Ziel: ${formatSlotList(row.target_stellplaetze || [])}`;
+  }
+  return formatSlotList(row.target_stellplaetze || []);
+}
+
+function locationFreeSlotCount(location) {
+  const capacity = Number(location?.kapazitaet || 0);
+  const occupied = Number(location?.belegte_positionen || 0);
+  return Math.max(capacity - occupied, 0);
+}
+
+function locationHasOccupiedSlots(location) {
+  return Number(location?.belegte_positionen || 0) > 0;
+}
+
+function bookingLocationOptionLabel(location) {
+  return `${location.name} (${location.typ}) - ${formatNumber(location.belegte_positionen || 0)}/${formatNumber(location.kapazitaet || 0)} belegt`;
+}
+
+function renderPackagingOptions(selectId, selectedValue = "") {
+  const select = $(selectId);
+  if (!select) return;
+  const currentValue = selectedValue || select.value || "";
+  select.innerHTML = `
+    <option value="">Verpackungsart wählen</option>
+    ${PACKAGING_OPTIONS.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}
+  `;
+  setSelectValue(select, currentValue);
+}
+
+function invalidateLocationSlotCache(locationId = null) {
+  if (locationId === null || locationId === undefined) {
+    state.locationSlotCache = {};
+    return;
+  }
+  delete state.locationSlotCache[String(locationId)];
+}
+
 function resetBookingDate() {
   if ($("bookingDate")) $("bookingDate").value = formatLocalDateTimeInput();
+}
+
+function renderBookingLocationOptions() {
+  const type = $("bookingType")?.value || "IN";
+  const sourceSelect = $("bookingSourceSelect");
+  const destinationSelect = $("bookingDestinationSelect");
+  if (!sourceSelect || !destinationSelect) return;
+
+  const currentSource = sourceSelect.value;
+  const currentDestination = destinationSelect.value;
+  const sourceRows = state.refs.locations.filter((location) => locationHasOccupiedSlots(location));
+  const destinationRows = state.refs.locations.filter((location) => locationFreeSlotCount(location) > 0);
+
+  sourceSelect.innerHTML = `
+    <option value="">Quell-Lagerplatz wählen</option>
+    ${sourceRows.map((location) => `
+      <option value="${escapeHtml(location.id)}">${escapeHtml(bookingLocationOptionLabel(location))}</option>
+    `).join("")}
+  `;
+
+  destinationSelect.innerHTML = `
+    <option value="">Ziel-Lagerplatz wählen</option>
+    ${destinationRows.map((location) => `
+      <option value="${escapeHtml(location.id)}">${escapeHtml(bookingLocationOptionLabel(location))}</option>
+    `).join("")}
+  `;
+
+  setSelectValue(sourceSelect, currentSource);
+  setSelectValue(destinationSelect, currentDestination);
+
+  if (type === "IN") sourceSelect.value = "";
+  if (type === "OUT") destinationSelect.value = "";
+}
+
+async function loadLocationSlots(locationId, options = {}) {
+  const { force = false } = options;
+  const cacheKey = String(locationId);
+  if (!force && Array.isArray(state.locationSlotCache[cacheKey])) {
+    return state.locationSlotCache[cacheKey];
+  }
+
+  const response = await api(`/api/warehouse/storage-locations/${locationId}/slots`, { method: "GET", headers: {} });
+  const data = await readJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(data?.error || "Stellplätze konnten nicht geladen werden.");
+  }
+
+  state.locationSlotCache[cacheKey] = Array.isArray(data) ? data : [];
+  return state.locationSlotCache[cacheKey];
+}
+
+function getSelectedSlotRows(locationId, slotNumbers = []) {
+  if (!locationId || !slotNumbers.length) return [];
+  const rows = state.locationSlotCache[String(locationId)] || [];
+  const selectedSet = new Set(slotNumbers.map((value) => Number(value)));
+  return rows.filter((row) => selectedSet.has(Number(row.stellplatz_nr)));
+}
+
+function renderBookingSlotOptions(selectId, rows, mode, helpId, emptyText) {
+  const select = $(selectId);
+  const help = $(helpId);
+  if (!select) return;
+
+  const currentValues = new Set(selectedValues(selectId).map((value) => String(value)));
+
+  if (!rows.length) {
+    select.innerHTML = "";
+    if (help) help.textContent = emptyText;
+    return;
+  }
+
+  select.innerHTML = rows.map((row) => {
+    const slotNo = Number(row.stellplatz_nr);
+    const suffix = mode === "occupied"
+      ? ` - ${row.artikel_nr || "-"} | ${row.bezeichnung || "-"} | ${row.customer_name || "kein Kunde"}`
+      : " - frei";
+    return `
+      <option value="${escapeHtml(slotNo)}" ${currentValues.has(String(slotNo)) ? "selected" : ""}>
+        ${escapeHtml(`Stellplatz ${slotNo}${suffix}`)}
+      </option>
+    `;
+  }).join("");
+
+  if (help) {
+    help.textContent = mode === "occupied"
+      ? "Nur belegte Stellplätze werden angezeigt. Bei gewähltem Artikel wird zusätzlich auf diesen Artikel gefiltert."
+      : "Nur freie Stellplätze sind auswählbar. Volle Lagerplätze erscheinen nicht in der Zielliste.";
+  }
+}
+
+function syncBookingPackagingFromSource() {
+  const type = $("bookingType")?.value || "IN";
+  const source = resolveLocation($("bookingSourceSelect")?.value || "");
+  const packagingSelect = $("bookingPackagingType");
+  if (!packagingSelect || type === "IN" || !source) return;
+
+  const selectedRows = getSelectedSlotRows(source.id, selectedValues("bookingSourceSlots"));
+  if (!selectedRows.length) return;
+  const packagingValues = [...new Set(selectedRows.map((row) => row.verpackungsart).filter(Boolean))];
+  if (packagingValues.length === 1) {
+    packagingSelect.value = packagingValues[0];
+  }
+}
+
+async function syncBookingSlotOptions() {
+  const syncId = Date.now();
+  state.bookingSlotSyncId = syncId;
+
+  const type = $("bookingType")?.value || "IN";
+  const article = resolveArticle($("bookingArticleLookup")?.value || "");
+  const source = resolveLocation($("bookingSourceSelect")?.value || "");
+  const destination = resolveLocation($("bookingDestinationSelect")?.value || "");
+
+  renderBookingLocationOptions();
+
+  try {
+    let sourceRows = [];
+    let destinationRows = [];
+
+    if ((type === "OUT" || type === "TRANSFER") && source) {
+      sourceRows = (await loadLocationSlots(source.id)).filter((row) => row.status === "OCCUPIED");
+      if (article) {
+        sourceRows = sourceRows.filter((row) => Number(row.article_id) === Number(article.id));
+      }
+    }
+
+    if ((type === "IN" || type === "TRANSFER") && destination) {
+      destinationRows = (await loadLocationSlots(destination.id)).filter((row) => row.status === "FREE");
+    }
+
+    if (state.bookingSlotSyncId !== syncId) return;
+
+    renderBookingSlotOptions(
+      "bookingSourceSlots",
+      sourceRows,
+      "occupied",
+      "bookingSourceSlotsHelp",
+      source
+        ? "Keine belegten Stellplätze für die aktuelle Auswahl gefunden."
+        : "Belegte Stellplätze werden geladen, sobald ein Quell-Lagerplatz gewählt wurde."
+    );
+    renderBookingSlotOptions(
+      "bookingDestinationSlots",
+      destinationRows,
+      "free",
+      "bookingDestinationSlotsHelp",
+      destination
+        ? "Keine freien Stellplätze verfügbar."
+        : "Freie Stellplätze werden geladen, sobald ein Ziel-Lagerplatz gewählt wurde."
+    );
+
+    syncBookingPackagingFromSource();
+    renderBookingPreview();
+    updateBookingSubmitState();
+  } catch (error) {
+    if (state.bookingSlotSyncId !== syncId) return;
+    setMessage("bookingMsg", error.message || "Stellplätze konnten nicht geladen werden.");
+    updateBookingSubmitState();
+  }
+}
+
+function validateBookingForm(options = {}) {
+  const { showMessage = false } = options;
+  const type = $("bookingType")?.value || "IN";
+  const article = resolveArticle($("bookingArticleLookup")?.value || "");
+  const source = resolveLocation($("bookingSourceSelect")?.value || "");
+  const destination = resolveLocation($("bookingDestinationSelect")?.value || "");
+  const quantity = Number($("bookingQuantity")?.value || 0);
+  const packaging = String($("bookingPackagingType")?.value || "").trim();
+  const sourceSlots = selectedValues("bookingSourceSlots");
+  const destinationSlots = selectedValues("bookingDestinationSlots");
+  const validationHint = $("bookingValidationHint");
+  const bookingStarted = Boolean(
+    String($("bookingArticleLookup")?.value || "").trim()
+    || String($("bookingCustomerLookup")?.value || "").trim()
+    || String($("bookingSourceSelect")?.value || "").trim()
+    || String($("bookingDestinationSelect")?.value || "").trim()
+    || packaging
+    || sourceSlots.length
+    || destinationSlots.length
+    || quantity > 1
+  );
+
+  let message = "";
+
+  if (!article) message = "Bitte einen gültigen Artikel auswählen.";
+  else if (!Number.isInteger(quantity) || quantity <= 0) message = "Bitte eine gültige Menge eingeben.";
+  else if (!packaging) message = "Bitte eine Verpackungsart auswählen.";
+  else if (type === "IN" && !destination) message = "Bitte einen Ziel-Lagerplatz auswählen.";
+  else if (type === "OUT" && !source) message = "Bitte einen Quell-Lagerplatz auswählen.";
+  else if (type === "TRANSFER" && (!source || !destination)) message = "Bitte Quelle und Ziel auswählen.";
+  else if (type === "TRANSFER" && source && destination && Number(source.id) === Number(destination.id)) {
+    message = "Quelle und Ziel müssen bei einer Umlagerung unterschiedlich sein.";
+  } else if (type === "IN" && destinationSlots.length !== quantity) {
+    message = "Für eine Einbuchung muss die Menge exakt der Anzahl ausgewählter Ziel-Stellplätze entsprechen.";
+  } else if (type === "OUT" && sourceSlots.length !== quantity) {
+    message = "Für eine Ausbuchung muss die Menge exakt der Anzahl ausgewählter Quell-Stellplätze entsprechen.";
+  } else if (type === "TRANSFER" && (sourceSlots.length !== quantity || destinationSlots.length !== quantity)) {
+    message = "Für eine Umlagerung müssen Quelle, Ziel und Menge exakt gleich viele Stellplätze enthalten.";
+  } else if (type !== "IN" && source) {
+    const selectedSourceRows = getSelectedSlotRows(source.id, sourceSlots);
+    const packagingValues = [...new Set(selectedSourceRows.map((row) => row.verpackungsart).filter(Boolean))];
+    if (packagingValues.length > 1) {
+      message = "Die ausgewählten Quell-Stellplätze verwenden unterschiedliche Verpackungsarten.";
+    } else if (packagingValues.length === 1 && packagingValues[0] !== packaging) {
+      message = "Die Verpackungsart muss zu den ausgewählten Quell-Stellplätzen passen.";
+    }
+  }
+
+  if (validationHint) {
+    validationHint.textContent = message && (showMessage || bookingStarted)
+      ? message
+      : "Wählen Sie exakt so viele Stellplätze aus, wie unter Menge eingetragen ist.";
+    validationHint.style.color = message && (showMessage || bookingStarted) ? "#b00020" : "";
+  }
+
+  if (showMessage) {
+    if (message) setMessage("bookingMsg", message);
+    else clearMessage("bookingMsg");
+  }
+
+  return {
+    valid: !message,
+    message,
+    sourceSlots,
+    destinationSlots,
+    quantity,
+    article,
+    source,
+    destination,
+    packaging
+  };
+}
+
+function updateBookingSubmitState() {
+  const button = $("bookingSubmitBtn");
+  if (!button) return;
+  const canCreateTransactions = !!(permissionValue("warehouse.transactions.create") || permissionValue("warehouse.transactions.manage"));
+  const validation = validateBookingForm({ showMessage: false });
+  button.disabled = !canCreateTransactions || !validation.valid;
+}
+
+function buildSlotTooltipMarkup(row) {
+  return `
+    <strong>${escapeHtml(row.artikel_nr || "-")} - ${escapeHtml(row.bezeichnung || "-")}</strong>
+    <span>Menge: ${escapeHtml(row.menge || 1)}</span>
+    <span>Verpackung: ${escapeHtml(row.verpackungsart || "-")}</span>
+    <span>Kunde: ${escapeHtml(row.customer_name || "-")}</span>
+    <span>Eingelagert von: ${escapeHtml(row.stored_by_username || "-")}</span>
+  `;
+}
+
+function renderSlotModalDetail(row = null, location = null) {
+  const host = $("slotModalDetail");
+  if (!host) return;
+
+  if (!row) {
+    host.innerHTML = `<div class="warehouse-empty">Wählen Sie einen Stellplatz aus oder fahren Sie mit der Maus über ein belegtes Feld.</div>`;
+    return;
+  }
+
+  host.innerHTML = row.status === "FREE"
+    ? `
+      <div class="warehouse-slot-detail-grid">
+        <div class="warehouse-slot-detail-row">
+          <span>Lagerplatz</span>
+          <strong>${escapeHtml(location?.name || row.storage_location_name || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Stellplatz</span>
+          <strong>${escapeHtml(formatNumber(row.stellplatz_nr))}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Status</span>
+          <strong>Frei</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Verfügbar</span>
+          <strong>Der Stellplatz kann direkt für eine Einlagerung verwendet werden.</strong>
+        </div>
+      </div>
+    `
+    : `
+      <div class="warehouse-slot-detail-grid">
+        <div class="warehouse-slot-detail-row">
+          <span>Lagerplatz</span>
+          <strong>${escapeHtml(location?.name || row.storage_location_name || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Stellplatz</span>
+          <strong>${escapeHtml(formatNumber(row.stellplatz_nr))}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Artikel</span>
+          <strong>${escapeHtml(row.artikel_nr || "-")} - ${escapeHtml(row.bezeichnung || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Menge</span>
+          <strong>${escapeHtml(row.menge || 1)}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Verpackungsart</span>
+          <strong>${escapeHtml(row.verpackungsart || row.last_transaction_verpackungsart || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Kunde</span>
+          <strong>${escapeHtml(row.customer_name || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Eingelagert von</span>
+          <strong>${escapeHtml(row.stored_by_username || "-")}</strong>
+        </div>
+        <div class="warehouse-slot-detail-row">
+          <span>Letzte Buchung</span>
+          <strong>${escapeHtml(row.last_transaction_datum ? formatDateTime(row.last_transaction_datum) : "-")}</strong>
+        </div>
+      </div>
+    `;
+}
+
+function closeSlotModal() {
+  const back = $("slotModalBack");
+  if (!back) return;
+  back.style.display = "none";
+  back.setAttribute("aria-hidden", "true");
+  state.slotModal = {
+    locationId: null,
+    locationName: "",
+    rows: []
+  };
+}
+
+async function openLocationSlotModal(locationId) {
+  const location = state.refs.locations.find((entry) => Number(entry.id) === Number(locationId));
+  if (!location) return;
+
+  const back = $("slotModalBack");
+  const title = $("slotModalTitle");
+  const lead = $("slotModalLead");
+  const grid = $("slotModalGrid");
+  if (!back || !title || !lead || !grid) return;
+
+  back.style.display = "flex";
+  back.setAttribute("aria-hidden", "false");
+  title.textContent = `${location.name} - Stellplatz-Raster`;
+  lead.textContent = "Freie und belegte Stellplätze werden als Raster angezeigt. Details öffnen Sie per Hover oder Klick.";
+  grid.innerHTML = `<div class="warehouse-empty">Stellplätze werden geladen...</div>`;
+  renderSlotModalDetail(null, location);
+
+  try {
+    const rows = await loadLocationSlots(location.id, { force: true });
+    state.slotModal = {
+      locationId: location.id,
+      locationName: location.name,
+      rows
+    };
+
+    grid.style.setProperty("--slot-columns", String(Math.min(Math.max(Number(location.kapazitaet || 1), 1), 10)));
+    grid.innerHTML = rows.map((row) => {
+      const occupied = row.status === "OCCUPIED";
+      return `
+        <button
+          class="warehouse-slot-cell warehouse-slot-cell--${occupied ? "occupied" : "free"}"
+          type="button"
+          data-slot-number="${escapeHtml(row.stellplatz_nr)}"
+        >
+          <span class="warehouse-slot-cell__number">${escapeHtml(formatNumber(row.stellplatz_nr))}</span>
+          ${occupied ? `<span class="warehouse-slot-cell__tooltip">${buildSlotTooltipMarkup(row)}</span>` : ""}
+        </button>
+      `;
+    }).join("");
+
+    grid.querySelectorAll("[data-slot-number]").forEach((button) => {
+      const slotNumber = Number(button.dataset.slotNumber);
+      const row = rows.find((entry) => Number(entry.stellplatz_nr) === slotNumber) || null;
+      button.addEventListener("mouseenter", () => renderSlotModalDetail(row, location));
+      button.addEventListener("focus", () => renderSlotModalDetail(row, location));
+      button.addEventListener("click", () => renderSlotModalDetail(row, location));
+    });
+  } catch (error) {
+    grid.innerHTML = `<div class="warehouse-empty">${escapeHtml(error.message || "Stellplätze konnten nicht geladen werden.")}</div>`;
+  }
 }
 
 function setSidebarNote() {
@@ -285,6 +737,7 @@ function applyPermissionsToUi() {
     $("bookingPermissionBadge").textContent = canCreateTransactions ? "Buchen" : "Nur Ansicht";
   }
 
+  setFormEnabled("bookingForm", canCreateTransactions);
   setFormEnabled("locationForm", canManageLocations);
   setFormEnabled("customerForm", canManageCustomers);
   setFormEnabled("articleForm", canManageArticles);
@@ -293,6 +746,7 @@ function applyPermissionsToUi() {
 
   setSidebarNote();
   ensureVisibleActiveTab();
+  updateBookingSubmitState();
 }
 
 function updateLookupLists() {
@@ -314,6 +768,10 @@ function updateLookupLists() {
       .map((location) => `<option value="${escapeHtml(locationLabel(location))}"></option>`)
       .join("");
   }
+
+  renderBookingLocationOptions();
+  renderPackagingOptions("bookingPackagingType");
+  renderPackagingOptions("inventoryPackagingType");
 }
 
 async function downloadWithAuth(url, fallbackFilename) {
@@ -384,6 +842,7 @@ function bindSettingsMenu() {
     if (event.key === "Escape") {
       closeSettingsMenu();
       showPasswordModal(false);
+      closeSlotModal();
     }
   });
 
@@ -491,21 +950,26 @@ function updateBookingVisibility() {
   const type = $("bookingType")?.value || "IN";
   const sourceField = $("bookingSourceField");
   const destinationField = $("bookingDestinationField");
-  const sourceInput = $("bookingSourceLookup");
-  const destinationInput = $("bookingDestinationLookup");
+  const sourceSlotField = $("bookingSourceSlotsField");
+  const destinationSlotField = $("bookingDestinationSlotsField");
+  const sourceInput = $("bookingSourceSelect");
+  const destinationInput = $("bookingDestinationSelect");
 
   if (sourceField) sourceField.style.display = type === "IN" ? "none" : "";
   if (destinationField) destinationField.style.display = type === "OUT" ? "none" : "";
+  if (sourceSlotField) sourceSlotField.style.display = type === "IN" ? "none" : "";
+  if (destinationSlotField) destinationSlotField.style.display = type === "OUT" ? "none" : "";
   if (sourceInput) sourceInput.disabled = type === "IN";
   if (destinationInput) destinationInput.disabled = type === "OUT";
 
-  renderBookingPreview();
+  renderBookingLocationOptions();
+  void syncBookingSlotOptions();
 }
 
 function getLocationCapacityMetrics(location) {
   const capacity = Math.max(Number(location?.kapazitaet || 0), 1);
-  const occupied = Math.max(Number(location?.belegte_menge || 0), 0);
-  const positions = Math.max(Number(location?.belegte_positionen || 0), 0);
+  const occupied = Math.max(Number(location?.belegte_positionen || 0), 0);
+  const positions = occupied;
   const rawPercent = (occupied / capacity) * 100;
   const percent = Math.max(Math.min(rawPercent, 100), 0);
   const free = Math.max(capacity - occupied, 0);
@@ -555,7 +1019,7 @@ function renderLocationCapacityCards() {
     ? rows.map((location) => {
         const metrics = getLocationCapacityMetrics(location);
         return `
-          <article class="warehouse-capacity-card">
+          <button class="warehouse-capacity-card warehouse-capacity-card--interactive" type="button" data-location-open="${escapeHtml(location.id)}">
             <div class="warehouse-capacity-card__top">
               <div>
                 <div class="warehouse-capacity-card__title">${escapeHtml(location.name)}</div>
@@ -576,16 +1040,21 @@ function renderLocationCapacityCards() {
               <span>${escapeHtml(metrics.detailText)}</span>
             </div>
             <div class="warehouse-capacity-card__foot">
-              <span>${escapeHtml(`${formatNumber(metrics.positions)} Positionen`)}</span>
-              <span>${escapeHtml(`${formatNumber(Math.round(metrics.rawPercent))}% Auslastung`)}</span>
+              <span>${escapeHtml(`${formatNumber(metrics.positions)} belegte Stellplätze`)}</span>
+              <span>${escapeHtml(`${formatNumber(Math.round(metrics.rawPercent))}% Auslastung • Raster öffnen`)}</span>
             </div>
-          </article>
+          </button>
         `;
       }).join("")
     : `<div class="warehouse-empty">Noch keine Lagerplätze vorhanden.</div>`;
 
   hosts.forEach((host) => {
     host.innerHTML = markup;
+    host.querySelectorAll("[data-location-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        void openLocationSlotModal(button.dataset.locationOpen);
+      });
+    });
   });
 }
 
@@ -606,13 +1075,23 @@ function renderBookingPreview() {
   const type = $("bookingType")?.value || "-";
   const article = $("bookingArticleLookup")?.value || "-";
   const quantity = $("bookingQuantity")?.value || "-";
-  const source = $("bookingSourceLookup")?.value || "-";
-  const destination = $("bookingDestinationLookup")?.value || "-";
+  const packaging = $("bookingPackagingType")?.value || "-";
+  const sourceLocation = resolveLocation($("bookingSourceSelect")?.value || "");
+  const destinationLocation = resolveLocation($("bookingDestinationSelect")?.value || "");
+  const source = sourceLocation ? locationLabel(sourceLocation) : "-";
+  const destination = destinationLocation ? locationLabel(destinationLocation) : "-";
+  const sourceSlots = selectedValues("bookingSourceSlots");
+  const destinationSlots = selectedValues("bookingDestinationSlots");
   const locationText = type === "IN"
     ? destination
     : type === "OUT"
       ? source
       : `${source} -> ${destination}`;
+  const slotText = type === "IN"
+    ? formatSlotList(destinationSlots)
+    : type === "OUT"
+      ? formatSlotList(sourceSlots)
+      : `Quelle: ${formatSlotList(sourceSlots)} | Ziel: ${formatSlotList(destinationSlots)}`;
 
   const preview = $("bookingPreview");
   if (!preview) return;
@@ -620,6 +1099,8 @@ function renderBookingPreview() {
     <div class="warehouse-preview__row"><span>Typ</span><strong>${escapeHtml(type)}</strong></div>
     <div class="warehouse-preview__row"><span>Artikel</span><strong>${escapeHtml(article)}</strong></div>
     <div class="warehouse-preview__row"><span>Lagerplatz</span><strong>${escapeHtml(locationText || "-")}</strong></div>
+    <div class="warehouse-preview__row"><span>Stellplätze</span><strong>${escapeHtml(slotText)}</strong></div>
+    <div class="warehouse-preview__row"><span>Verpackung</span><strong>${escapeHtml(packaging || "-")}</strong></div>
     <div class="warehouse-preview__row"><span>Menge</span><strong>${escapeHtml(quantity)}</strong></div>
   `;
 }
@@ -627,8 +1108,21 @@ function renderBookingPreview() {
 function resetBookingForm() {
   $("bookingForm")?.reset();
   if ($("bookingType")) $("bookingType").value = "IN";
+  renderPackagingOptions("bookingPackagingType");
+  renderBookingLocationOptions();
+  if ($("bookingSourceSlots")) $("bookingSourceSlots").innerHTML = "";
+  if ($("bookingDestinationSlots")) $("bookingDestinationSlots").innerHTML = "";
+  if ($("bookingSourceSlotsHelp")) {
+    $("bookingSourceSlotsHelp").textContent = "Belegte Stellplätze werden geladen, sobald ein Quell-Lagerplatz gewählt wurde.";
+  }
+  if ($("bookingDestinationSlotsHelp")) {
+    $("bookingDestinationSlotsHelp").textContent = "Freie Stellplätze werden geladen, sobald ein Ziel-Lagerplatz gewählt wurde.";
+  }
+  if ($("bookingQuantity")) $("bookingQuantity").value = 1;
   resetBookingDate();
   updateBookingVisibility();
+  renderBookingPreview();
+  updateBookingSubmitState();
   clearMessage("bookingMsg");
   $("bookingBelegNr")?.focus();
 }
@@ -664,10 +1158,10 @@ function renderDashboard() {
             </div>
             <div class="warehouse-list-item__title">${escapeHtml(row.artikel_nr || "")} - ${escapeHtml(row.bezeichnung || "")}</div>
             <div class="warehouse-list-item__meta">
-              Beleg: ${escapeHtml(row.beleg_nr || "-")} | Menge: ${escapeHtml(row.menge)} | Kunde: ${escapeHtml(row.customer_name || "-")}
+              Beleg: ${escapeHtml(row.beleg_nr || "-")} | Menge: ${escapeHtml(row.menge)} | Verpackung: ${escapeHtml(row.verpackungsart || "-")}
             </div>
             <div class="warehouse-list-item__foot">
-              ${escapeHtml(row.storage_location_from_name || "-")} -> ${escapeHtml(row.storage_location_to_name || "-")}
+              ${escapeHtml(row.storage_location_from_name || "-")} -> ${escapeHtml(row.storage_location_to_name || "-")} | Stellplätze: ${escapeHtml(formatTransactionSlotSummary(row))}
             </div>
           </article>
         `).join("")
@@ -717,7 +1211,7 @@ function renderLocations() {
             <th>Typ</th>
             <th>Kapazität</th>
             <th>Belegte Positionen</th>
-            <th>Belegte Menge</th>
+            <th>Freie Stellplätze</th>
             <th>Aktionen</th>
           </tr>
         </thead>
@@ -728,9 +1222,10 @@ function renderLocations() {
               <td>${escapeHtml(location.typ)}</td>
               <td>${escapeHtml(formatNumber(location.kapazitaet))}</td>
               <td>${escapeHtml(formatNumber(location.belegte_positionen || 0))}</td>
-              <td>${escapeHtml(formatNumber(location.belegte_menge || 0))}</td>
+              <td>${escapeHtml(formatNumber(locationFreeSlotCount(location)))}</td>
               <td>
                 <div class="warehouse-table__actions">
+                  <button class="secondary" type="button" data-location-open="${location.id}">Details</button>
                   ${permissionValue("warehouse.storage_locations.manage") ? `<button class="secondary" type="button" data-location-edit="${location.id}">Bearbeiten</button>` : ""}
                 </div>
               </td>
@@ -740,6 +1235,12 @@ function renderLocations() {
       </table>
     `
     : `<div class="warehouse-empty">Keine Lagerplätze gefunden.</div>`;
+
+  host.querySelectorAll("[data-location-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void openLocationSlotModal(button.dataset.locationOpen);
+    });
+  });
 
   host.querySelectorAll("[data-location-edit]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -873,9 +1374,11 @@ function renderInventory() {
         <thead>
           <tr>
             <th>Lagerplatz</th>
+            <th>Stellplatz</th>
             <th>Typ</th>
             <th>Artikelnummer</th>
             <th>Artikel</th>
+            <th>Verpackungsart</th>
             <th>Menge</th>
             <th>Aktualisiert</th>
             <th>Aktionen</th>
@@ -885,9 +1388,11 @@ function renderInventory() {
           ${state.inventory.map((row) => `
             <tr>
               <td>${escapeHtml(row.storage_location_name)}</td>
+              <td>${escapeHtml(formatNumber(row.stellplatz_nr))}</td>
               <td>${escapeHtml(row.storage_location_type)}</td>
               <td>${escapeHtml(row.artikel_nr)}</td>
               <td>${escapeHtml(row.bezeichnung)}</td>
+              <td>${escapeHtml(row.verpackungsart || "-")}</td>
               <td>${escapeHtml(row.menge)}</td>
               <td>${escapeHtml(formatDateTime(row.updated_at))}</td>
               <td>
@@ -912,11 +1417,13 @@ function renderInventory() {
         name: row.storage_location_name,
         typ: row.storage_location_type
       });
+      $("inventorySlotNumber").value = row.stellplatz_nr;
       $("inventoryArticleLookup").value = articleLabel({
         id: row.article_id,
         artikel_nr: row.artikel_nr,
         bezeichnung: row.bezeichnung
       });
+      $("inventoryPackagingType").value = row.verpackungsart || "";
       $("inventoryQuantity").value = row.menge;
       clearMessage("inventoryMsg");
     });
@@ -937,7 +1444,9 @@ function renderHistory() {
             <th>Beleg</th>
             <th>Kunde</th>
             <th>Artikel</th>
+            <th>Verpackungsart</th>
             <th>Menge</th>
+            <th>Stellplätze</th>
             <th>Von</th>
             <th>Zu</th>
             <th>Benutzer</th>
@@ -951,7 +1460,9 @@ function renderHistory() {
               <td>${escapeHtml(row.beleg_nr || "-")}</td>
               <td>${escapeHtml(row.customer_name || "-")}</td>
               <td>${escapeHtml(row.artikel_nr || "")} - ${escapeHtml(row.bezeichnung || "")}</td>
+              <td>${escapeHtml(row.verpackungsart || "-")}</td>
               <td>${escapeHtml(row.menge)}</td>
+              <td>${escapeHtml(formatTransactionSlotSummary(row))}</td>
               <td>${escapeHtml(row.storage_location_from_name || "-")}</td>
               <td>${escapeHtml(row.storage_location_to_name || "-")}</td>
               <td>${escapeHtml(row.username || "-")}</td>
@@ -1186,6 +1697,8 @@ function resetArticleForm() {
 
 function resetInventoryForm() {
   $("inventoryForm")?.reset();
+  $("inventorySlotNumber").value = 1;
+  renderPackagingOptions("inventoryPackagingType");
   $("inventoryQuantity").value = 1;
   state.selected.inventoryId = null;
   clearMessage("inventoryMsg");
@@ -1234,8 +1747,13 @@ async function loadLocations() {
   const data = await readJsonSafe(response);
   if (!response.ok) throw new Error(data?.error || "Lagerplätze konnten nicht geladen werden.");
   state.refs.locations = Array.isArray(data) ? data : [];
+  invalidateLocationSlotCache();
   updateLookupLists();
   renderLocations();
+  updateBookingSubmitState();
+  if (state.slotModal.locationId) {
+    void openLocationSlotModal(state.slotModal.locationId);
+  }
 }
 
 async function loadInventory() {
@@ -1379,12 +1897,45 @@ function bindSearchInputs() {
   $("pickingReloadBtn")?.addEventListener("click", () => void loadPickingOrders().catch((error) => setMessage("pickingMsg", error.message)));
 }
 
+function bindSlotModal() {
+  $("slotModalCloseBtn")?.addEventListener("click", closeSlotModal);
+  $("slotModalBack")?.addEventListener("click", (event) => {
+    if (event.target === $("slotModalBack")) closeSlotModal();
+  });
+}
+
 function bindBookingForm() {
-  $("bookingType")?.addEventListener("change", updateBookingVisibility);
-  ["bookingType", "bookingArticleLookup", "bookingSourceLookup", "bookingDestinationLookup", "bookingQuantity"].forEach((id) => {
-    $(id)?.addEventListener("input", renderBookingPreview);
+  $("bookingType")?.addEventListener("change", () => {
+    updateBookingVisibility();
+  });
+  $("bookingArticleLookup")?.addEventListener("input", () => {
+    void syncBookingSlotOptions();
+  });
+  $("bookingSourceSelect")?.addEventListener("change", () => {
+    void syncBookingSlotOptions();
+  });
+  $("bookingDestinationSelect")?.addEventListener("change", () => {
+    void syncBookingSlotOptions();
+  });
+  $("bookingCustomerLookup")?.addEventListener("input", renderBookingPreview);
+  $("bookingPackagingType")?.addEventListener("change", () => {
+    renderBookingPreview();
+    updateBookingSubmitState();
+  });
+  ["bookingSourceSlots", "bookingDestinationSlots"].forEach((id) => {
+    $(id)?.addEventListener("change", () => {
+      syncBookingPackagingFromSource();
+      renderBookingPreview();
+      updateBookingSubmitState();
+    });
+  });
+  $("bookingQuantity")?.addEventListener("input", () => {
+    renderBookingPreview();
+    updateBookingSubmitState();
   });
   resetBookingDate();
+  renderPackagingOptions("bookingPackagingType");
+  renderBookingLocationOptions();
   updateBookingVisibility();
 
   $("bookingResetBtn")?.addEventListener("click", resetBookingForm);
@@ -1393,49 +1944,27 @@ function bindBookingForm() {
     clearMessage("bookingMsg");
 
     const type = $("bookingType").value;
-    const article = resolveArticle($("bookingArticleLookup").value);
     const customer = resolveCustomer($("bookingCustomerLookup").value);
-    const source = resolveLocation($("bookingSourceLookup").value);
-    const destination = resolveLocation($("bookingDestinationLookup").value);
-    const sourceLocationId = type === "OUT" || type === "TRANSFER" ? source?.id || null : null;
-    const destinationLocationId = type === "IN" || type === "TRANSFER" ? destination?.id || null : null;
+    const validation = validateBookingForm({ showMessage: true });
+    if (!validation.valid) return;
+
+    const sourceLocationId = type === "OUT" || type === "TRANSFER" ? validation.source?.id || null : null;
+    const destinationLocationId = type === "IN" || type === "TRANSFER" ? validation.destination?.id || null : null;
     const payload = {
       typ: type,
-      article_id: article?.id || null,
-      menge: Number($("bookingQuantity").value || 0),
+      article_id: validation.article?.id || null,
+      menge: validation.quantity,
       storage_location_from_id: sourceLocationId,
       storage_location_to_id: destinationLocationId,
+      source_stellplaetze: type === "OUT" || type === "TRANSFER" ? validation.sourceSlots : undefined,
+      target_stellplaetze: type === "IN" || type === "TRANSFER" ? validation.destinationSlots : undefined,
+      verpackungsart: validation.packaging,
       customer_id: customer?.id || null,
       beleg_nr: $("bookingBelegNr").value.trim() || null,
       positions_nr: $("bookingPositionsNr").value.trim() || null,
       datum: $("bookingDate").value ? new Date($("bookingDate").value).toISOString() : null,
       notiz: $("bookingNote").value.trim() || null
     };
-
-    if (!article) {
-      setMessage("bookingMsg", "Bitte einen gültigen Artikel auswählen.");
-      return;
-    }
-    if (!Number.isInteger(payload.menge) || payload.menge <= 0) {
-      setMessage("bookingMsg", "Bitte eine gültige Menge eingeben.");
-      return;
-    }
-    if (payload.typ === "IN" && !destination) {
-      setMessage("bookingMsg", "Bitte einen gültigen Ziel-Lagerplatz auswählen.");
-      return;
-    }
-    if (payload.typ === "OUT" && !source) {
-      setMessage("bookingMsg", "Bitte einen gültigen Quell-Lagerplatz auswählen.");
-      return;
-    }
-    if (payload.typ === "TRANSFER" && (!source || !destination)) {
-      setMessage("bookingMsg", "Bitte Quelle und Ziel für die Umlagerung angeben.");
-      return;
-    }
-    if (payload.typ === "TRANSFER" && sourceLocationId === destinationLocationId) {
-      setMessage("bookingMsg", "Quelle und Ziel müssen bei einer Umlagerung unterschiedlich sein.");
-      return;
-    }
 
     try {
       const response = await api("/api/warehouse/transactions", {
@@ -1497,16 +2026,24 @@ function bindInventoryForm() {
     clearMessage("inventoryMsg");
     const location = resolveLocation($("inventoryLocationLookup").value);
     const article = resolveArticle($("inventoryArticleLookup").value);
+    const slotNumber = Number($("inventorySlotNumber").value || 0);
+    const verpackungsart = String($("inventoryPackagingType").value || "").trim();
     const menge = Number($("inventoryQuantity").value || 0);
 
-    if (!location || !article || !Number.isInteger(menge) || menge <= 0) {
-      setMessage("inventoryMsg", "Bitte Lagerplatz, Artikel und Menge korrekt angeben.");
+    if (!location || !article || !Number.isInteger(slotNumber) || slotNumber <= 0 || !verpackungsart) {
+      setMessage("inventoryMsg", "Bitte Lagerplatz, Stellplatz, Artikel und Verpackungsart korrekt angeben.");
+      return;
+    }
+    if (!Number.isInteger(menge) || menge !== 1) {
+      setMessage("inventoryMsg", "Ein Bestandsdatensatz muss genau Menge 1 haben.");
       return;
     }
 
     const payload = {
       storage_location_id: location.id,
+      stellplatz_nr: slotNumber,
       article_id: article.id,
+      verpackungsart,
       menge
     };
     const method = state.selected.inventoryId ? "PUT" : "POST";
@@ -1877,6 +2414,7 @@ async function initializeData() {
 (async function init() {
   bindSettingsMenu();
   bindPasswordModal();
+  bindSlotModal();
   bindTabNavigation();
   bindSearchInputs();
   bindBookingForm();

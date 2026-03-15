@@ -1,5 +1,51 @@
+const fs = require("fs");
+const path = require("path");
 const bcrypt = require("bcryptjs");
 const { pool } = require("./db_pg");
+
+async function runSqlMigrations() {
+  const migrationsDir = path.join(__dirname, "sql", "migrations");
+  if (!fs.existsSync(migrationsDir)) return;
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      filename TEXT PRIMARY KEY,
+      executed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  const files = fs
+    .readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+    .map((entry) => entry.name)
+    .sort();
+
+  for (const file of files) {
+    const alreadyApplied = await pool.query(
+      `SELECT 1 FROM schema_migrations WHERE filename = $1 LIMIT 1`,
+      [file]
+    );
+    if (alreadyApplied.rowCount > 0) continue;
+
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(sql);
+      await client.query(
+        `INSERT INTO schema_migrations (filename, executed_at) VALUES ($1, now())`,
+        [file]
+      );
+      await client.query("COMMIT");
+      console.log(`Applied SQL migration: ${file}`);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
 
 async function migrate() {
   // Basis-Tabelle
@@ -291,6 +337,8 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_entrepreneur_history_loc_created
       ON entrepreneur_history(location_id, created_at DESC);
   `);
+
+  await runSqlMigrations();
 
   // Seed Admin falls keiner existiert
   const existing = await pool.query(`SELECT id FROM users WHERE role='admin' LIMIT 1`);
