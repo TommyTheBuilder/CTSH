@@ -1,7 +1,9 @@
 const { pool } = require("../../db_pg");
 
 const STORAGE_LOCATION_TYPES = ["Regal", "Bodenstellplatz"];
+const SLOT_STATUS_TYPES = ["FREE", "OCCUPIED"];
 const TRANSACTION_TYPES = ["IN", "OUT", "TRANSFER"];
+const PACKAGING_TYPES = ["Karton groß", "Karton klein"];
 const PICKING_STATUSES = ["OFFEN", "IN_BEARBEITUNG", "ERLEDIGT"];
 const DEFAULT_LIST_LIMIT = 200;
 const MAX_LIST_LIMIT = 1000;
@@ -13,6 +15,8 @@ const INVENTORY_SELECT = `
     sl.typ AS storage_location_type,
     sl.name AS storage_location_name,
     sl.kapazitaet AS storage_location_capacity,
+    i.stellplatz_nr,
+    i.verpackungsart,
     i.article_id,
     a.artikel_nr,
     a.bezeichnung,
@@ -38,6 +42,8 @@ const TRANSACTION_SELECT = `
     slf.name AS storage_location_from_name,
     t.storage_location_to_id,
     slt.name AS storage_location_to_name,
+    t.stellplatz_nr,
+    t.verpackungsart,
     t.customer_id,
     c.kunden_nr,
     c.name AS customer_name,
@@ -131,6 +137,29 @@ function normalizeInteger(value, field, options = {}) {
   return parsed;
 }
 
+function normalizeIntegerArray(value, field, options = {}) {
+  const { required = false, min = null, max = null, allowEmpty = false, allowNull = false } = options;
+  if (value === null || value === undefined || value === "") {
+    if (required) throw new WarehouseError(400, `${field} is required`);
+    return allowNull ? null : [];
+  }
+
+  const entries = Array.isArray(value) ? value : [value];
+  if (!entries.length && !allowEmpty) {
+    throw new WarehouseError(400, `${field} must not be empty`);
+  }
+
+  const normalized = entries.map((entry, index) =>
+    normalizeInteger(entry, `${field}[${index}]`, { required: true, min, max })
+  );
+
+  if (new Set(normalized).size !== normalized.length) {
+    throw new WarehouseError(400, `${field} contains duplicate values`);
+  }
+
+  return [...normalized].sort((left, right) => left - right);
+}
+
 function normalizeEnum(value, allowedValues, field, options = {}) {
   const { required = false, defaultValue = null } = options;
   if (value === null || value === undefined || value === "") {
@@ -142,6 +171,10 @@ function normalizeEnum(value, allowedValues, field, options = {}) {
     throw new WarehouseError(400, `${field} is invalid`);
   }
   return normalized;
+}
+
+function normalizePackagingType(value, field = "verpackungsart", options = {}) {
+  return normalizeEnum(value, PACKAGING_TYPES, field, options);
 }
 
 function normalizeDateTime(value, field, options = {}) {
@@ -218,6 +251,84 @@ async function getOneOrNull(executor, sql, params = []) {
   return result.rowCount ? result.rows[0] : null;
 }
 
+async function getStorageLocationCore(executor, id) {
+  return getOneOrNull(
+    executor,
+    `
+    SELECT id, typ, name, kapazitaet, created_at
+    FROM storage_locations
+    WHERE id = $1
+    `,
+    [id]
+  );
+}
+
+async function ensureStorageLocationSlot(executor, locationId, stellplatzNr, field = "stellplatz_nr") {
+  const normalizedLocationId = normalizeInteger(locationId, "storage_location_id", { required: true, min: 1 });
+  const normalizedSlot = normalizeInteger(stellplatzNr, field, { required: true, min: 1 });
+  const location = await getStorageLocationCore(executor, normalizedLocationId);
+
+  if (!location) {
+    throw new WarehouseError(400, `Storage location ${normalizedLocationId} not found`);
+  }
+  if (normalizedSlot > Number(location.kapazitaet || 0)) {
+    throw new WarehouseError(
+      400,
+      `${field} must be between 1 and ${location.kapazitaet} for storage location ${location.name}`
+    );
+  }
+
+  return {
+    location,
+    stellplatz_nr: normalizedSlot
+  };
+}
+
+async function ensureStorageLocationSlots(executor, locationId, stellplaetze, field = "stellplaetze") {
+  const normalizedLocationId = normalizeInteger(locationId, "storage_location_id", { required: true, min: 1 });
+  const normalizedSlots = normalizeIntegerArray(stellplaetze, field, { required: true, min: 1 });
+  const location = await getStorageLocationCore(executor, normalizedLocationId);
+
+  if (!location) {
+    throw new WarehouseError(400, `Storage location ${normalizedLocationId} not found`);
+  }
+
+  const invalidSlot = normalizedSlots.find((slotNo) => slotNo > Number(location.kapazitaet || 0));
+  if (invalidSlot) {
+    throw new WarehouseError(
+      400,
+      `${field} must stay within capacity 1..${location.kapazitaet} for storage location ${location.name}`
+    );
+  }
+
+  return {
+    location,
+    stellplaetze: normalizedSlots
+  };
+}
+
+async function ensureStorageLocationCapacity(executor, locationId, kapazitaet) {
+  const normalizedLocationId = normalizeInteger(locationId, "id", { required: true, min: 1 });
+  const normalizedCapacity = normalizeInteger(kapazitaet, "kapazitaet", { required: true, min: 1 });
+  const maxUsedSlotRow = await getOneOrNull(
+    executor,
+    `
+    SELECT COALESCE(MAX(stellplatz_nr), 0)::int AS max_slot
+    FROM inventory
+    WHERE storage_location_id = $1
+    `,
+    [normalizedLocationId]
+  );
+  const maxUsedSlot = Number(maxUsedSlotRow?.max_slot || 0);
+  if (normalizedCapacity < maxUsedSlot) {
+    throw new WarehouseError(
+      409,
+      `Capacity cannot be reduced below occupied slot ${maxUsedSlot}`
+    );
+  }
+  return normalizedCapacity;
+}
+
 async function getInventoryById(executor, id) {
   return getOneOrNull(
     executor,
@@ -227,13 +338,130 @@ async function getInventoryById(executor, id) {
   );
 }
 
+function uniqueSortedSlots(values = []) {
+  return [...new Set((values || []).map((value) => Number(value)).filter(Number.isInteger))].sort(
+    (left, right) => left - right
+  );
+}
+
+function getRepresentativeTransactionSlot(typ, sourceSlots = [], targetSlots = []) {
+  if (typ === "OUT") {
+    return sourceSlots.length === 1 ? sourceSlots[0] : null;
+  }
+  return targetSlots.length === 1 ? targetSlots[0] : null;
+}
+
+function resolveMovementSlots(movement = {}) {
+  const legacySlotValue = movement.stellplatz_nr;
+  const legacySlot = legacySlotValue === null || legacySlotValue === undefined || legacySlotValue === ""
+    ? null
+    : Number(legacySlotValue);
+  const sourceSlots = uniqueSortedSlots(movement.source_stellplaetze);
+  const targetSlots = uniqueSortedSlots(movement.target_stellplaetze);
+
+  const resolvedSource = sourceSlots.length
+    ? sourceSlots
+    : Number.isInteger(legacySlot) && (movement.typ === "OUT" || movement.typ === "TRANSFER")
+      ? [legacySlot]
+      : [];
+  const resolvedTarget = targetSlots.length
+    ? targetSlots
+    : Number.isInteger(legacySlot) && (movement.typ === "IN" || movement.typ === "TRANSFER")
+      ? [legacySlot]
+      : [];
+  const representativeSlot = Number.isInteger(legacySlot)
+    ? legacySlot
+    : getRepresentativeTransactionSlot(movement.typ, resolvedSource, resolvedTarget);
+
+  return {
+    ...movement,
+    stellplatz_nr: representativeSlot,
+    source_stellplaetze: resolvedSource,
+    target_stellplaetze: resolvedTarget,
+    stellplaetze: movement.typ === "OUT" ? resolvedSource : resolvedTarget
+  };
+}
+
+async function attachTransactionSlotAssignments(executor, rows = []) {
+  if (!rows.length) return [];
+
+  const transactionIds = [...new Set(rows.map((row) => String(row.id)))];
+  const assignments = (
+    await executor.query(
+      `
+      SELECT
+        tsa.transaction_id,
+        tsa.phase,
+        tsa.storage_location_id,
+        tsa.stellplatz_nr
+      FROM transaction_slot_assignments tsa
+      WHERE tsa.transaction_id = ANY($1::bigint[])
+      ORDER BY tsa.transaction_id ASC, tsa.phase ASC, tsa.stellplatz_nr ASC
+      `,
+      [transactionIds]
+    )
+  ).rows;
+
+  const assignmentMap = new Map();
+  for (const transactionId of transactionIds) {
+    assignmentMap.set(String(transactionId), {
+      source_stellplaetze: [],
+      target_stellplaetze: [],
+      slot_assignments: []
+    });
+  }
+
+  for (const assignment of assignments) {
+    const key = String(assignment.transaction_id);
+    const current = assignmentMap.get(key) || {
+      source_stellplaetze: [],
+      target_stellplaetze: [],
+      slot_assignments: []
+    };
+
+    if (assignment.phase === "SOURCE") {
+      current.source_stellplaetze.push(Number(assignment.stellplatz_nr));
+    } else {
+      current.target_stellplaetze.push(Number(assignment.stellplatz_nr));
+    }
+    current.slot_assignments.push({
+      phase: assignment.phase,
+      storage_location_id: Number(assignment.storage_location_id),
+      stellplatz_nr: Number(assignment.stellplatz_nr)
+    });
+    assignmentMap.set(key, current);
+  }
+
+  return rows.map((row) => {
+    const current = assignmentMap.get(String(row.id)) || {
+      source_stellplaetze: [],
+      target_stellplaetze: [],
+      slot_assignments: []
+    };
+    const resolved = resolveMovementSlots({
+      ...row,
+      source_stellplaetze: current.source_stellplaetze,
+      target_stellplaetze: current.target_stellplaetze
+    });
+
+    return {
+      ...resolved,
+      verpackungsart: row.verpackungsart || null,
+      slot_assignments: current.slot_assignments
+    };
+  });
+}
+
 async function getTransactionById(executor, id) {
-  return getOneOrNull(
+  const row = await getOneOrNull(
     executor,
     `${TRANSACTION_SELECT}
      WHERE t.id = $1`,
     [id]
   );
+  if (!row) return null;
+  const [transaction] = await attachTransactionSlotAssignments(executor, [row]);
+  return transaction || null;
 }
 
 async function getPickingOrderById(executor, id) {
@@ -293,6 +521,25 @@ function normalizeMovementPayload(payload, options = {}) {
   const positionsNr = normalizeText(payload.positions_nr, "positions_nr", { required: false, maxLength: 120 });
   const datum = normalizeDateTime(payload.datum, "datum", { required: false, defaultNow: true });
   const notiz = normalizeText(payload.notiz, "notiz", { required: false, maxLength: 4000 });
+  const verpackungsart = normalizePackagingType(payload.verpackungsart, "verpackungsart", {
+    required: requireAll,
+    defaultValue: null
+  });
+  const sharedSlots = hasOwn(payload, "stellplaetze")
+    ? normalizeIntegerArray(payload.stellplaetze, "stellplaetze", { required: true, min: 1 })
+    : null;
+  const sourceSlotsInput = hasOwn(payload, "source_stellplaetze")
+    ? normalizeIntegerArray(payload.source_stellplaetze, "source_stellplaetze", { required: true, min: 1 })
+    : null;
+  const targetSlotsInput = hasOwn(payload, "target_stellplaetze")
+    ? normalizeIntegerArray(payload.target_stellplaetze, "target_stellplaetze", { required: true, min: 1 })
+    : null;
+  const legacySlot = hasOwn(payload, "stellplatz_nr")
+    ? normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: false, min: 1, allowNull: true })
+    : null;
+
+  let sourceSlots = [];
+  let targetSlots = [];
 
   if (!typ && !requireAll) {
     throw new WarehouseError(400, "typ is required");
@@ -301,10 +548,18 @@ function normalizeMovementPayload(payload, options = {}) {
   if (typ === "IN") {
     if (!storageLocationToId) throw new WarehouseError(400, "storage_location_to_id is required for IN");
     if (storageLocationFromId) throw new WarehouseError(400, "storage_location_from_id must be empty for IN");
+    targetSlots = targetSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
+    if (!targetSlots.length) {
+      throw new WarehouseError(400, "target_stellplaetze is required for IN");
+    }
   }
   if (typ === "OUT") {
     if (!storageLocationFromId) throw new WarehouseError(400, "storage_location_from_id is required for OUT");
     if (storageLocationToId) throw new WarehouseError(400, "storage_location_to_id must be empty for OUT");
+    sourceSlots = sourceSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
+    if (!sourceSlots.length) {
+      throw new WarehouseError(400, "source_stellplaetze is required for OUT");
+    }
   }
   if (typ === "TRANSFER") {
     if (!storageLocationFromId || !storageLocationToId) {
@@ -313,88 +568,252 @@ function normalizeMovementPayload(payload, options = {}) {
     if (storageLocationFromId === storageLocationToId) {
       throw new WarehouseError(400, "TRANSFER requires different source and destination locations");
     }
+    sourceSlots = sourceSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
+    targetSlots = targetSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
+    if (!sourceSlots.length || !targetSlots.length) {
+      throw new WarehouseError(400, "source_stellplaetze and target_stellplaetze are required for TRANSFER");
+    }
+    if (sourceSlots.length !== targetSlots.length) {
+      throw new WarehouseError(400, "TRANSFER requires the same number of source and target slots");
+    }
   }
 
-  return {
+  if (typ === "IN" && menge !== targetSlots.length) {
+    throw new WarehouseError(400, "menge must match the number of selected target slots");
+  }
+  if (typ === "OUT" && menge !== sourceSlots.length) {
+    throw new WarehouseError(400, "menge must match the number of selected source slots");
+  }
+  if (typ === "TRANSFER" && (menge !== sourceSlots.length || menge !== targetSlots.length)) {
+    throw new WarehouseError(400, "menge must match the number of selected source and target slots");
+  }
+
+  return resolveMovementSlots({
     typ,
     article_id: articleId,
     menge,
+    stellplatz_nr: getRepresentativeTransactionSlot(typ, sourceSlots, targetSlots),
+    source_stellplaetze: sourceSlots,
+    target_stellplaetze: targetSlots,
     storage_location_from_id: storageLocationFromId || null,
     storage_location_to_id: storageLocationToId || null,
     customer_id: customerId || null,
+    verpackungsart,
     beleg_nr: belegNr,
     positions_nr: positionsNr,
     datum,
     notiz
-  };
+  });
 }
 
-function buildInventoryEffects(movement, direction) {
-  const qty = movement.menge * direction;
-  if (movement.typ === "IN") {
-    return [{ locationId: movement.storage_location_to_id, delta: qty }];
-  }
-  if (movement.typ === "OUT") {
-    return [{ locationId: movement.storage_location_from_id, delta: qty * -1 }];
-  }
-  return [
-    { locationId: movement.storage_location_from_id, delta: qty * -1 },
-    { locationId: movement.storage_location_to_id, delta: qty }
-  ];
-}
+async function addInventoryOccupancy(client, movement, locationId, stellplatzNr) {
+  const normalizedMovement = resolveMovementSlots(movement);
+  await ensureStorageLocationSlot(client, locationId, stellplatzNr);
 
-async function applyInventoryDelta(client, articleId, locationId, delta) {
-  if (!delta) return;
-
-  if (delta > 0) {
-    await client.query(
-      `
-      INSERT INTO inventory (storage_location_id, article_id, menge, created_at, updated_at)
-      VALUES ($1, $2, $3, now(), now())
-      ON CONFLICT (storage_location_id, article_id)
-      DO UPDATE SET menge = inventory.menge + EXCLUDED.menge, updated_at = now()
-      `,
-      [locationId, articleId, delta]
-    );
-    return;
-  }
-
-  const amount = Math.abs(delta);
-  const updated = await client.query(
+  const existing = await getOneOrNull(
+    client,
     `
-    UPDATE inventory
-    SET menge = menge - $3,
-        updated_at = now()
+    SELECT id
+    FROM inventory
     WHERE storage_location_id = $1
-      AND article_id = $2
-      AND menge >= $3
-    RETURNING id, menge
+      AND stellplatz_nr = $2
+    FOR UPDATE
     `,
-    [locationId, articleId, amount]
+    [locationId, stellplatzNr]
   );
 
-  if (updated.rowCount === 0) {
+  if (existing) {
     throw new WarehouseError(
       409,
-      `Insufficient inventory for article ${articleId} at storage location ${locationId}`
+      `Slot ${stellplatzNr} at storage location ${locationId} is already occupied`
+    );
+  }
+
+  await client.query(
+    `
+    INSERT INTO inventory (
+      storage_location_id,
+      stellplatz_nr,
+      article_id,
+      menge,
+      verpackungsart,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, 1, $4, now(), now())
+    `,
+    [locationId, stellplatzNr, normalizedMovement.article_id, normalizedMovement.verpackungsart]
+  );
+}
+
+async function removeInventoryOccupancy(client, movement, locationId, stellplatzNr) {
+  const normalizedMovement = resolveMovementSlots(movement);
+  await ensureStorageLocationSlot(client, locationId, stellplatzNr);
+
+  const existing = await getOneOrNull(
+    client,
+    `
+    SELECT id, article_id, verpackungsart
+    FROM inventory
+    WHERE storage_location_id = $1
+      AND stellplatz_nr = $2
+    FOR UPDATE
+    `,
+    [locationId, stellplatzNr]
+  );
+
+  if (!existing) {
+    throw new WarehouseError(
+      409,
+      `Slot ${stellplatzNr} at storage location ${locationId} is not occupied`
+    );
+  }
+
+  if (Number(existing.article_id) !== Number(normalizedMovement.article_id)) {
+    throw new WarehouseError(
+      409,
+      `Slot ${stellplatzNr} at storage location ${locationId} is occupied by another article`
+    );
+  }
+
+  if (
+    normalizedMovement.verpackungsart
+    && existing.verpackungsart
+    && normalizedMovement.verpackungsart !== existing.verpackungsart
+  ) {
+    throw new WarehouseError(
+      409,
+      `Slot ${stellplatzNr} at storage location ${locationId} uses another packaging type`
     );
   }
 
   await client.query(
     `
     DELETE FROM inventory
-    WHERE storage_location_id = $1
-      AND article_id = $2
-      AND menge <= 0
+    WHERE id = $1
     `,
-    [locationId, articleId]
+    [existing.id]
+  );
+
+  return existing;
+}
+
+async function replaceTransactionSlotAssignments(client, transactionId, movement) {
+  const normalizedMovement = resolveMovementSlots(movement);
+  await client.query(`DELETE FROM transaction_slot_assignments WHERE transaction_id = $1`, [transactionId]);
+
+  const assignments = [
+    ...normalizedMovement.source_stellplaetze.map((slotNo) => ({
+      phase: "SOURCE",
+      storage_location_id: normalizedMovement.storage_location_from_id,
+      stellplatz_nr: slotNo
+    })),
+    ...normalizedMovement.target_stellplaetze.map((slotNo) => ({
+      phase: "TARGET",
+      storage_location_id: normalizedMovement.storage_location_to_id,
+      stellplatz_nr: slotNo
+    }))
+  ];
+
+  if (!assignments.length) return;
+
+  const placeholders = [];
+  const values = [];
+  assignments.forEach((assignment, index) => {
+    const baseIndex = index * 4;
+    placeholders.push(`($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4})`);
+    values.push(
+      transactionId,
+      assignment.phase,
+      assignment.storage_location_id,
+      assignment.stellplatz_nr
+    );
+  });
+
+  await client.query(
+    `
+    INSERT INTO transaction_slot_assignments (
+      transaction_id,
+      phase,
+      storage_location_id,
+      stellplatz_nr
+    )
+    VALUES ${placeholders.join(", ")}
+    `,
+    values
   );
 }
 
 async function applyMovement(client, movement, direction) {
-  const effects = buildInventoryEffects(movement, direction);
-  for (const effect of effects) {
-    await applyInventoryDelta(client, movement.article_id, effect.locationId, effect.delta);
+  const normalizedMovement = resolveMovementSlots(movement);
+  if (![1, -1].includes(direction)) {
+    throw new WarehouseError(500, "Invalid movement direction");
+  }
+
+  if (normalizedMovement.typ === "IN") {
+    await ensureStorageLocationSlots(
+      client,
+      normalizedMovement.storage_location_to_id,
+      normalizedMovement.target_stellplaetze,
+      "target_stellplaetze"
+    );
+
+    for (const slotNo of normalizedMovement.target_stellplaetze) {
+      if (direction === 1) {
+        await addInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_to_id, slotNo);
+      } else {
+        await removeInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_to_id, slotNo);
+      }
+    }
+    return;
+  }
+
+  if (normalizedMovement.typ === "OUT") {
+    await ensureStorageLocationSlots(
+      client,
+      normalizedMovement.storage_location_from_id,
+      normalizedMovement.source_stellplaetze,
+      "source_stellplaetze"
+    );
+
+    for (const slotNo of normalizedMovement.source_stellplaetze) {
+      if (direction === 1) {
+        await removeInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_from_id, slotNo);
+      } else {
+        await addInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_from_id, slotNo);
+      }
+    }
+    return;
+  }
+
+  await ensureStorageLocationSlots(
+    client,
+    normalizedMovement.storage_location_from_id,
+    normalizedMovement.source_stellplaetze,
+    "source_stellplaetze"
+  );
+  await ensureStorageLocationSlots(
+    client,
+    normalizedMovement.storage_location_to_id,
+    normalizedMovement.target_stellplaetze,
+    "target_stellplaetze"
+  );
+
+  if (direction === 1) {
+    for (const slotNo of normalizedMovement.source_stellplaetze) {
+      await removeInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_from_id, slotNo);
+    }
+    for (const slotNo of normalizedMovement.target_stellplaetze) {
+      await addInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_to_id, slotNo);
+    }
+    return;
+  }
+
+  for (const slotNo of normalizedMovement.target_stellplaetze) {
+    await removeInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_to_id, slotNo);
+  }
+  for (const slotNo of normalizedMovement.source_stellplaetze) {
+    await addInventoryOccupancy(client, normalizedMovement, normalizedMovement.storage_location_from_id, slotNo);
   }
 }
 
@@ -432,6 +851,14 @@ function buildTransactionFilters(filters = {}, options = {}) {
         OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
         OR LOWER(COALESCE(a.artikel_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(a.bezeichnung, '')) LIKE $${idx}
+        OR LOWER(COALESCE(t.verpackungsart, '')) LIKE $${idx}
+        OR CAST(COALESCE(t.stellplatz_nr, 0) AS TEXT) LIKE $${idx}
+        OR EXISTS (
+          SELECT 1
+          FROM transaction_slot_assignments tsa
+          WHERE tsa.transaction_id = t.id
+            AND CAST(tsa.stellplatz_nr AS TEXT) LIKE $${idx}
+        )
       )`
     );
   }
@@ -472,6 +899,34 @@ function buildTransactionFilters(filters = {}, options = {}) {
   if (toId) {
     values.push(toId);
     where.push(`t.storage_location_to_id = $${values.length}`);
+  }
+
+  const stellplatzNr = normalizeInteger(filters.stellplatz_nr, "stellplatz_nr", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+  if (stellplatzNr) {
+    values.push(stellplatzNr);
+    where.push(
+      `(
+        t.stellplatz_nr = $${values.length}
+        OR EXISTS (
+          SELECT 1
+          FROM transaction_slot_assignments tsa
+          WHERE tsa.transaction_id = t.id
+            AND tsa.stellplatz_nr = $${values.length}
+        )
+      )`
+    );
+  }
+
+  const verpackungsart = filters.verpackungsart
+    ? normalizePackagingType(filters.verpackungsart, "verpackungsart", { required: false })
+    : null;
+  if (verpackungsart) {
+    values.push(verpackungsart);
+    where.push(`t.verpackungsart = $${values.length}`);
   }
 
   const dateFrom = normalizeDateTimeFilter(filters.date_from, "start");
@@ -540,7 +995,7 @@ async function getDashboardSummary() {
 
     return {
       summary,
-      recent_transactions: recentTransactions,
+      recent_transactions: await attachTransactionSlotAssignments(pool, recentTransactions),
       open_picking_orders: openPickingOrders
     };
   } catch (error) {
@@ -852,7 +1307,9 @@ async function listStorageLocations(filters = {}) {
           sl.kapazitaet,
           sl.created_at,
           COUNT(i.id)::int AS belegte_positionen,
-          COALESCE(SUM(i.menge), 0)::int AS belegte_menge
+          COALESCE(SUM(i.menge), 0)::int AS belegte_menge,
+          GREATEST(sl.kapazitaet - COUNT(i.id)::int, 0)::int AS freie_stellplaetze,
+          COALESCE(MAX(i.stellplatz_nr), 0)::int AS max_belegter_stellplatz
         FROM storage_locations sl
         LEFT JOIN inventory i ON i.storage_location_id = sl.id
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -880,7 +1337,9 @@ async function getStorageLocation(id) {
       sl.kapazitaet,
       sl.created_at,
       COUNT(i.id)::int AS belegte_positionen,
-      COALESCE(SUM(i.menge), 0)::int AS belegte_menge
+      COALESCE(SUM(i.menge), 0)::int AS belegte_menge,
+      GREATEST(sl.kapazitaet - COUNT(i.id)::int, 0)::int AS freie_stellplaetze,
+      COALESCE(MAX(i.stellplatz_nr), 0)::int AS max_belegter_stellplatz
     FROM storage_locations sl
     LEFT JOIN inventory i ON i.storage_location_id = sl.id
     WHERE sl.id = $1
@@ -890,6 +1349,95 @@ async function getStorageLocation(id) {
   );
   if (!row) throw new WarehouseError(404, "Storage location not found");
   return row;
+}
+
+async function listStorageLocationSlots(id, filters = {}) {
+  const locationId = normalizeInteger(id, "id", { required: true, min: 1 });
+  const location = await getStorageLocationCore(pool, locationId);
+  if (!location) throw new WarehouseError(404, "Storage location not found");
+
+  const status = filters.status
+    ? normalizeEnum(String(filters.status).toUpperCase(), SLOT_STATUS_TYPES, "status", { required: false })
+    : null;
+  const articleId = normalizeInteger(filters.article_id, "article_id", { required: false, min: 1, allowNull: true });
+
+  try {
+    return (
+      await pool.query(
+        `
+        WITH slot_base AS (
+          SELECT
+            sl.id AS storage_location_id,
+            sl.name AS storage_location_name,
+            sl.typ AS storage_location_type,
+            sl.kapazitaet AS storage_location_capacity,
+            gs.slot_no::int AS stellplatz_nr,
+            i.id AS inventory_id,
+            i.article_id,
+            i.verpackungsart,
+            a.artikel_nr,
+            a.bezeichnung,
+            i.menge,
+            i.created_at,
+            i.updated_at
+          FROM storage_locations sl
+          CROSS JOIN LATERAL generate_series(1, sl.kapazitaet) AS gs(slot_no)
+          LEFT JOIN inventory i
+            ON i.storage_location_id = sl.id
+           AND i.stellplatz_nr = gs.slot_no
+          LEFT JOIN articles a ON a.id = i.article_id
+          WHERE sl.id = $1
+        )
+        SELECT
+          sb.storage_location_id,
+          sb.storage_location_name,
+          sb.storage_location_type,
+          sb.storage_location_capacity,
+          sb.stellplatz_nr,
+          CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END AS status,
+          sb.inventory_id,
+          sb.article_id,
+          sb.artikel_nr,
+          sb.bezeichnung,
+          sb.verpackungsart,
+          sb.menge,
+          sb.created_at,
+          sb.updated_at,
+          tx.id AS last_transaction_id,
+          tx.typ AS last_transaction_type,
+          tx.datum AS last_transaction_datum,
+          tx.user_id AS stored_by_user_id,
+          u.username AS stored_by_username,
+          tx.beleg_nr AS last_transaction_beleg_nr,
+          tx.verpackungsart AS last_transaction_verpackungsart,
+          c.id AS customer_id,
+          c.kunden_nr,
+          c.name AS customer_name
+        FROM slot_base sb
+        LEFT JOIN LATERAL (
+          SELECT t.id, t.typ, t.datum, t.user_id, t.beleg_nr, t.customer_id, t.verpackungsart
+          FROM transaction_slot_assignments tsa
+          INNER JOIN transactions t ON t.id = tsa.transaction_id
+          WHERE tsa.phase = 'TARGET'
+            AND tsa.storage_location_id = sb.storage_location_id
+            AND tsa.stellplatz_nr = sb.stellplatz_nr
+          ORDER BY t.datum DESC, t.id DESC
+          LIMIT 1
+        ) tx ON sb.inventory_id IS NOT NULL
+        LEFT JOIN users u ON u.id = tx.user_id
+        LEFT JOIN customers c ON c.id = tx.customer_id
+        WHERE ($2::text IS NULL OR CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END = $2)
+          AND ($3::int IS NULL OR sb.article_id = $3)
+        ORDER BY sb.stellplatz_nr ASC
+        `,
+        [locationId, status, articleId]
+      )
+    ).rows;
+  } catch (error) {
+    throw translateDbError(error, {
+      fkMessage: "Referenced article or storage location not found"
+    });
+  }
 }
 
 async function createStorageLocation(payload) {
@@ -927,7 +1475,7 @@ async function updateStorageLocation(id, payload) {
     updates.push(`name = $${values.length}`);
   }
   if (hasOwn(payload, "kapazitaet")) {
-    values.push(normalizeInteger(payload.kapazitaet, "kapazitaet", { required: true, min: 1 }));
+    values.push(await ensureStorageLocationCapacity(pool, locationId, payload.kapazitaet));
     updates.push(`kapazitaet = $${values.length}`);
   }
 
@@ -984,6 +1532,8 @@ async function listInventory(filters = {}) {
         LOWER(sl.name) LIKE $${idx}
         OR LOWER(a.artikel_nr) LIKE $${idx}
         OR LOWER(a.bezeichnung) LIKE $${idx}
+        OR LOWER(COALESCE(i.verpackungsart, '')) LIKE $${idx}
+        OR CAST(i.stellplatz_nr AS TEXT) LIKE $${idx}
       )`
     );
   }
@@ -1004,6 +1554,24 @@ async function listInventory(filters = {}) {
     where.push(`i.storage_location_id = $${values.length}`);
   }
 
+  const stellplatzNr = normalizeInteger(filters.stellplatz_nr, "stellplatz_nr", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+  if (stellplatzNr) {
+    values.push(stellplatzNr);
+    where.push(`i.stellplatz_nr = $${values.length}`);
+  }
+
+  const verpackungsart = filters.verpackungsart
+    ? normalizePackagingType(filters.verpackungsart, "verpackungsart", { required: false })
+    : null;
+  if (verpackungsart) {
+    values.push(verpackungsart);
+    where.push(`i.verpackungsart = $${values.length}`);
+  }
+
   values.push(normalizeLimit(filters.limit));
 
   try {
@@ -1012,7 +1580,7 @@ async function listInventory(filters = {}) {
         `
         ${INVENTORY_SELECT}
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY sl.name ASC, a.bezeichnung ASC
+        ORDER BY sl.name ASC, i.stellplatz_nr ASC, a.bezeichnung ASC
         LIMIT $${values.length}
         `,
         values
@@ -1033,21 +1601,38 @@ async function getInventoryRecord(id) {
 async function createInventoryRecord(payload) {
   const storageLocationId = normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 });
   const articleId = normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 });
+  const stellplatzNr = normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 });
   const menge = normalizeInteger(payload.menge, "menge", { required: true, min: 1 });
+  const verpackungsart = normalizePackagingType(payload.verpackungsart, "verpackungsart", { required: true });
+
+  if (menge !== 1) {
+    throw new WarehouseError(400, "Inventory records must use menge = 1 per slot");
+  }
 
   try {
-    const result = await pool.query(
-      `
-      INSERT INTO inventory (storage_location_id, article_id, menge, created_at, updated_at)
-      VALUES ($1, $2, $3, now(), now())
-      RETURNING id
-      `,
-      [storageLocationId, articleId, menge]
-    );
-    return getInventoryRecord(result.rows[0].id);
+    return await withTransaction(async (client) => {
+      await ensureStorageLocationSlot(client, storageLocationId, stellplatzNr);
+      const result = await client.query(
+        `
+        INSERT INTO inventory (
+          storage_location_id,
+          stellplatz_nr,
+          article_id,
+          menge,
+          verpackungsart,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, now(), now())
+        RETURNING id
+        `,
+        [storageLocationId, stellplatzNr, articleId, menge, verpackungsart]
+      );
+      return getInventoryById(client, result.rows[0].id);
+    });
   } catch (error) {
     throw translateDbError(error, {
-      uniqueMessage: "Inventory record for this article and storage location already exists",
+      uniqueMessage: "Inventory record for this storage location and slot already exists",
       fkMessage: "Article or storage location not found"
     });
   }
@@ -1055,42 +1640,75 @@ async function createInventoryRecord(payload) {
 
 async function updateInventoryRecord(id, payload) {
   const inventoryId = normalizeInteger(id, "id", { required: true, min: 1 });
-  const updates = [];
-  const values = [];
-
-  if (hasOwn(payload, "storage_location_id")) {
-    values.push(normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 }));
-    updates.push(`storage_location_id = $${values.length}`);
-  }
-  if (hasOwn(payload, "article_id")) {
-    values.push(normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 }));
-    updates.push(`article_id = $${values.length}`);
-  }
-  if (hasOwn(payload, "menge")) {
-    values.push(normalizeInteger(payload.menge, "menge", { required: true, min: 1 }));
-    updates.push(`menge = $${values.length}`);
-  }
-
-  if (!updates.length) throw new WarehouseError(400, "No inventory changes provided");
-
-  updates.push(`updated_at = now()`);
-  values.push(inventoryId);
 
   try {
-    const result = await pool.query(
-      `
-      UPDATE inventory
-      SET ${updates.join(", ")}
-      WHERE id = $${values.length}
-      RETURNING id
-      `,
-      values
-    );
-    if (!result.rowCount) throw new WarehouseError(404, "Inventory record not found");
-    return getInventoryRecord(result.rows[0].id);
+    return await withTransaction(async (client) => {
+      const current = await getOneOrNull(
+        client,
+        `
+        SELECT id, storage_location_id, stellplatz_nr, article_id, menge, verpackungsart
+        FROM inventory
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [inventoryId]
+      );
+
+      if (!current) throw new WarehouseError(404, "Inventory record not found");
+
+      const nextStorageLocationId = hasOwn(payload, "storage_location_id")
+        ? normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 })
+        : current.storage_location_id;
+      const nextStellplatzNr = hasOwn(payload, "stellplatz_nr")
+        ? normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 })
+        : current.stellplatz_nr;
+      const nextArticleId = hasOwn(payload, "article_id")
+        ? normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 })
+        : current.article_id;
+      const nextMenge = hasOwn(payload, "menge")
+        ? normalizeInteger(payload.menge, "menge", { required: true, min: 1 })
+        : current.menge;
+      const nextVerpackungsart = hasOwn(payload, "verpackungsart")
+        ? normalizePackagingType(payload.verpackungsart, "verpackungsart", { required: true })
+        : current.verpackungsart;
+
+      if (Number(nextMenge) !== 1) {
+        throw new WarehouseError(400, "Inventory records must use menge = 1 per slot");
+      }
+
+      if (
+        Number(nextStorageLocationId) === Number(current.storage_location_id)
+        && Number(nextStellplatzNr) === Number(current.stellplatz_nr)
+        && Number(nextArticleId) === Number(current.article_id)
+        && Number(nextMenge) === Number(current.menge)
+        && (nextVerpackungsart || null) === (current.verpackungsart || null)
+      ) {
+        throw new WarehouseError(400, "No inventory changes provided");
+      }
+
+      await ensureStorageLocationSlot(client, nextStorageLocationId, nextStellplatzNr);
+
+      const result = await client.query(
+        `
+        UPDATE inventory
+        SET
+          storage_location_id = $1,
+          stellplatz_nr = $2,
+          article_id = $3,
+          menge = $4,
+          verpackungsart = $5,
+          updated_at = now()
+        WHERE id = $6
+        RETURNING id
+        `,
+        [nextStorageLocationId, nextStellplatzNr, nextArticleId, nextMenge, nextVerpackungsart, inventoryId]
+      );
+
+      return getInventoryById(client, result.rows[0].id);
+    });
   } catch (error) {
     throw translateDbError(error, {
-      uniqueMessage: "Inventory record for this article and storage location already exists",
+      uniqueMessage: "Inventory record for this storage location and slot already exists",
       fkMessage: "Article or storage location not found"
     });
   }
@@ -1115,7 +1733,7 @@ async function listTransactions(filters = {}) {
   const params = [...values, limit];
 
   try {
-    return (
+    const rows = (
       await pool.query(
         `
         ${TRANSACTION_SELECT}
@@ -1126,6 +1744,7 @@ async function listTransactions(filters = {}) {
         params
       )
     ).rows;
+    return attachTransactionSlotAssignments(pool, rows);
   } catch (error) {
     throw translateDbError(error);
   }
@@ -1134,7 +1753,7 @@ async function listTransactions(filters = {}) {
 async function exportTransactions(filters = {}) {
   const { whereSql, values } = buildTransactionFilters(filters, { withLimit: false });
   try {
-    return (
+    const rows = (
       await pool.query(
         `
         ${TRANSACTION_SELECT}
@@ -1144,6 +1763,7 @@ async function exportTransactions(filters = {}) {
         values
       )
     ).rows;
+    return attachTransactionSlotAssignments(pool, rows);
   } catch (error) {
     throw translateDbError(error);
   }
@@ -1171,6 +1791,8 @@ async function createTransactionRecord(payload, userId) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
+          verpackungsart,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1178,7 +1800,7 @@ async function createTransactionRecord(payload, userId) {
           datum,
           notiz
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id
         `,
         [
@@ -1187,6 +1809,8 @@ async function createTransactionRecord(payload, userId) {
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
+          movement.stellplatz_nr,
+          movement.verpackungsart,
           movement.customer_id,
           movement.beleg_nr,
           movement.positions_nr,
@@ -1196,6 +1820,7 @@ async function createTransactionRecord(payload, userId) {
         ]
       );
 
+      await replaceTransactionSlotAssignments(client, inserted.rows[0].id, movement);
       return getTransactionById(client, inserted.rows[0].id);
     });
   } catch (error) {
@@ -1212,7 +1837,7 @@ async function updateTransactionRecord(id, payload) {
 
   try {
     return await withTransaction(async (client) => {
-      const current = await getOneOrNull(
+      const currentBase = await getOneOrNull(
         client,
         `
         SELECT
@@ -1222,6 +1847,8 @@ async function updateTransactionRecord(id, payload) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
+          verpackungsart,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1235,7 +1862,8 @@ async function updateTransactionRecord(id, payload) {
         [transactionId]
       );
 
-      if (!current) throw new WarehouseError(404, "Transaction not found");
+      if (!currentBase) throw new WarehouseError(404, "Transaction not found");
+      const [current] = await attachTransactionSlotAssignments(client, [currentBase]);
 
       await applyMovement(client, current, -1);
       await applyMovement(client, movement, 1);
@@ -1249,12 +1877,14 @@ async function updateTransactionRecord(id, payload) {
           menge = $3,
           storage_location_from_id = $4,
           storage_location_to_id = $5,
-          customer_id = $6,
-          beleg_nr = $7,
-          positions_nr = $8,
-          datum = $9,
-          notiz = $10
-        WHERE id = $11
+          stellplatz_nr = $6,
+          verpackungsart = $7,
+          customer_id = $8,
+          beleg_nr = $9,
+          positions_nr = $10,
+          datum = $11,
+          notiz = $12
+        WHERE id = $13
         `,
         [
           movement.typ,
@@ -1262,6 +1892,8 @@ async function updateTransactionRecord(id, payload) {
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
+          movement.stellplatz_nr,
+          movement.verpackungsart,
           movement.customer_id,
           movement.beleg_nr,
           movement.positions_nr,
@@ -1271,6 +1903,7 @@ async function updateTransactionRecord(id, payload) {
         ]
       );
 
+      await replaceTransactionSlotAssignments(client, transactionId, movement);
       return getTransactionById(client, transactionId);
     });
   } catch (error) {
@@ -1286,7 +1919,7 @@ async function deleteTransactionRecord(id) {
 
   try {
     return await withTransaction(async (client) => {
-      const current = await getOneOrNull(
+      const currentBase = await getOneOrNull(
         client,
         `
         SELECT
@@ -1296,6 +1929,8 @@ async function deleteTransactionRecord(id) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
+          verpackungsart,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1309,7 +1944,8 @@ async function deleteTransactionRecord(id) {
         [transactionId]
       );
 
-      if (!current) throw new WarehouseError(404, "Transaction not found");
+      if (!currentBase) throw new WarehouseError(404, "Transaction not found");
+      const [current] = await attachTransactionSlotAssignments(client, [currentBase]);
 
       await applyMovement(client, current, -1);
       await client.query(`DELETE FROM transactions WHERE id = $1`, [transactionId]);
@@ -1640,6 +2276,7 @@ async function completePickingOrder(id, payload, userId) {
 }
 
 module.exports = {
+  PACKAGING_TYPES,
   PICKING_STATUSES,
   STORAGE_LOCATION_TYPES,
   TRANSACTION_TYPES,
@@ -1669,6 +2306,7 @@ module.exports = {
   listCustomers,
   listInventory,
   listPickingOrders,
+  listStorageLocationSlots,
   listStorageLocations,
   listTransactions,
   startPickingOrder,

@@ -16,10 +16,10 @@
     <div class="warehouse-topbar-spacer" aria-hidden="true"></div>
     <div class="row topbar-actions" style="align-items:center;">
       <div class="settings-menu-wrap" id="settingsMenuWrap">
-        <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen oeffnen">&#9881;</button>
+        <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">&#9881;</button>
         <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
           <button class="secondary" id="openAdminBtn" role="menuitem" style="display:none;">Admin</button>
-          <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort aendern</button>
+          <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
           <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
           <button class="secondary" id="moduleDashboardBtn" role="menuitem">Modul-Dashboard</button>
           <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
@@ -38,7 +38,7 @@
           <span class="pill" id="warehouseMe">-</span>
         </div>
         <p class="warehouse-page-header__lead">
-          Live-Bestaende, Lagerplaetze, Artikelstamm, Kundenstamm und Versandauftraege in einer gemeinsamen Arbeitsoberflaeche fuer Buero und Lager.
+          Live-Bestände, Lagerplätze, Artikelstamm, Kundenstamm und Versandaufträge in einer gemeinsamen Arbeitsoberfläche für Büro und Lager.
         </p>
       </div>
       <div class="warehouse-page-header__stats">
@@ -78,7 +78,7 @@
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="locations">
             <span class="warehouse-nav__icon">04</span>
-            <span>Lagerplaetze</span>
+            <span>Lagerplätze</span>
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="masterdata">
             <span class="warehouse-nav__icon">05</span>
@@ -86,7 +86,7 @@
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="picking">
             <span class="warehouse-nav__icon">06</span>
-            <span>Versandauftraege</span>
+            <span>Versandaufträge</span>
           </button>
           <button class="warehouse-nav__button" type="button" data-tab="history">
             <span class="warehouse-nav__icon">07</span>
@@ -112,16 +112,28 @@
               <span class="warehouse-stat-card__meta">Artikel im Artikelstamm</span>
             </article>
             <article class="warehouse-stat-card">
-              <span class="warehouse-stat-card__label">Lagerplaetze</span>
+              <span class="warehouse-stat-card__label">Lagerplätze</span>
               <strong class="warehouse-stat-card__value" id="dashboardLocationsCount">0</strong>
-              <span class="warehouse-stat-card__meta">Regale und Bodenstellplaetze</span>
+              <span class="warehouse-stat-card__meta">Regale und Bodenstellplätze</span>
             </article>
             <article class="warehouse-stat-card">
               <span class="warehouse-stat-card__label">Bestandspositionen</span>
               <strong class="warehouse-stat-card__value" id="dashboardInventoryPositionsCount">0</strong>
-              <span class="warehouse-stat-card__meta" id="dashboardInventoryQuantityMeta">0 Stueck insgesamt</span>
+              <span class="warehouse-stat-card__meta" id="dashboardInventoryQuantityMeta">0 Stück insgesamt</span>
             </article>
           </div>
+
+          <article class="warehouse-card warehouse-card--wide">
+            <div class="warehouse-card__head">
+              <div>
+                <span class="warehouse-section-kicker">Übersicht</span>
+                <h3>Lagerplatz-Auslastung</h3>
+              </div>
+            </div>
+            <div class="warehouse-capacity-grid" id="dashboardLocationCapacity">
+              <div class="warehouse-empty">Lagerplätze werden geladen...</div>
+            </div>
+          </article>
 
           <div class="warehouse-grid warehouse-grid--dashboard">
             <article class="warehouse-card">
@@ -140,11 +152,11 @@
               <div class="warehouse-card__head">
                 <div>
                   <span class="warehouse-section-kicker">Kommissionierung</span>
-                  <h3>Offene Versandauftraege</h3>
+                  <h3>Offene Versandaufträge</h3>
                 </div>
               </div>
               <div class="warehouse-list" id="dashboardOpenOrders">
-                <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+                <div class="warehouse-empty">Versandaufträge werden geladen...</div>
               </div>
             </article>
           </div>
@@ -155,7 +167,7 @@
             <article class="warehouse-card" id="bookingEditorCard">
               <div class="warehouse-card__head">
                 <div>
-                  <span class="warehouse-section-kicker">Scanner Flow</span>
+                  <span class="warehouse-section-kicker">Manuelle Buchung</span>
                   <h3>Ein-, Aus- und Umlagern</h3>
                 </div>
                 <span class="warehouse-badge warehouse-badge--accent" id="bookingPermissionBadge">Buchen</span>
@@ -172,7 +184,7 @@
                   </div>
                   <div>
                     <label for="bookingBelegNr">Belegnummer</label>
-                    <input id="bookingBelegNr" class="warehouse-scanner-input" type="text" placeholder="Beleg scannen oder eingeben" autocomplete="off" />
+                    <input id="bookingBelegNr" type="text" placeholder="Belegnummer eingeben" autocomplete="off" />
                   </div>
                   <div>
                     <label for="bookingPositionsNr">Positionsnummer</label>
@@ -180,11 +192,11 @@
                   </div>
                   <div>
                     <label for="bookingArticleLookup">Artikel</label>
-                    <input id="bookingArticleLookup" class="warehouse-scanner-input" type="text" list="warehouseArticleLookupList" placeholder="Artikelnummer oder Bezeichnung scannen" autocomplete="off" />
+                    <input id="bookingArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikelnummer oder Bezeichnung wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="bookingQuantity">Menge</label>
-                    <input id="bookingQuantity" class="warehouse-scanner-input" type="number" min="1" value="1" />
+                    <input id="bookingQuantity" type="number" min="1" value="1" />
                   </div>
                   <div>
                     <label for="bookingCustomerLookup">Kunde</label>
@@ -192,11 +204,11 @@
                   </div>
                   <div id="bookingSourceField">
                     <label for="bookingSourceLookup">Lagerplatz Quelle</label>
-                    <input id="bookingSourceLookup" class="warehouse-scanner-input" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz scannen" autocomplete="off" />
+                    <input id="bookingSourceLookup" type="text" list="warehouseLocationLookupList" placeholder="Quell-Lagerplatz wählen" autocomplete="off" />
                   </div>
                   <div id="bookingDestinationField">
                     <label for="bookingDestinationLookup">Lagerplatz Ziel</label>
-                    <input id="bookingDestinationLookup" class="warehouse-scanner-input" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz scannen" autocomplete="off" />
+                    <input id="bookingDestinationLookup" type="text" list="warehouseLocationLookupList" placeholder="Ziel-Lagerplatz wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="bookingDate">Datum</label>
@@ -204,7 +216,7 @@
                   </div>
                   <div class="warehouse-form-span-2">
                     <label for="bookingNote">Notiz</label>
-                    <textarea id="bookingNote" rows="3" placeholder="z.B. Lieferschein, Besonderheit, Scannerinfo"></textarea>
+                    <textarea id="bookingNote" rows="3" placeholder="z.B. Lieferschein, Besonderheit oder Hinweis"></textarea>
                   </div>
                 </div>
                 <div class="warehouse-form-actions">
@@ -215,30 +227,18 @@
               <p class="warehouse-message" id="bookingMsg" role="status" aria-live="polite"></p>
             </article>
 
-            <article class="warehouse-card warehouse-card--accent">
+            <article class="warehouse-card">
               <div class="warehouse-card__head">
                 <div>
-                  <span class="warehouse-section-kicker">Arbeitsweise</span>
-                  <h3>Scanner-optimiert</h3>
+                  <span class="warehouse-section-kicker">Live-Ansicht</span>
+                  <h3>Lagerplatz-Auslastung</h3>
                 </div>
               </div>
-              <div class="warehouse-flow-list">
-                <div class="warehouse-flow-step">
-                  <strong>1. Beleg scannen</strong>
-                  <span>Mit Enter springt der Fokus direkt zum Artikel.</span>
-                </div>
-                <div class="warehouse-flow-step">
-                  <strong>2. Artikel scannen</strong>
-                  <span>Artikelnummer oder Klartext werden gegen den Artikelstamm aufgeloest.</span>
-                </div>
-                <div class="warehouse-flow-step">
-                  <strong>3. Lagerplatz scannen</strong>
-                  <span>Je nach Buchungsart wird automatisch Quelle, Ziel oder beides abgefragt.</span>
-                </div>
-                <div class="warehouse-flow-step">
-                  <strong>4. Menge bestaetigen</strong>
-                  <span>Nach Enter im Mengenfeld wird die Buchung abgeschickt.</span>
-                </div>
+              <p class="warehouse-card__lead">
+                Alle Lagerplätze werden mit belegter Menge, freiem Platz und Auslastung angezeigt. So sieht das Lagerteam sofort, welche Plätze voll, knapp oder frei sind.
+              </p>
+              <div class="warehouse-capacity-grid" id="bookingLocationCapacity">
+                <div class="warehouse-empty">Lagerplätze werden geladen...</div>
               </div>
               <div class="warehouse-preview" id="bookingPreview">
                 <div class="warehouse-preview__row"><span>Typ</span><strong>-</strong></div>
@@ -256,7 +256,7 @@
               <div class="warehouse-card__head">
                 <div>
                   <span class="warehouse-section-kicker">Live</span>
-                  <h3>Bestandsuebersicht</h3>
+                  <h3>Bestandsübersicht</h3>
                 </div>
               </div>
               <div class="warehouse-toolbar">
@@ -281,11 +281,11 @@
                 <div class="warehouse-form-grid">
                   <div>
                     <label for="inventoryLocationLookup">Lagerplatz</label>
-                    <input id="inventoryLocationLookup" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz waehlen" autocomplete="off" />
+                    <input id="inventoryLocationLookup" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="inventoryArticleLookup">Artikel</label>
-                    <input id="inventoryArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikel waehlen" autocomplete="off" />
+                    <input id="inventoryArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikel wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="inventoryQuantity">Menge</label>
@@ -294,8 +294,8 @@
                 </div>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="inventorySaveBtn" type="submit">Datensatz speichern</button>
-                  <button class="secondary" id="inventoryResetBtn" type="button">Auswahl loeschen</button>
-                  <button class="danger" id="inventoryDeleteBtn" type="button">Datensatz loeschen</button>
+                  <button class="secondary" id="inventoryResetBtn" type="button">Auswahl löschen</button>
+                  <button class="danger" id="inventoryDeleteBtn" type="button">Datensatz löschen</button>
                 </div>
               </form>
               <p class="warehouse-message" id="inventoryMsg" role="status" aria-live="polite"></p>
@@ -309,7 +309,7 @@
               <div class="warehouse-card__head">
                 <div>
                   <span class="warehouse-section-kicker">Struktur</span>
-                  <h3>Lagerplaetze anlegen</h3>
+                  <h3>Lagerplätze anlegen</h3>
                 </div>
               </div>
               <form id="locationForm" class="warehouse-form">
@@ -326,14 +326,14 @@
                     <input id="locationName" type="text" placeholder="z.B. Regal A-01" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="locationCapacity">Kapazitaet</label>
+                    <label for="locationCapacity">Kapazität</label>
                     <input id="locationCapacity" type="number" min="1" value="1" />
                   </div>
                 </div>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="locationSaveBtn" type="submit">Lagerplatz speichern</button>
-                  <button class="secondary" id="locationResetBtn" type="button">Auswahl loeschen</button>
-                  <button class="danger" id="locationDeleteBtn" type="button">Lagerplatz loeschen</button>
+                  <button class="secondary" id="locationResetBtn" type="button">Auswahl löschen</button>
+                  <button class="danger" id="locationDeleteBtn" type="button">Lagerplatz löschen</button>
                 </div>
               </form>
               <p class="warehouse-message" id="locationMsg" role="status" aria-live="polite"></p>
@@ -342,8 +342,8 @@
             <article class="warehouse-card">
               <div class="warehouse-card__head">
                 <div>
-                  <span class="warehouse-section-kicker">Uebersicht</span>
-                  <h3>Bestehende Lagerplaetze</h3>
+                  <span class="warehouse-section-kicker">Übersicht</span>
+                  <h3>Bestehende Lagerplätze</h3>
                 </div>
               </div>
               <div class="warehouse-toolbar">
@@ -351,7 +351,7 @@
                 <button class="secondary" id="locationReloadBtn" type="button">Aktualisieren</button>
               </div>
               <div class="warehouse-table-wrap" id="locationsTableWrap">
-                <div class="warehouse-empty">Lagerplaetze werden geladen...</div>
+                <div class="warehouse-empty">Lagerplätze werden geladen...</div>
               </div>
             </article>
           </div>
@@ -387,8 +387,8 @@
                 </div>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="customerSaveBtn" type="submit">Kunde speichern</button>
-                  <button class="secondary" id="customerResetBtn" type="button">Auswahl loeschen</button>
-                  <button class="danger" id="customerDeleteBtn" type="button">Kunde loeschen</button>
+                  <button class="secondary" id="customerResetBtn" type="button">Auswahl löschen</button>
+                  <button class="danger" id="customerDeleteBtn" type="button">Kunde löschen</button>
                 </div>
               </form>
               <div class="warehouse-toolbar">
@@ -424,8 +424,8 @@
                 </div>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="articleSaveBtn" type="submit">Artikel speichern</button>
-                  <button class="secondary" id="articleResetBtn" type="button">Auswahl loeschen</button>
-                  <button class="danger" id="articleDeleteBtn" type="button">Artikel loeschen</button>
+                  <button class="secondary" id="articleResetBtn" type="button">Auswahl löschen</button>
+                  <button class="danger" id="articleDeleteBtn" type="button">Artikel löschen</button>
                 </div>
               </form>
               <div class="warehouse-toolbar">
@@ -444,31 +444,31 @@
             <article class="warehouse-card" id="pickingOfficeCard">
               <div class="warehouse-card__head">
                 <div>
-                  <span class="warehouse-section-kicker">Buero</span>
+                  <span class="warehouse-section-kicker">Büro</span>
                   <h3>Versandauftrag anlegen</h3>
                 </div>
-                <button class="secondary warehouse-inline-btn" id="pickingAddItemBtn" type="button">Position hinzufuegen</button>
+                <button class="secondary warehouse-inline-btn" id="pickingAddItemBtn" type="button">Position hinzufügen</button>
               </div>
               <form id="pickingForm" class="warehouse-form">
                 <div class="warehouse-form-grid">
                   <div>
                     <label for="pickingCustomerLookup">Kunde</label>
-                    <input id="pickingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="Kunde waehlen" autocomplete="off" />
+                    <input id="pickingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="Kunde wählen" autocomplete="off" />
                   </div>
                   <div>
                     <label for="pickingBelegNr">Belegnummer</label>
                     <input id="pickingBelegNr" type="text" placeholder="z.B. VS-2026-001" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="pickingDueDate">Faellig am</label>
+                    <label for="pickingDueDate">Fällig am</label>
                     <input id="pickingDueDate" type="date" />
                   </div>
                 </div>
                 <div class="warehouse-item-editor" id="pickingItemsEditor"></div>
                 <div class="warehouse-form-actions">
                   <button class="primary" id="pickingSaveBtn" type="submit">Auftrag speichern</button>
-                  <button class="secondary" id="pickingResetBtn" type="button">Auswahl loeschen</button>
-                  <button class="danger" id="pickingDeleteBtn" type="button">Auftrag loeschen</button>
+                  <button class="secondary" id="pickingResetBtn" type="button">Auswahl löschen</button>
+                  <button class="danger" id="pickingDeleteBtn" type="button">Auftrag löschen</button>
                 </div>
               </form>
               <p class="warehouse-message" id="pickingMsg" role="status" aria-live="polite"></p>
@@ -482,7 +482,7 @@
                 </div>
               </div>
               <div class="warehouse-order-board" id="pickingProcessWrap">
-                <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+                <div class="warehouse-empty">Versandaufträge werden geladen...</div>
               </div>
             </article>
           </div>
@@ -490,8 +490,8 @@
           <article class="warehouse-card">
             <div class="warehouse-card__head">
               <div>
-                <span class="warehouse-section-kicker">Uebersicht</span>
-                <h3>Alle Versandauftraege</h3>
+                <span class="warehouse-section-kicker">Übersicht</span>
+                <h3>Alle Versandaufträge</h3>
               </div>
             </div>
             <div class="warehouse-toolbar">
@@ -505,7 +505,7 @@
               <button class="secondary" id="pickingReloadBtn" type="button">Aktualisieren</button>
             </div>
             <div class="warehouse-table-wrap" id="pickingTableWrap">
-              <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+              <div class="warehouse-empty">Versandaufträge werden geladen...</div>
             </div>
           </article>
         </section>
@@ -552,7 +552,7 @@
   <div class="modalBack" id="passwordModalBack" aria-hidden="true">
     <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
       <div class="password-modal-head">
-        <h3 id="passwordModalTitle">Passwort aendern</h3>
+        <h3 id="passwordModalTitle">Passwort ändern</h3>
         <button class="secondary" id="closePasswordModalBtn" type="button">Schliessen</button>
       </div>
       <p class="muted" style="margin-top:0;">Verwenden Sie ein sicheres Passwort mit mindestens 8 Zeichen.</p>
