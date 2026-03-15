@@ -92,6 +92,12 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function formatNumber(value) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return "0";
+  return new Intl.NumberFormat("de-DE").format(parsed);
+}
+
 function formatLocalDateTimeInput(value) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return "";
@@ -194,15 +200,15 @@ function setSidebarNote() {
   const actions = [];
   if (permissionValue("warehouse.transactions.create")) actions.push("Buchungen");
   if (permissionValue("warehouse.inventory.view")) actions.push("Live-Bestand");
-  if (permissionValue("warehouse.storage_locations.manage")) actions.push("Lagerplaetze");
+  if (permissionValue("warehouse.storage_locations.manage")) actions.push("Lagerplätze");
   if (permissionValue("warehouse.customers.manage") || permissionValue("warehouse.articles.manage")) actions.push("Stammdaten");
-  if (permissionValue("warehouse.picking.manage")) actions.push("Versandauftraege Buero");
-  if (permissionValue("warehouse.picking.process")) actions.push("Versandauftraege Lager");
+  if (permissionValue("warehouse.picking.manage")) actions.push("Versandaufträge Büro");
+  if (permissionValue("warehouse.picking.process")) actions.push("Versandaufträge Lager");
   if (permissionValue("warehouse.transactions.view")) actions.push("Historie");
 
   note.textContent = actions.length
     ? `Freigeschaltet: ${actions.join(", ")}.`
-    : "Fuer dieses Konto sind aktuell keine Warehouse-Bereiche freigeschaltet.";
+    : "Für dieses Konto sind aktuell keine Warehouse-Bereiche freigeschaltet.";
 }
 
 function updateQuickStats(summary = {}) {
@@ -437,7 +443,7 @@ function bindPasswordModal() {
     const confirmPassword = String($("confirmPassword").value || "").trim();
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setMessage("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      setMessage("passwordModalMsg", "Bitte alle Felder ausfüllen.");
       return;
     }
     if (newPassword.length < 8) {
@@ -445,7 +451,7 @@ function bindPasswordModal() {
       return;
     }
     if (newPassword !== confirmPassword) {
-      setMessage("passwordModalMsg", "Die neuen Passwoerter stimmen nicht ueberein.");
+      setMessage("passwordModalMsg", "Die neuen Passwörter stimmen nicht überein.");
       return;
     }
 
@@ -462,10 +468,10 @@ function bindPasswordModal() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("passwordModalMsg", data?.error || "Passwort konnte nicht geaendert werden.");
+        setMessage("passwordModalMsg", data?.error || "Passwort konnte nicht geändert werden.");
         return;
       }
-      setMessage("passwordModalMsg", "Passwort erfolgreich geaendert.", true);
+      setMessage("passwordModalMsg", "Passwort erfolgreich geändert.", true);
       window.setTimeout(() => showPasswordModal(false), 700);
     } catch {
       setMessage("passwordModalMsg", "Netzwerkfehler. Bitte erneut versuchen.");
@@ -485,46 +491,115 @@ function updateBookingVisibility() {
   const type = $("bookingType")?.value || "IN";
   const sourceField = $("bookingSourceField");
   const destinationField = $("bookingDestinationField");
+  const sourceInput = $("bookingSourceLookup");
+  const destinationInput = $("bookingDestinationLookup");
 
   if (sourceField) sourceField.style.display = type === "IN" ? "none" : "";
   if (destinationField) destinationField.style.display = type === "OUT" ? "none" : "";
+  if (sourceInput) sourceInput.disabled = type === "IN";
+  if (destinationInput) destinationInput.disabled = type === "OUT";
 
   renderBookingPreview();
 }
 
-function getBookingScannerFields() {
-  const fields = [
-    $("bookingBelegNr"),
-    $("bookingArticleLookup")
-  ];
-  const type = $("bookingType")?.value || "IN";
+function getLocationCapacityMetrics(location) {
+  const capacity = Math.max(Number(location?.kapazitaet || 0), 1);
+  const occupied = Math.max(Number(location?.belegte_menge || 0), 0);
+  const positions = Math.max(Number(location?.belegte_positionen || 0), 0);
+  const rawPercent = (occupied / capacity) * 100;
+  const percent = Math.max(Math.min(rawPercent, 100), 0);
+  const free = Math.max(capacity - occupied, 0);
+  const overflow = Math.max(occupied - capacity, 0);
 
-  if (type === "OUT" || type === "TRANSFER") fields.push($("bookingSourceLookup"));
-  if (type === "IN" || type === "TRANSFER") fields.push($("bookingDestinationLookup"));
+  let tone = "ok";
+  let badge = occupied === 0 ? "Leer" : "Verfügbar";
+  if (rawPercent >= 100) {
+    tone = "critical";
+    badge = overflow > 0 ? "Überfüllt" : "Voll";
+  } else if (rawPercent >= 80) {
+    tone = "warning";
+    badge = "Knapp";
+  }
 
-  fields.push($("bookingQuantity"));
-
-  return fields.filter((field) => field && field.offsetParent !== null && !field.disabled);
+  return {
+    capacity,
+    occupied,
+    positions,
+    rawPercent,
+    percent,
+    free,
+    overflow,
+    tone,
+    badge,
+    detailText: overflow > 0
+      ? `${formatNumber(overflow)} über Kapazität`
+      : `${formatNumber(free)} frei`
+  };
 }
 
-function bindScannerFlow() {
-  ["bookingBelegNr", "bookingArticleLookup", "bookingSourceLookup", "bookingDestinationLookup", "bookingQuantity"].forEach((id) => {
-    const field = $(id);
-    if (!field) return;
-    field.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      const fields = getBookingScannerFields();
-      const index = fields.indexOf(field);
-      const next = fields[index + 1];
-      if (next) {
-        next.focus();
-        if (typeof next.select === "function") next.select();
-      } else {
-        $("bookingForm")?.requestSubmit();
-      }
-    });
+function renderLocationCapacityCards() {
+  const hosts = ["dashboardLocationCapacity", "bookingLocationCapacity"]
+    .map((id) => $(id))
+    .filter(Boolean);
+
+  if (!hosts.length) return;
+
+  const rows = [...state.refs.locations].sort((left, right) => {
+    const leftMetrics = getLocationCapacityMetrics(left);
+    const rightMetrics = getLocationCapacityMetrics(right);
+    if (rightMetrics.rawPercent !== leftMetrics.rawPercent) return rightMetrics.rawPercent - leftMetrics.rawPercent;
+    return String(left.name || "").localeCompare(String(right.name || ""), "de-DE");
   });
+
+  const markup = rows.length
+    ? rows.map((location) => {
+        const metrics = getLocationCapacityMetrics(location);
+        return `
+          <article class="warehouse-capacity-card">
+            <div class="warehouse-capacity-card__top">
+              <div>
+                <div class="warehouse-capacity-card__title">${escapeHtml(location.name)}</div>
+                <div class="warehouse-capacity-card__meta">${escapeHtml(location.typ)}</div>
+              </div>
+              <span class="warehouse-badge warehouse-capacity-card__badge warehouse-capacity-card__badge--${metrics.tone}">
+                ${escapeHtml(metrics.badge)}
+              </span>
+            </div>
+            <div class="warehouse-capacity-meter" aria-hidden="true">
+              <span
+                class="warehouse-capacity-meter__fill warehouse-capacity-meter__fill--${metrics.tone}"
+                style="width:${metrics.percent.toFixed(1)}%;"
+              ></span>
+            </div>
+            <div class="warehouse-capacity-card__stats">
+              <strong>${escapeHtml(`${formatNumber(metrics.occupied)}/${formatNumber(metrics.capacity)} belegt`)}</strong>
+              <span>${escapeHtml(metrics.detailText)}</span>
+            </div>
+            <div class="warehouse-capacity-card__foot">
+              <span>${escapeHtml(`${formatNumber(metrics.positions)} Positionen`)}</span>
+              <span>${escapeHtml(`${formatNumber(Math.round(metrics.rawPercent))}% Auslastung`)}</span>
+            </div>
+          </article>
+        `;
+      }).join("")
+    : `<div class="warehouse-empty">Noch keine Lagerplätze vorhanden.</div>`;
+
+  hosts.forEach((host) => {
+    host.innerHTML = markup;
+  });
+}
+
+function notifyBookingFailure(error, payload) {
+  if (!error.payload) error.payload = payload;
+  console.log(error);
+
+  const message = error?.message || "Buchung konnte nicht gespeichert werden.";
+  const detailText = error?.details
+    ? `\nDetails: ${typeof error.details === "string" ? error.details : JSON.stringify(error.details)}`
+    : "";
+
+  setMessage("bookingMsg", message);
+  window.alert(`Buchung konnte nicht gespeichert werden.\n${message}${detailText}`);
 }
 
 function renderBookingPreview() {
@@ -571,8 +646,9 @@ function renderDashboard() {
   $("dashboardArticlesCount").textContent = String(summary.articles_count || 0);
   $("dashboardLocationsCount").textContent = String(summary.storage_locations_count || 0);
   $("dashboardInventoryPositionsCount").textContent = String(summary.inventory_positions_count || 0);
-  $("dashboardInventoryQuantityMeta").textContent = `${summary.inventory_quantity_total || 0} Stueck insgesamt`;
+  $("dashboardInventoryQuantityMeta").textContent = `${formatNumber(summary.inventory_quantity_total || 0)} Stück insgesamt`;
   updateQuickStats(summary);
+  renderLocationCapacityCards();
 
   const recentHost = $("dashboardRecentTransactions");
   const openOrdersHost = $("dashboardOpenOrders");
@@ -616,7 +692,7 @@ function renderDashboard() {
             </div>
           </article>
         `).join("")
-      : `<div class="warehouse-empty">Keine offenen Versandauftraege vorhanden.</div>`;
+      : `<div class="warehouse-empty">Keine offenen Versandaufträge vorhanden.</div>`;
   }
 }
 
@@ -626,6 +702,8 @@ function renderLocations() {
     if (!search) return true;
     return normalizeLookupValue(location.name).includes(search) || normalizeLookupValue(location.typ).includes(search);
   });
+
+  renderLocationCapacityCards();
 
   const host = $("locationsTableWrap");
   if (!host) return;
@@ -637,7 +715,7 @@ function renderLocations() {
           <tr>
             <th>Name</th>
             <th>Typ</th>
-            <th>Kapazitaet</th>
+            <th>Kapazität</th>
             <th>Belegte Positionen</th>
             <th>Belegte Menge</th>
             <th>Aktionen</th>
@@ -648,9 +726,9 @@ function renderLocations() {
             <tr data-location-id="${location.id}">
               <td>${escapeHtml(location.name)}</td>
               <td>${escapeHtml(location.typ)}</td>
-              <td>${escapeHtml(location.kapazitaet)}</td>
-              <td>${escapeHtml(location.belegte_positionen || 0)}</td>
-              <td>${escapeHtml(location.belegte_menge || 0)}</td>
+              <td>${escapeHtml(formatNumber(location.kapazitaet))}</td>
+              <td>${escapeHtml(formatNumber(location.belegte_positionen || 0))}</td>
+              <td>${escapeHtml(formatNumber(location.belegte_menge || 0))}</td>
               <td>
                 <div class="warehouse-table__actions">
                   ${permissionValue("warehouse.storage_locations.manage") ? `<button class="secondary" type="button" data-location-edit="${location.id}">Bearbeiten</button>` : ""}
@@ -661,7 +739,7 @@ function renderLocations() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine Lagerplaetze gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Lagerplätze gefunden.</div>`;
 
   host.querySelectorAll("[data-location-edit]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -882,7 +960,7 @@ function renderHistory() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine Transaktionen fuer den aktuellen Filter gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Transaktionen für den aktuellen Filter gefunden.</div>`;
 }
 
 function createPickingDraftItem(item = {}) {
@@ -903,7 +981,7 @@ function renderPickingItemEditor() {
     <div class="warehouse-item-row" data-draft-item="${item.localId}">
       <div>
         <label>Artikel</label>
-        <input type="text" data-item-field="article" value="${escapeHtml(item.articleLookup || "")}" list="warehouseArticleLookupList" placeholder="Artikel waehlen" autocomplete="off" />
+        <input type="text" data-item-field="article" value="${escapeHtml(item.articleLookup || "")}" list="warehouseArticleLookupList" placeholder="Artikel wählen" autocomplete="off" />
       </div>
       <div>
         <label>Menge Soll</label>
@@ -952,7 +1030,7 @@ function renderPickingTable() {
             <th>Beleg</th>
             <th>Status</th>
             <th>Kunde</th>
-            <th>Faellig</th>
+            <th>Fällig</th>
             <th>Positionen</th>
             <th>Soll / Ist</th>
             <th>Aktionen</th>
@@ -977,7 +1055,7 @@ function renderPickingTable() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine Versandauftraege gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Versandaufträge gefunden.</div>`;
 
   host.querySelectorAll("[data-picking-edit]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -998,7 +1076,7 @@ function renderPickingProcessBoard() {
             <div>
               <div class="warehouse-order-card__title">${escapeHtml(order.beleg_nr)}</div>
               <div class="warehouse-order-card__meta">
-                ${escapeHtml(order.customer_name || "-")} | Faellig: ${escapeHtml(order.faellig_am ? formatDate(order.faellig_am) : "ohne Termin")}
+              ${escapeHtml(order.customer_name || "-")} | Fällig: ${escapeHtml(order.faellig_am ? formatDate(order.faellig_am) : "ohne Termin")}
               </div>
             </div>
             <span class="warehouse-badge ${statusBadgeClass(order.status)}">${escapeHtml(order.status)}</span>
@@ -1029,7 +1107,7 @@ function renderPickingProcessBoard() {
           </div>
         </article>
       `).join("")
-    : `<div class="warehouse-empty">Keine offenen Versandauftraege vorhanden.</div>`;
+    : `<div class="warehouse-empty">Keine offenen Versandaufträge vorhanden.</div>`;
 
   host.querySelectorAll("[data-order-start]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1154,7 +1232,7 @@ async function loadLocations() {
   if (!(permissionValue("warehouse.storage_locations.view") || permissionValue("warehouse.storage_locations.manage"))) return;
   const response = await api("/api/warehouse/storage-locations?limit=1000", { method: "GET", headers: {} });
   const data = await readJsonSafe(response);
-  if (!response.ok) throw new Error(data?.error || "Lagerplaetze konnten nicht geladen werden.");
+  if (!response.ok) throw new Error(data?.error || "Lagerplätze konnten nicht geladen werden.");
   state.refs.locations = Array.isArray(data) ? data : [];
   updateLookupLists();
   renderLocations();
@@ -1209,7 +1287,7 @@ async function loadPickingOrders() {
 
   const response = await api(`/api/warehouse/picking-orders?${params.toString()}`, { method: "GET", headers: {} });
   const data = await readJsonSafe(response);
-  if (!response.ok) throw new Error(data?.error || "Versandauftraege konnten nicht geladen werden.");
+  if (!response.ok) throw new Error(data?.error || "Versandaufträge konnten nicht geladen werden.");
 
   state.pickingOrders = Array.isArray(data) ? data : [];
 
@@ -1306,7 +1384,6 @@ function bindBookingForm() {
   ["bookingType", "bookingArticleLookup", "bookingSourceLookup", "bookingDestinationLookup", "bookingQuantity"].forEach((id) => {
     $(id)?.addEventListener("input", renderBookingPreview);
   });
-  bindScannerFlow();
   resetBookingDate();
   updateBookingVisibility();
 
@@ -1315,16 +1392,19 @@ function bindBookingForm() {
     event.preventDefault();
     clearMessage("bookingMsg");
 
+    const type = $("bookingType").value;
     const article = resolveArticle($("bookingArticleLookup").value);
     const customer = resolveCustomer($("bookingCustomerLookup").value);
     const source = resolveLocation($("bookingSourceLookup").value);
     const destination = resolveLocation($("bookingDestinationLookup").value);
+    const sourceLocationId = type === "OUT" || type === "TRANSFER" ? source?.id || null : null;
+    const destinationLocationId = type === "IN" || type === "TRANSFER" ? destination?.id || null : null;
     const payload = {
-      typ: $("bookingType").value,
-      article_id: article?.id,
+      typ: type,
+      article_id: article?.id || null,
       menge: Number($("bookingQuantity").value || 0),
-      storage_location_from_id: source?.id || null,
-      storage_location_to_id: destination?.id || null,
+      storage_location_from_id: sourceLocationId,
+      storage_location_to_id: destinationLocationId,
       customer_id: customer?.id || null,
       beleg_nr: $("bookingBelegNr").value.trim() || null,
       positions_nr: $("bookingPositionsNr").value.trim() || null,
@@ -1333,23 +1413,27 @@ function bindBookingForm() {
     };
 
     if (!article) {
-      setMessage("bookingMsg", "Bitte einen gueltigen Artikel auswaehlen.");
+      setMessage("bookingMsg", "Bitte einen gültigen Artikel auswählen.");
       return;
     }
     if (!Number.isInteger(payload.menge) || payload.menge <= 0) {
-      setMessage("bookingMsg", "Bitte eine gueltige Menge eingeben.");
+      setMessage("bookingMsg", "Bitte eine gültige Menge eingeben.");
       return;
     }
     if (payload.typ === "IN" && !destination) {
-      setMessage("bookingMsg", "Bitte einen gueltigen Ziel-Lagerplatz auswaehlen.");
+      setMessage("bookingMsg", "Bitte einen gültigen Ziel-Lagerplatz auswählen.");
       return;
     }
     if (payload.typ === "OUT" && !source) {
-      setMessage("bookingMsg", "Bitte einen gueltigen Quell-Lagerplatz auswaehlen.");
+      setMessage("bookingMsg", "Bitte einen gültigen Quell-Lagerplatz auswählen.");
       return;
     }
     if (payload.typ === "TRANSFER" && (!source || !destination)) {
-      setMessage("bookingMsg", "Bitte Quelle und Ziel fuer die Umlagerung angeben.");
+      setMessage("bookingMsg", "Bitte Quelle und Ziel für die Umlagerung angeben.");
+      return;
+    }
+    if (payload.typ === "TRANSFER" && sourceLocationId === destinationLocationId) {
+      setMessage("bookingMsg", "Quelle und Ziel müssen bei einer Umlagerung unterschiedlich sein.");
       return;
     }
 
@@ -1360,7 +1444,11 @@ function bindBookingForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("bookingMsg", data?.error || "Buchung konnte nicht gespeichert werden.");
+        const error = new Error(data?.error || "Buchung konnte nicht gespeichert werden.");
+        error.status = response.status;
+        error.details = data?.details || null;
+        error.backendResponse = data;
+        notifyBookingFailure(error, payload);
         return;
       }
       setMessage("bookingMsg", `Buchung ${data?.beleg_nr || data?.id || ""} wurde gespeichert.`, true);
@@ -1373,7 +1461,7 @@ function bindBookingForm() {
         loadLocations().catch(() => {})
       ]);
     } catch (error) {
-      setMessage("bookingMsg", error.message || "Buchung konnte nicht gespeichert werden.");
+      notifyBookingFailure(error, payload);
     }
   });
 }
@@ -1382,10 +1470,10 @@ function bindInventoryForm() {
   $("inventoryResetBtn")?.addEventListener("click", resetInventoryForm);
   $("inventoryDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.inventoryId) {
-      setMessage("inventoryMsg", "Bitte zuerst einen Bestandsdatensatz auswaehlen.");
+      setMessage("inventoryMsg", "Bitte zuerst einen Bestandsdatensatz auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Bestandsdatensatz wirklich loeschen?")) return;
+    if (!window.confirm("Diesen Bestandsdatensatz wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/inventory/${state.selected.inventoryId}`, {
         method: "DELETE",
@@ -1393,14 +1481,14 @@ function bindInventoryForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("inventoryMsg", data?.error || "Bestandsdatensatz konnte nicht geloescht werden.");
+        setMessage("inventoryMsg", data?.error || "Bestandsdatensatz konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("inventoryMsg", "Bestandsdatensatz wurde geloescht.", true);
+      setMessage("inventoryMsg", "Bestandsdatensatz wurde gelöscht.", true);
       resetInventoryForm();
       await Promise.all([loadInventory(), loadArticles(), loadLocations(), loadDashboard()]);
     } catch (error) {
-      setMessage("inventoryMsg", error.message || "Bestandsdatensatz konnte nicht geloescht werden.");
+      setMessage("inventoryMsg", error.message || "Bestandsdatensatz konnte nicht gelöscht werden.");
     }
   });
 
@@ -1436,7 +1524,7 @@ function bindInventoryForm() {
         setMessage("inventoryMsg", data?.error || "Bestandsdatensatz konnte nicht gespeichert werden.");
         return;
       }
-      setMessage("inventoryMsg", `Bestandsdatensatz fuer ${data?.artikel_nr || article.artikel_nr} wurde gespeichert.`, true);
+      setMessage("inventoryMsg", `Bestandsdatensatz für ${data?.artikel_nr || article.artikel_nr} wurde gespeichert.`, true);
       resetInventoryForm();
       await Promise.all([loadInventory(), loadArticles(), loadLocations(), loadDashboard()]);
     } catch (error) {
@@ -1450,10 +1538,10 @@ function bindLocationForm() {
   $("locationReloadBtn")?.addEventListener("click", () => void loadLocations().catch((error) => setMessage("locationMsg", error.message)));
   $("locationDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.locationId) {
-      setMessage("locationMsg", "Bitte zuerst einen Lagerplatz auswaehlen.");
+      setMessage("locationMsg", "Bitte zuerst einen Lagerplatz auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Lagerplatz wirklich loeschen?")) return;
+    if (!window.confirm("Diesen Lagerplatz wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/storage-locations/${state.selected.locationId}`, {
         method: "DELETE",
@@ -1461,14 +1549,14 @@ function bindLocationForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("locationMsg", data?.error || "Lagerplatz konnte nicht geloescht werden.");
+        setMessage("locationMsg", data?.error || "Lagerplatz konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("locationMsg", "Lagerplatz wurde geloescht.", true);
+      setMessage("locationMsg", "Lagerplatz wurde gelöscht.", true);
       resetLocationForm();
       await Promise.all([loadLocations(), loadInventory(), loadDashboard()]);
     } catch (error) {
-      setMessage("locationMsg", error.message || "Lagerplatz konnte nicht geloescht werden.");
+      setMessage("locationMsg", error.message || "Lagerplatz konnte nicht gelöscht werden.");
     }
   });
 
@@ -1483,7 +1571,7 @@ function bindLocationForm() {
     };
 
     if (!payload.name || !Number.isInteger(payload.kapazitaet) || payload.kapazitaet <= 0) {
-      setMessage("locationMsg", "Bitte Typ, Name und Kapazitaet korrekt eingeben.");
+      setMessage("locationMsg", "Bitte Typ, Name und Kapazität korrekt eingeben.");
       return;
     }
 
@@ -1515,10 +1603,10 @@ function bindCustomerForm() {
   $("customerResetBtn")?.addEventListener("click", resetCustomerForm);
   $("customerDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.customerId) {
-      setMessage("customerMsg", "Bitte zuerst einen Kunden auswaehlen.");
+      setMessage("customerMsg", "Bitte zuerst einen Kunden auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Kunden wirklich loeschen?")) return;
+    if (!window.confirm("Diesen Kunden wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/customers/${state.selected.customerId}`, {
         method: "DELETE",
@@ -1526,14 +1614,14 @@ function bindCustomerForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("customerMsg", data?.error || "Kunde konnte nicht geloescht werden.");
+        setMessage("customerMsg", data?.error || "Kunde konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("customerMsg", "Kunde wurde geloescht.", true);
+      setMessage("customerMsg", "Kunde wurde gelöscht.", true);
       resetCustomerForm();
       await Promise.all([loadCustomers(), loadPickingOrders(), loadDashboard()]);
     } catch (error) {
-      setMessage("customerMsg", error.message || "Kunde konnte nicht geloescht werden.");
+      setMessage("customerMsg", error.message || "Kunde konnte nicht gelöscht werden.");
     }
   });
 
@@ -1580,10 +1668,10 @@ function bindArticleForm() {
   $("articleResetBtn")?.addEventListener("click", resetArticleForm);
   $("articleDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.articleId) {
-      setMessage("articleMsg", "Bitte zuerst einen Artikel auswaehlen.");
+      setMessage("articleMsg", "Bitte zuerst einen Artikel auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Artikel wirklich loeschen?")) return;
+    if (!window.confirm("Diesen Artikel wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/articles/${state.selected.articleId}`, {
         method: "DELETE",
@@ -1591,14 +1679,14 @@ function bindArticleForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("articleMsg", data?.error || "Artikel konnte nicht geloescht werden.");
+        setMessage("articleMsg", data?.error || "Artikel konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("articleMsg", "Artikel wurde geloescht.", true);
+      setMessage("articleMsg", "Artikel wurde gelöscht.", true);
       resetArticleForm();
       await Promise.all([loadArticles(), loadInventory(), loadPickingOrders(), loadDashboard()]);
     } catch (error) {
-      setMessage("articleMsg", error.message || "Artikel konnte nicht geloescht werden.");
+      setMessage("articleMsg", error.message || "Artikel konnte nicht gelöscht werden.");
     }
   });
 
@@ -1649,10 +1737,10 @@ function bindPickingForm() {
   $("pickingResetBtn")?.addEventListener("click", resetPickingForm);
   $("pickingDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.pickingId) {
-      setMessage("pickingMsg", "Bitte zuerst einen Versandauftrag auswaehlen.");
+      setMessage("pickingMsg", "Bitte zuerst einen Versandauftrag auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Versandauftrag wirklich loeschen?")) return;
+    if (!window.confirm("Diesen Versandauftrag wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/picking-orders/${state.selected.pickingId}`, {
         method: "DELETE",
@@ -1660,14 +1748,14 @@ function bindPickingForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("pickingMsg", data?.error || "Versandauftrag konnte nicht geloescht werden.");
+        setMessage("pickingMsg", data?.error || "Versandauftrag konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("pickingMsg", "Versandauftrag wurde geloescht.", true);
+      setMessage("pickingMsg", "Versandauftrag wurde gelöscht.", true);
       resetPickingForm();
       await Promise.all([loadPickingOrders(), loadDashboard()]);
     } catch (error) {
-      setMessage("pickingMsg", error.message || "Versandauftrag konnte nicht geloescht werden.");
+      setMessage("pickingMsg", error.message || "Versandauftrag konnte nicht gelöscht werden.");
     }
   });
 
@@ -1686,7 +1774,7 @@ function bindPickingForm() {
     });
 
     if (!customer) {
-      setMessage("pickingMsg", "Bitte einen gueltigen Kunden auswaehlen.");
+      setMessage("pickingMsg", "Bitte einen gültigen Kunden auswählen.");
       return;
     }
     if (!$("pickingBelegNr").value.trim()) {
@@ -1694,7 +1782,7 @@ function bindPickingForm() {
       return;
     }
     if (!items.length || items.some((item) => !item.article_id || item.menge_soll <= 0 || item.menge_ist < 0)) {
-      setMessage("pickingMsg", "Bitte alle Positionen vollstaendig ausfuellen.");
+      setMessage("pickingMsg", "Bitte alle Positionen vollständig ausfüllen.");
       return;
     }
 

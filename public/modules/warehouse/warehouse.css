@@ -258,6 +258,10 @@ body.light .warehouse-topbar {
   backdrop-filter: blur(16px);
 }
 
+.warehouse-card--wide {
+  grid-column: 1 / -1;
+}
+
 .warehouse-card--accent {
   background: linear-gradient(150deg, rgba(10, 25, 47, 0.94), rgba(11, 95, 89, 0.92));
   color: #ffffff;
@@ -281,6 +285,12 @@ body.light .warehouse-topbar {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.warehouse-card__lead {
+  margin: 0 0 16px;
+  color: #475569;
+  line-height: 1.6;
 }
 
 .warehouse-section-kicker {
@@ -377,6 +387,97 @@ body.light .warehouse-topbar {
 .warehouse-list-item__foot {
   color: #475569;
   line-height: 1.55;
+}
+
+.warehouse-capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.warehouse-capacity-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.warehouse-capacity-card__top,
+.warehouse-capacity-card__foot,
+.warehouse-capacity-card__stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.warehouse-capacity-card__title {
+  color: var(--warehouse-ink);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.warehouse-capacity-card__meta,
+.warehouse-capacity-card__foot {
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.warehouse-capacity-card__stats {
+  align-items: flex-end;
+}
+
+.warehouse-capacity-card__stats strong {
+  color: var(--warehouse-ink);
+  font-size: 15px;
+}
+
+.warehouse-capacity-meter {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.warehouse-capacity-meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.warehouse-capacity-meter__fill--ok {
+  background: linear-gradient(90deg, #14b8a6, #0f766e);
+}
+
+.warehouse-capacity-meter__fill--warning {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.warehouse-capacity-meter__fill--critical {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+.warehouse-capacity-card__badge {
+  white-space: nowrap;
+}
+
+.warehouse-capacity-card__badge--ok {
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f766e;
+}
+
+.warehouse-capacity-card__badge--warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.warehouse-capacity-card__badge--critical {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
 }
 
 .warehouse-badge {
@@ -690,6 +791,8 @@ body.dark .warehouse-mini-stat span,
 body.darkmode .warehouse-mini-stat span,
 body.dark .warehouse-sidebar__note,
 body.darkmode .warehouse-sidebar__note,
+body.dark .warehouse-card__lead,
+body.darkmode .warehouse-card__lead,
 body.dark .warehouse-stat-card__label,
 body.darkmode .warehouse-stat-card__label,
 body.dark .warehouse-stat-card__meta,
@@ -698,6 +801,10 @@ body.dark .warehouse-list-item__meta,
 body.darkmode .warehouse-list-item__meta,
 body.dark .warehouse-list-item__foot,
 body.darkmode .warehouse-list-item__foot,
+body.dark .warehouse-capacity-card__meta,
+body.darkmode .warehouse-capacity-card__meta,
+body.dark .warehouse-capacity-card__foot,
+body.darkmode .warehouse-capacity-card__foot,
 body.dark .warehouse-empty,
 body.darkmode .warehouse-empty,
 body.dark .warehouse-table td,
@@ -718,6 +825,8 @@ body.dark .warehouse-sidebar__note,
 body.darkmode .warehouse-sidebar__note,
 body.dark .warehouse-list-item,
 body.darkmode .warehouse-list-item,
+body.dark .warehouse-capacity-card,
+body.darkmode .warehouse-capacity-card,
 body.dark .warehouse-item-row,
 body.darkmode .warehouse-item-row,
 body.dark .warehouse-table th,
@@ -756,6 +865,13 @@ body.dark .warehouse-order-line,
 body.darkmode .warehouse-order-line {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark .warehouse-capacity-card__title,
+body.darkmode .warehouse-capacity-card__title,
+body.dark .warehouse-capacity-card__stats strong,
+body.darkmode .warehouse-capacity-card__stats strong {
+  color: #f8fafc;
 }
 
 @media (max-width: 1380px) {
@@ -819,8 +935,17 @@ body.darkmode .warehouse-order-line {
   }
 
   .warehouse-item-row,
-  .warehouse-order-line {
+  .warehouse-order-line,
+  .warehouse-capacity-card__top,
+  .warehouse-capacity-card__foot,
+  .warehouse-capacity-card__stats {
     grid-template-columns: 1fr;
+  }
+
+  .warehouse-capacity-card__top,
+  .warehouse-capacity-card__foot,
+  .warehouse-capacity-card__stats {
+    display: grid;
   }
 
   .warehouse-form-actions,
