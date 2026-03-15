@@ -1,0 +1,438 @@
+const express = require("express");
+const { Parser } = require("json2csv");
+const ExcelJS = require("exceljs");
+
+const {
+  WarehouseError,
+  completePickingOrder,
+  createArticle,
+  createCustomer,
+  createInventoryRecord,
+  createPickingOrder,
+  createStorageLocation,
+  createTransactionRecord,
+  deleteArticle,
+  deleteCustomer,
+  deleteInventoryRecord,
+  deletePickingOrder,
+  deleteStorageLocation,
+  deleteTransactionRecord,
+  exportTransactions,
+  fetchPickingOrder,
+  fetchTransactionRecord,
+  getArticle,
+  getCustomer,
+  getDashboardSummary,
+  getInventoryRecord,
+  getStorageLocation,
+  listArticles,
+  listCustomers,
+  listInventory,
+  listPickingOrders,
+  listStorageLocations,
+  listTransactions,
+  startPickingOrder,
+  updateArticle,
+  updateCustomer,
+  updateInventoryRecord,
+  updatePickingOrder,
+  updatePickingOrderItem,
+  updateStorageLocation,
+  updateTransactionRecord
+} = require("./service");
+
+function formatTimestamp(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toISOString();
+}
+
+function buildExportRows(rows) {
+  return rows.map((row) => ({
+    id: row.id,
+    datum: formatTimestamp(row.datum),
+    typ: row.typ,
+    beleg_nr: row.beleg_nr || "",
+    positions_nr: row.positions_nr || "",
+    kunden_nr: row.kunden_nr || "",
+    customer_name: row.customer_name || "",
+    artikel_nr: row.artikel_nr || "",
+    bezeichnung: row.bezeichnung || "",
+    menge: row.menge,
+    storage_location_from: row.storage_location_from_name || "",
+    storage_location_to: row.storage_location_to_name || "",
+    username: row.username || "",
+    notiz: row.notiz || ""
+  }));
+}
+
+function handleRoute(fn) {
+  return async (req, res) => {
+    try {
+      await fn(req, res);
+    } catch (error) {
+      if (error instanceof WarehouseError) {
+        return res.status(error.status).json({
+          error: error.message,
+          details: error.details || null
+        });
+      }
+      console.error("warehouse route error:", error);
+      return res.status(500).json({ error: "Warehouse request failed" });
+    }
+  };
+}
+
+function createWarehouseRouter({ authRequired, requirePermission }) {
+  const router = express.Router();
+
+  router.use(authRequired);
+
+  router.get(
+    "/dashboard",
+    requirePermission("warehouse.dashboard.view"),
+    handleRoute(async (_req, res) => {
+      res.json(await getDashboardSummary());
+    })
+  );
+
+  router.get(
+    "/customers",
+    requirePermission("warehouse.customers.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listCustomers(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/customers/:id",
+    requirePermission("warehouse.customers.view"),
+    handleRoute(async (req, res) => {
+      res.json(await getCustomer(req.params.id));
+    })
+  );
+
+  router.post(
+    "/customers",
+    requirePermission("warehouse.customers.manage"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createCustomer(req.body || {}));
+    })
+  );
+
+  router.put(
+    "/customers/:id",
+    requirePermission("warehouse.customers.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updateCustomer(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/customers/:id",
+    requirePermission("warehouse.customers.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deleteCustomer(req.params.id));
+    })
+  );
+
+  router.get(
+    "/articles",
+    requirePermission("warehouse.articles.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listArticles(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/articles/:id",
+    requirePermission("warehouse.articles.view"),
+    handleRoute(async (req, res) => {
+      res.json(await getArticle(req.params.id));
+    })
+  );
+
+  router.post(
+    "/articles",
+    requirePermission("warehouse.articles.manage"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createArticle(req.body || {}));
+    })
+  );
+
+  router.put(
+    "/articles/:id",
+    requirePermission("warehouse.articles.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updateArticle(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/articles/:id",
+    requirePermission("warehouse.articles.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deleteArticle(req.params.id));
+    })
+  );
+
+  router.get(
+    "/storage-locations",
+    requirePermission("warehouse.storage_locations.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listStorageLocations(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/storage-locations/:id",
+    requirePermission("warehouse.storage_locations.view"),
+    handleRoute(async (req, res) => {
+      res.json(await getStorageLocation(req.params.id));
+    })
+  );
+
+  router.post(
+    "/storage-locations",
+    requirePermission("warehouse.storage_locations.manage"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createStorageLocation(req.body || {}));
+    })
+  );
+
+  router.put(
+    "/storage-locations/:id",
+    requirePermission("warehouse.storage_locations.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updateStorageLocation(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/storage-locations/:id",
+    requirePermission("warehouse.storage_locations.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deleteStorageLocation(req.params.id));
+    })
+  );
+
+  router.get(
+    "/inventory",
+    requirePermission("warehouse.inventory.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listInventory(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/inventory/:id",
+    requirePermission("warehouse.inventory.view"),
+    handleRoute(async (req, res) => {
+      res.json(await getInventoryRecord(req.params.id));
+    })
+  );
+
+  router.post(
+    "/inventory",
+    requirePermission("warehouse.inventory.manage"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createInventoryRecord(req.body || {}));
+    })
+  );
+
+  router.put(
+    "/inventory/:id",
+    requirePermission("warehouse.inventory.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updateInventoryRecord(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/inventory/:id",
+    requirePermission("warehouse.inventory.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deleteInventoryRecord(req.params.id));
+    })
+  );
+
+  router.get(
+    "/transactions/export/csv",
+    requirePermission("warehouse.transactions.export"),
+    handleRoute(async (req, res) => {
+      const rows = buildExportRows(await exportTransactions(req.query || {}));
+      const parser = new Parser({
+        fields: [
+          "id",
+          "datum",
+          "typ",
+          "beleg_nr",
+          "positions_nr",
+          "kunden_nr",
+          "customer_name",
+          "artikel_nr",
+          "bezeichnung",
+          "menge",
+          "storage_location_from",
+          "storage_location_to",
+          "username",
+          "notiz"
+        ]
+      });
+      const csv = parser.parse(rows);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="warehouse-transactions-${dateStamp}.csv"`);
+      res.send(csv);
+    })
+  );
+
+  router.get(
+    "/transactions/export/xlsx",
+    requirePermission("warehouse.transactions.export"),
+    handleRoute(async (req, res) => {
+      const rows = buildExportRows(await exportTransactions(req.query || {}));
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Transaktionen");
+      worksheet.columns = [
+        { header: "ID", key: "id", width: 10 },
+        { header: "Datum", key: "datum", width: 24 },
+        { header: "Typ", key: "typ", width: 12 },
+        { header: "Belegnr.", key: "beleg_nr", width: 18 },
+        { header: "Positionsnr.", key: "positions_nr", width: 18 },
+        { header: "Kundennr.", key: "kunden_nr", width: 16 },
+        { header: "Kunde", key: "customer_name", width: 26 },
+        { header: "Artikelnr.", key: "artikel_nr", width: 18 },
+        { header: "Artikel", key: "bezeichnung", width: 28 },
+        { header: "Menge", key: "menge", width: 12 },
+        { header: "Von Lagerplatz", key: "storage_location_from", width: 20 },
+        { header: "Zu Lagerplatz", key: "storage_location_to", width: 20 },
+        { header: "Benutzer", key: "username", width: 18 },
+        { header: "Notiz", key: "notiz", width: 36 }
+      ];
+      worksheet.addRows(rows);
+      worksheet.getRow(1).font = { bold: true };
+
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="warehouse-transactions-${dateStamp}.xlsx"`
+      );
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      await workbook.xlsx.write(res);
+      res.end();
+    })
+  );
+
+  router.get(
+    "/transactions",
+    requirePermission("warehouse.transactions.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listTransactions(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/transactions/:id",
+    requirePermission("warehouse.transactions.view"),
+    handleRoute(async (req, res) => {
+      res.json(await fetchTransactionRecord(req.params.id));
+    })
+  );
+
+  router.post(
+    "/transactions",
+    requirePermission("warehouse.transactions.create"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createTransactionRecord(req.body || {}, req.user.id));
+    })
+  );
+
+  router.put(
+    "/transactions/:id",
+    requirePermission("warehouse.transactions.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updateTransactionRecord(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/transactions/:id",
+    requirePermission("warehouse.transactions.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deleteTransactionRecord(req.params.id));
+    })
+  );
+
+  router.get(
+    "/picking-orders",
+    requirePermission("warehouse.picking.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listPickingOrders(req.query || {}));
+    })
+  );
+
+  router.get(
+    "/picking-orders/:id",
+    requirePermission("warehouse.picking.view"),
+    handleRoute(async (req, res) => {
+      res.json(await fetchPickingOrder(req.params.id));
+    })
+  );
+
+  router.post(
+    "/picking-orders",
+    requirePermission("warehouse.picking.manage"),
+    handleRoute(async (req, res) => {
+      res.status(201).json(await createPickingOrder(req.body || {}, req.user.id));
+    })
+  );
+
+  router.put(
+    "/picking-orders/:id/start",
+    requirePermission("warehouse.picking.process"),
+    handleRoute(async (req, res) => {
+      res.json(await startPickingOrder(req.params.id, req.user.id));
+    })
+  );
+
+  router.put(
+    "/picking-orders/:id/complete",
+    requirePermission("warehouse.picking.process"),
+    handleRoute(async (req, res) => {
+      res.json(await completePickingOrder(req.params.id, req.body || {}, req.user.id));
+    })
+  );
+
+  router.put(
+    "/picking-orders/:orderId/items/:itemId",
+    requirePermission("warehouse.picking.process"),
+    handleRoute(async (req, res) => {
+      res.json(await updatePickingOrderItem(req.params.orderId, req.params.itemId, req.body || {}, req.user.id));
+    })
+  );
+
+  router.put(
+    "/picking-orders/:id",
+    requirePermission("warehouse.picking.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await updatePickingOrder(req.params.id, req.body || {}));
+    })
+  );
+
+  router.delete(
+    "/picking-orders/:id",
+    requirePermission("warehouse.picking.manage"),
+    handleRoute(async (req, res) => {
+      res.json(await deletePickingOrder(req.params.id));
+    })
+  );
+
+  return router;
+}
+
+module.exports = { createWarehouseRouter };

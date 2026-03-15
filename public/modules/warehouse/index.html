@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lagersystem</title>
+  <link rel="stylesheet" href="/public/styles.css" />
+  <link rel="stylesheet" href="/modules/warehouse/warehouse.css" />
+</head>
+<body class="light">
+  <header class="topbar topbar-modern warehouse-topbar">
+    <div class="system-logo-wrap">
+      <img src="/public/logo.png" alt="ICS Logo" class="system-logo" />
+      <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
+    </div>
+    <div class="warehouse-topbar-spacer" aria-hidden="true"></div>
+    <div class="row topbar-actions" style="align-items:center;">
+      <div class="settings-menu-wrap" id="settingsMenuWrap">
+        <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen oeffnen">&#9881;</button>
+        <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
+          <button class="secondary" id="openAdminBtn" role="menuitem" style="display:none;">Admin</button>
+          <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort aendern</button>
+          <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+          <button class="secondary" id="moduleDashboardBtn" role="menuitem">Modul-Dashboard</button>
+          <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
+        </div>
+      </div>
+      <div id="themeToggleMount" style="display:none;"></div>
+    </div>
+  </header>
+
+  <main class="warehouse-main">
+    <section class="warehouse-page-header">
+      <div class="warehouse-page-header__copy">
+        <span class="warehouse-page-header__eyebrow">Warehouse Management System</span>
+        <div class="warehouse-page-title-row">
+          <h1>Lagersystem</h1>
+          <span class="pill" id="warehouseMe">-</span>
+        </div>
+        <p class="warehouse-page-header__lead">
+          Live-Bestaende, Lagerplaetze, Artikelstamm, Kundenstamm und Versandauftraege in einer gemeinsamen Arbeitsoberflaeche fuer Buero und Lager.
+        </p>
+      </div>
+      <div class="warehouse-page-header__stats">
+        <article class="warehouse-mini-stat">
+          <span>Offene Auftraege</span>
+          <strong id="warehouseQuickOpenOrders">0</strong>
+        </article>
+        <article class="warehouse-mini-stat">
+          <span>Bestandspositionen</span>
+          <strong id="warehouseQuickInventory">0</strong>
+        </article>
+        <article class="warehouse-mini-stat">
+          <span>Artikel</span>
+          <strong id="warehouseQuickArticles">0</strong>
+        </article>
+      </div>
+    </section>
+
+    <div class="warehouse-layout">
+      <aside class="warehouse-sidebar card" aria-label="Modulnavigation">
+        <div class="warehouse-sidebar__head">
+          <span class="warehouse-section-kicker">Navigation</span>
+          <h2>Bereiche</h2>
+        </div>
+        <div class="warehouse-nav" id="warehouseNav">
+          <button class="warehouse-nav__button active" type="button" data-tab="dashboard">
+            <span class="warehouse-nav__icon">01</span>
+            <span>Dashboard</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="booking">
+            <span class="warehouse-nav__icon">02</span>
+            <span>Ein-/Ausbuchen</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="inventory">
+            <span class="warehouse-nav__icon">03</span>
+            <span>Live-Bestand</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="locations">
+            <span class="warehouse-nav__icon">04</span>
+            <span>Lagerplaetze</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="masterdata">
+            <span class="warehouse-nav__icon">05</span>
+            <span>Stammdaten</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="picking">
+            <span class="warehouse-nav__icon">06</span>
+            <span>Versandauftraege</span>
+          </button>
+          <button class="warehouse-nav__button" type="button" data-tab="history">
+            <span class="warehouse-nav__icon">07</span>
+            <span>Historie</span>
+          </button>
+        </div>
+        <div class="warehouse-sidebar__note" id="warehouseSidebarNote">
+          Rollenrechte werden geladen...
+        </div>
+      </aside>
+
+      <section class="warehouse-content">
+        <section class="warehouse-section active" id="warehouseTab-dashboard">
+          <div class="warehouse-stat-grid">
+            <article class="warehouse-stat-card">
+              <span class="warehouse-stat-card__label">Kunden</span>
+              <strong class="warehouse-stat-card__value" id="dashboardCustomersCount">0</strong>
+              <span class="warehouse-stat-card__meta">aktive Kunden im Kundenstamm</span>
+            </article>
+            <article class="warehouse-stat-card">
+              <span class="warehouse-stat-card__label">Artikel</span>
+              <strong class="warehouse-stat-card__value" id="dashboardArticlesCount">0</strong>
+              <span class="warehouse-stat-card__meta">Artikel im Artikelstamm</span>
+            </article>
+            <article class="warehouse-stat-card">
+              <span class="warehouse-stat-card__label">Lagerplaetze</span>
+              <strong class="warehouse-stat-card__value" id="dashboardLocationsCount">0</strong>
+              <span class="warehouse-stat-card__meta">Regale und Bodenstellplaetze</span>
+            </article>
+            <article class="warehouse-stat-card">
+              <span class="warehouse-stat-card__label">Bestandspositionen</span>
+              <strong class="warehouse-stat-card__value" id="dashboardInventoryPositionsCount">0</strong>
+              <span class="warehouse-stat-card__meta" id="dashboardInventoryQuantityMeta">0 Stueck insgesamt</span>
+            </article>
+          </div>
+
+          <div class="warehouse-grid warehouse-grid--dashboard">
+            <article class="warehouse-card">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Heute</span>
+                  <h3>Letzte Bewegungen</h3>
+                </div>
+              </div>
+              <div class="warehouse-list" id="dashboardRecentTransactions">
+                <div class="warehouse-empty">Transaktionen werden geladen...</div>
+              </div>
+            </article>
+
+            <article class="warehouse-card">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Kommissionierung</span>
+                  <h3>Offene Versandauftraege</h3>
+                </div>
+              </div>
+              <div class="warehouse-list" id="dashboardOpenOrders">
+                <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-booking">
+          <div class="warehouse-grid warehouse-grid--booking">
+            <article class="warehouse-card" id="bookingEditorCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Scanner Flow</span>
+                  <h3>Ein-, Aus- und Umlagern</h3>
+                </div>
+                <span class="warehouse-badge warehouse-badge--accent" id="bookingPermissionBadge">Buchen</span>
+              </div>
+              <form id="bookingForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="bookingType">Buchungstyp</label>
+                    <select id="bookingType">
+                      <option value="IN">IN</option>
+                      <option value="OUT">OUT</option>
+                      <option value="TRANSFER">TRANSFER</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="bookingBelegNr">Belegnummer</label>
+                    <input id="bookingBelegNr" class="warehouse-scanner-input" type="text" placeholder="Beleg scannen oder eingeben" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="bookingPositionsNr">Positionsnummer</label>
+                    <input id="bookingPositionsNr" type="text" placeholder="optional" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="bookingArticleLookup">Artikel</label>
+                    <input id="bookingArticleLookup" class="warehouse-scanner-input" type="text" list="warehouseArticleLookupList" placeholder="Artikelnummer oder Bezeichnung scannen" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="bookingQuantity">Menge</label>
+                    <input id="bookingQuantity" class="warehouse-scanner-input" type="number" min="1" value="1" />
+                  </div>
+                  <div>
+                    <label for="bookingCustomerLookup">Kunde</label>
+                    <input id="bookingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="optional" autocomplete="off" />
+                  </div>
+                  <div id="bookingSourceField">
+                    <label for="bookingSourceLookup">Lagerplatz Quelle</label>
+                    <input id="bookingSourceLookup" class="warehouse-scanner-input" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz scannen" autocomplete="off" />
+                  </div>
+                  <div id="bookingDestinationField">
+                    <label for="bookingDestinationLookup">Lagerplatz Ziel</label>
+                    <input id="bookingDestinationLookup" class="warehouse-scanner-input" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz scannen" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="bookingDate">Datum</label>
+                    <input id="bookingDate" type="datetime-local" />
+                  </div>
+                  <div class="warehouse-form-span-2">
+                    <label for="bookingNote">Notiz</label>
+                    <textarea id="bookingNote" rows="3" placeholder="z.B. Lieferschein, Besonderheit, Scannerinfo"></textarea>
+                  </div>
+                </div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="bookingSubmitBtn" type="submit">Buchung speichern</button>
+                  <button class="secondary" id="bookingResetBtn" type="button">Formular leeren</button>
+                </div>
+              </form>
+              <p class="warehouse-message" id="bookingMsg" role="status" aria-live="polite"></p>
+            </article>
+
+            <article class="warehouse-card warehouse-card--accent">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Arbeitsweise</span>
+                  <h3>Scanner-optimiert</h3>
+                </div>
+              </div>
+              <div class="warehouse-flow-list">
+                <div class="warehouse-flow-step">
+                  <strong>1. Beleg scannen</strong>
+                  <span>Mit Enter springt der Fokus direkt zum Artikel.</span>
+                </div>
+                <div class="warehouse-flow-step">
+                  <strong>2. Artikel scannen</strong>
+                  <span>Artikelnummer oder Klartext werden gegen den Artikelstamm aufgeloest.</span>
+                </div>
+                <div class="warehouse-flow-step">
+                  <strong>3. Lagerplatz scannen</strong>
+                  <span>Je nach Buchungsart wird automatisch Quelle, Ziel oder beides abgefragt.</span>
+                </div>
+                <div class="warehouse-flow-step">
+                  <strong>4. Menge bestaetigen</strong>
+                  <span>Nach Enter im Mengenfeld wird die Buchung abgeschickt.</span>
+                </div>
+              </div>
+              <div class="warehouse-preview" id="bookingPreview">
+                <div class="warehouse-preview__row"><span>Typ</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Artikel</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Lagerplatz</span><strong>-</strong></div>
+                <div class="warehouse-preview__row"><span>Menge</span><strong>-</strong></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-inventory">
+          <div class="warehouse-grid warehouse-grid--inventory">
+            <article class="warehouse-card">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Live</span>
+                  <h3>Bestandsuebersicht</h3>
+                </div>
+              </div>
+              <div class="warehouse-toolbar">
+                <input id="inventorySearch" type="text" placeholder="Suche nach Artikel oder Lagerplatz" />
+                <input id="inventoryArticleFilter" type="text" list="warehouseArticleLookupList" placeholder="Artikel filtern" />
+                <input id="inventoryLocationFilter" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz filtern" />
+                <button class="secondary" id="inventoryReloadBtn" type="button">Aktualisieren</button>
+              </div>
+              <div class="warehouse-table-wrap" id="inventoryTableWrap">
+                <div class="warehouse-empty">Bestand wird geladen...</div>
+              </div>
+            </article>
+
+            <article class="warehouse-card" id="inventoryEditorCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Korrektur</span>
+                  <h3>Bestandsdatensatz</h3>
+                </div>
+              </div>
+              <form id="inventoryForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="inventoryLocationLookup">Lagerplatz</label>
+                    <input id="inventoryLocationLookup" type="text" list="warehouseLocationLookupList" placeholder="Lagerplatz waehlen" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="inventoryArticleLookup">Artikel</label>
+                    <input id="inventoryArticleLookup" type="text" list="warehouseArticleLookupList" placeholder="Artikel waehlen" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="inventoryQuantity">Menge</label>
+                    <input id="inventoryQuantity" type="number" min="1" value="1" />
+                  </div>
+                </div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="inventorySaveBtn" type="submit">Datensatz speichern</button>
+                  <button class="secondary" id="inventoryResetBtn" type="button">Auswahl loeschen</button>
+                  <button class="danger" id="inventoryDeleteBtn" type="button">Datensatz loeschen</button>
+                </div>
+              </form>
+              <p class="warehouse-message" id="inventoryMsg" role="status" aria-live="polite"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-locations">
+          <div class="warehouse-grid warehouse-grid--split">
+            <article class="warehouse-card" id="locationEditorCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Struktur</span>
+                  <h3>Lagerplaetze anlegen</h3>
+                </div>
+              </div>
+              <form id="locationForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="locationType">Typ</label>
+                    <select id="locationType">
+                      <option value="Regal">Regal</option>
+                      <option value="Bodenstellplatz">Bodenstellplatz</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="locationName">Name</label>
+                    <input id="locationName" type="text" placeholder="z.B. Regal A-01" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="locationCapacity">Kapazitaet</label>
+                    <input id="locationCapacity" type="number" min="1" value="1" />
+                  </div>
+                </div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="locationSaveBtn" type="submit">Lagerplatz speichern</button>
+                  <button class="secondary" id="locationResetBtn" type="button">Auswahl loeschen</button>
+                  <button class="danger" id="locationDeleteBtn" type="button">Lagerplatz loeschen</button>
+                </div>
+              </form>
+              <p class="warehouse-message" id="locationMsg" role="status" aria-live="polite"></p>
+            </article>
+
+            <article class="warehouse-card">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Uebersicht</span>
+                  <h3>Bestehende Lagerplaetze</h3>
+                </div>
+              </div>
+              <div class="warehouse-toolbar">
+                <input id="locationSearch" type="text" placeholder="Suche nach Name oder Typ" />
+                <button class="secondary" id="locationReloadBtn" type="button">Aktualisieren</button>
+              </div>
+              <div class="warehouse-table-wrap" id="locationsTableWrap">
+                <div class="warehouse-empty">Lagerplaetze werden geladen...</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-masterdata">
+          <div class="warehouse-grid warehouse-grid--split">
+            <article class="warehouse-card" id="customerEditorCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Kunden</span>
+                  <h3>Kundenstamm</h3>
+                </div>
+              </div>
+              <form id="customerForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="customerNumber">Kundennummer</label>
+                    <input id="customerNumber" type="text" placeholder="z.B. K-10045" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="customerName">Name</label>
+                    <input id="customerName" type="text" placeholder="Kundenname" autocomplete="off" />
+                  </div>
+                  <div class="warehouse-form-span-2">
+                    <label for="customerAddress">Adresse</label>
+                    <input id="customerAddress" type="text" placeholder="Adresse" autocomplete="off" />
+                  </div>
+                  <div class="warehouse-form-span-2">
+                    <label for="customerContact">Kontakt</label>
+                    <input id="customerContact" type="text" placeholder="Ansprechpartner, Telefon oder E-Mail" autocomplete="off" />
+                  </div>
+                </div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="customerSaveBtn" type="submit">Kunde speichern</button>
+                  <button class="secondary" id="customerResetBtn" type="button">Auswahl loeschen</button>
+                  <button class="danger" id="customerDeleteBtn" type="button">Kunde loeschen</button>
+                </div>
+              </form>
+              <div class="warehouse-toolbar">
+                <input id="customerSearch" type="text" placeholder="Suche nach Kundennummer oder Name" />
+              </div>
+              <div class="warehouse-table-wrap" id="customersTableWrap">
+                <div class="warehouse-empty">Kunden werden geladen...</div>
+              </div>
+              <p class="warehouse-message" id="customerMsg" role="status" aria-live="polite"></p>
+            </article>
+
+            <article class="warehouse-card" id="articleEditorCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Artikel</span>
+                  <h3>Artikelstamm</h3>
+                </div>
+              </div>
+              <form id="articleForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="articleNumber">Artikelnummer</label>
+                    <input id="articleNumber" type="text" placeholder="z.B. ART-2048" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="articleName">Bezeichnung</label>
+                    <input id="articleName" type="text" placeholder="Artikelbezeichnung" autocomplete="off" />
+                  </div>
+                  <div class="warehouse-form-span-2">
+                    <label for="articleDescription">Beschreibung</label>
+                    <textarea id="articleDescription" rows="4" placeholder="Kurzbeschreibung oder Lagerhinweis"></textarea>
+                  </div>
+                </div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="articleSaveBtn" type="submit">Artikel speichern</button>
+                  <button class="secondary" id="articleResetBtn" type="button">Auswahl loeschen</button>
+                  <button class="danger" id="articleDeleteBtn" type="button">Artikel loeschen</button>
+                </div>
+              </form>
+              <div class="warehouse-toolbar">
+                <input id="articleSearch" type="text" placeholder="Suche nach Artikelnummer oder Bezeichnung" />
+              </div>
+              <div class="warehouse-table-wrap" id="articlesTableWrap">
+                <div class="warehouse-empty">Artikel werden geladen...</div>
+              </div>
+              <p class="warehouse-message" id="articleMsg" role="status" aria-live="polite"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-picking">
+          <div class="warehouse-grid warehouse-grid--picking">
+            <article class="warehouse-card" id="pickingOfficeCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Buero</span>
+                  <h3>Versandauftrag anlegen</h3>
+                </div>
+                <button class="secondary warehouse-inline-btn" id="pickingAddItemBtn" type="button">Position hinzufuegen</button>
+              </div>
+              <form id="pickingForm" class="warehouse-form">
+                <div class="warehouse-form-grid">
+                  <div>
+                    <label for="pickingCustomerLookup">Kunde</label>
+                    <input id="pickingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="Kunde waehlen" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="pickingBelegNr">Belegnummer</label>
+                    <input id="pickingBelegNr" type="text" placeholder="z.B. VS-2026-001" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="pickingDueDate">Faellig am</label>
+                    <input id="pickingDueDate" type="date" />
+                  </div>
+                </div>
+                <div class="warehouse-item-editor" id="pickingItemsEditor"></div>
+                <div class="warehouse-form-actions">
+                  <button class="primary" id="pickingSaveBtn" type="submit">Auftrag speichern</button>
+                  <button class="secondary" id="pickingResetBtn" type="button">Auswahl loeschen</button>
+                  <button class="danger" id="pickingDeleteBtn" type="button">Auftrag loeschen</button>
+                </div>
+              </form>
+              <p class="warehouse-message" id="pickingMsg" role="status" aria-live="polite"></p>
+            </article>
+
+            <article class="warehouse-card warehouse-card--accent" id="pickingProcessCard">
+              <div class="warehouse-card__head">
+                <div>
+                  <span class="warehouse-section-kicker">Lager</span>
+                  <h3>Offene Kommissionierungen</h3>
+                </div>
+              </div>
+              <div class="warehouse-order-board" id="pickingProcessWrap">
+                <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+              </div>
+            </article>
+          </div>
+
+          <article class="warehouse-card">
+            <div class="warehouse-card__head">
+              <div>
+                <span class="warehouse-section-kicker">Uebersicht</span>
+                <h3>Alle Versandauftraege</h3>
+              </div>
+            </div>
+            <div class="warehouse-toolbar">
+              <input id="pickingSearch" type="text" placeholder="Suche nach Beleg oder Kunde" />
+              <select id="pickingStatusFilter">
+                <option value="">Alle Status</option>
+                <option value="OFFEN">OFFEN</option>
+                <option value="IN_BEARBEITUNG">IN_BEARBEITUNG</option>
+                <option value="ERLEDIGT">ERLEDIGT</option>
+              </select>
+              <button class="secondary" id="pickingReloadBtn" type="button">Aktualisieren</button>
+            </div>
+            <div class="warehouse-table-wrap" id="pickingTableWrap">
+              <div class="warehouse-empty">Versandauftraege werden geladen...</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="warehouse-section" id="warehouseTab-history">
+          <article class="warehouse-card">
+            <div class="warehouse-card__head">
+              <div>
+                <span class="warehouse-section-kicker">Historie</span>
+                <h3>Transaktionen und Export</h3>
+              </div>
+              <div class="warehouse-head-actions">
+                <button class="secondary" id="historyCsvExportBtn" type="button">CSV Export</button>
+                <button class="secondary" id="historyXlsxExportBtn" type="button">Excel Export</button>
+              </div>
+            </div>
+            <div class="warehouse-toolbar warehouse-toolbar--history">
+              <input id="historySearch" type="text" placeholder="Suche nach Beleg, Kunde oder Artikel" />
+              <select id="historyTypeFilter">
+                <option value="">Alle Typen</option>
+                <option value="IN">IN</option>
+                <option value="OUT">OUT</option>
+                <option value="TRANSFER">TRANSFER</option>
+              </select>
+              <input id="historyDateFrom" type="date" />
+              <input id="historyDateTo" type="date" />
+              <button class="secondary" id="historyReloadBtn" type="button">Filter anwenden</button>
+              <button class="secondary" id="historyResetBtn" type="button">Filter leeren</button>
+            </div>
+            <div class="warehouse-table-wrap" id="historyTableWrap">
+              <div class="warehouse-empty">Historie wird geladen...</div>
+            </div>
+            <p class="warehouse-message" id="historyMsg" role="status" aria-live="polite"></p>
+          </article>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <datalist id="warehouseArticleLookupList"></datalist>
+  <datalist id="warehouseCustomerLookupList"></datalist>
+  <datalist id="warehouseLocationLookupList"></datalist>
+
+  <div class="modalBack" id="passwordModalBack" aria-hidden="true">
+    <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+      <div class="password-modal-head">
+        <h3 id="passwordModalTitle">Passwort aendern</h3>
+        <button class="secondary" id="closePasswordModalBtn" type="button">Schliessen</button>
+      </div>
+      <p class="muted" style="margin-top:0;">Verwenden Sie ein sicheres Passwort mit mindestens 8 Zeichen.</p>
+      <div class="row" style="margin-top:8px;">
+        <div>
+          <label>Aktuelles Passwort</label>
+          <input id="currentPassword" type="password" autocomplete="new-password" placeholder="Aktuelles Passwort" />
+        </div>
+        <div>
+          <label>Neues Passwort</label>
+          <input id="newPassword" type="password" autocomplete="off" placeholder="Mindestens 8 Zeichen" />
+        </div>
+        <div>
+          <label>Neues Passwort wiederholen</label>
+          <input id="confirmPassword" type="password" autocomplete="off" placeholder="Passwort bestaetigen" />
+        </div>
+      </div>
+      <p id="passwordModalMsg"></p>
+      <div class="row" style="justify-content:flex-end; margin-top:8px;">
+        <button class="secondary" id="cancelPasswordBtn" type="button">Abbrechen</button>
+        <button class="primary" id="savePasswordBtn" type="button">Passwort speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
+
+  <script src="/public/theme.js"></script>
+  <script src="/modules/warehouse/warehouse.js"></script>
+</body>
+</html>
