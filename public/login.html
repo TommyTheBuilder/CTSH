@@ -3,56 +3,141 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Leerpaletten - Login</title>
+  <title>CTSH Hub - Anmeldung</title>
   <link rel="stylesheet" href="/public/styles.css">
 </head>
 <body>
-  <div class="system-logo-wrap">
-    <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zur App-Startseite"></a>
-    <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zur App-Startseite"></a>
-  </div>
-  <header>
-    <div>
-      <b>Leerpaletten Management</b>
-      <div class="muted" style="margin-top:4px;">Palettenmanegementsystem</div>
-      <div id="themeToggleMount" style="margin-top:8px;"></div>
+  <header class="topbar topbar-modern auth-topbar">
+    <div class="system-logo-wrap">
+      <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
+      <a href="/login.html" class="system-logo-home" aria-label="Zur Anmeldung"></a>
     </div>
-    <div class="right"><span class="badge">Intranet</span></div>
+    <div class="row topbar-actions auth-topbar__actions" style="align-items:center;">
+      <span class="auth-topbar__badge">CTSH Hub</span>
+      <div id="themeToggleMount"></div>
+    </div>
   </header>
 
-  <main>
-    <div class="card" style="max-width:520px;margin:32px auto;">
-      <h2 style="margin-top:0;">Anmelden</h2>
-      <div class="row">
-        <div>
-          <label>Benutzername</label>
-          <input id="username" autocomplete="username">
+  <main class="dashboard-main module-dashboard-main auth-main">
+    <section class="dashboard-header admin-header module-hero auth-hero">
+      <div class="module-hero__copy">
+        <span class="module-hero__eyebrow">Sicherer Portalzugang</span>
+        <div class="dashboard-title-row">
+          <b>Anmeldung</b>
+          <span class="pill">Intranet</span>
         </div>
-        <div>
-          <label>Passwort</label>
-          <div class="password-field">
-            <input id="password" type="password" autocomplete="current-password">
-            <button
-              id="togglePassword"
-              type="button"
-              class="password-visibility-toggle"
-              aria-label="Passwort anzeigen"
-              aria-pressed="false"
-            >👁</button>
+        <p class="module-hero__lead">
+          Melden Sie sich mit Ihrem persoenlichen Konto an, um Ihr Dashboard, freigeschaltete Arbeitsbereiche
+          und laufende Vorgaenge zentral zu steuern.
+        </p>
+      </div>
+
+      <div class="module-hero__panel auth-hero__panel" aria-label="Portaluebersicht">
+        <article class="module-stat-card">
+          <span class="module-stat-card__label">Zentral</span>
+          <strong class="module-stat-card__value">1 Portal</strong>
+          <span class="module-stat-card__meta">
+            Ein Einstieg fuer Buchungen, Lager, Container-Anmeldung und Planung.
+          </span>
+        </article>
+        <article class="module-stat-card">
+          <span class="module-stat-card__label">Direkt</span>
+          <strong class="module-stat-card__value">Schnell startklar</strong>
+          <span class="module-stat-card__meta">
+            Nach dem Login gelangen Sie direkt in Ihr persoenliches Modul-Dashboard.
+          </span>
+        </article>
+      </div>
+    </section>
+
+    <section class="card module-dashboard-card auth-card-shell">
+      <div class="module-dashboard-layout auth-layout">
+        <section class="auth-card" aria-labelledby="loginHeadline">
+          <div class="auth-card__head">
+            <span class="module-section-kicker">Zugang</span>
+            <h2 id="loginHeadline">Mit Ihrem Konto anmelden</h2>
+            <p>
+              Nutzen Sie Ihre persoenlichen Zugangsdaten, um auf die fuer Sie freigegebenen Bereiche zuzugreifen.
+            </p>
           </div>
-        </div>
+
+          <form id="loginForm" class="auth-form" novalidate>
+            <div class="auth-field">
+              <label for="username">Benutzername</label>
+              <input id="username" autocomplete="username" placeholder="Benutzername eingeben" autofocus>
+            </div>
+
+            <div class="auth-field">
+              <div class="auth-label-row">
+                <label for="password">Passwort</label>
+                <span class="muted">Persoenlicher Zugang</span>
+              </div>
+              <div class="password-field auth-password-field">
+                <input id="password" type="password" autocomplete="current-password" placeholder="Passwort eingeben">
+                <button
+                  id="togglePassword"
+                  type="button"
+                  class="password-visibility-toggle auth-password-toggle"
+                  aria-label="Passwort anzeigen"
+                  aria-pressed="false"
+                >Anz.</button>
+              </div>
+            </div>
+
+            <button id="loginBtn" class="primary auth-submit" type="submit">Zum Dashboard</button>
+            <p id="err" class="auth-message" role="alert" aria-live="assertive"></p>
+            <p class="auth-hint">
+              Hinweis: Bei Problemen kann die Administration das Passwort zuruecksetzen.
+            </p>
+          </form>
+        </section>
+
+        <aside class="module-side-panel auth-side-panel" aria-label="Hinweise">
+          <article class="module-side-panel__card">
+            <div class="module-side-panel__head">
+              <span class="module-section-kicker">Ueberblick</span>
+              <h3>Alles an einem Ort</h3>
+              <p>Ihr Portalzugang oeffnet dieselbe Arbeitsumgebung, die Sie aus dem Dashboard kennen.</p>
+            </div>
+            <div class="module-side-panel__list">
+              <div class="module-side-panel__item">
+                <span class="module-side-panel__marker">01</span>
+                <div>
+                  <strong>Dashboard zuerst</strong>
+                  <span>Nach dem Login landen Sie direkt in der zentralen Modulauswahl.</span>
+                </div>
+              </div>
+              <div class="module-side-panel__item">
+                <span class="module-side-panel__marker">02</span>
+                <div>
+                  <strong>Rollenbasiert</strong>
+                  <span>Nur freigeschaltete Bereiche und Funktionen werden fuer Ihr Konto angezeigt.</span>
+                </div>
+              </div>
+              <div class="module-side-panel__item">
+                <span class="module-side-panel__marker">03</span>
+                <div>
+                  <strong>Einheitliches Design</strong>
+                  <span>Die Anmeldung folgt derselben visuellen Sprache wie der restliche Hub.</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="module-side-panel__card">
+            <div class="module-side-panel__head">
+              <span class="module-section-kicker">Support</span>
+              <h3>Falls etwas hakt</h3>
+              <p>Pruefen Sie zuerst Benutzername und Passwort. Wenn der Zugang weiterhin nicht funktioniert, hilft die Administration weiter.</p>
+            </div>
+          </article>
+        </aside>
       </div>
-      <div style="margin-top:12px;">
-        <button id="loginBtn">Login</button>
-      </div>
-      <p id="err" style="color:#b00020; margin-bottom:0;"></p>
-      <small class="muted">Hinweis: Bei Problemen Admin kontaktieren (Passwort zurücksetzen).</small>
-    </div>
+    </section>
   </main>
 
-  <footer class="site-copyright">© 2026 / CTSH Systems</footer>
+  <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
   <script src="/theme.js"></script>
-<script src="/login.js"></script>
+  <script src="/login.js"></script>
 </body>
 </html>
