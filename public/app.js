@@ -863,8 +863,16 @@ function bindOpenCaseButtons() {
 }
 
 function showCaseModal(show) {
-  $("caseModalBack").style.display = show ? "flex" : "none";
+  const back = $("caseModalBack");
+  if (!back) return;
+  back.style.display = show ? "flex" : "none";
+  back.setAttribute("aria-hidden", show ? "false" : "true");
+  back.style.zIndex = "3200";
   setMsg("caseModalMsg", "");
+  if (show) {
+    closeSettingsMenu();
+    window.requestAnimationFrame(() => $("closeCaseModalBtn")?.focus());
+  }
 }
 
 $("closeCaseModalBtn").addEventListener("click", () => showCaseModal(false));

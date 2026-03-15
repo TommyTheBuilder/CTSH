@@ -48,7 +48,7 @@ button.secondary { background:#e9eef5; color:#0b2a4a; }
 button:disabled { opacity:.6; cursor:not-allowed; }
 table { width:100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid #eee; padding: 8px; text-align:left; font-size: 14px; }
-.modalBack { position:fixed; inset:0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding: 14px; }
+.modalBack { position:fixed; inset:0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding: 14px; z-index: 3200; }
 .modal { background:#fff; width:min(900px, 100%); border-radius: 14px; padding: 14px; }
 .confirm-modal { width:min(520px, 100%); box-shadow:0 20px 45px rgba(15,23,42,.28); border:1px solid #e5e7eb; padding:18px; }
 .confirm-modal h3 { margin:0; font-size:18px; }
@@ -2924,8 +2924,31 @@ body.darkmode .auth-message {
   gap: 20px;
 }
 
+.pallet-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pallet-topbar-brand .system-logo-wrap {
+  padding: 0;
+  width: auto;
+}
+
+.pallet-topbar-brand .system-logo {
+  max-height: 56px;
+  width: auto;
+}
+
+.pallet-topbar-link {
+  min-height: 46px;
+}
+
 .pallet-app-hero {
-  gap: 20px;
+  gap: 14px;
+  padding-top: 18px;
+  padding-bottom: 18px;
 }
 
 .pallet-hero-panel {
@@ -2938,7 +2961,7 @@ body.darkmode .auth-message {
 .pallet-hero-filter-card {
   display: grid;
   gap: 12px;
-  padding: 22px;
+  padding: 18px 20px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.58);
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -2972,22 +2995,24 @@ body.darkmode .auth-message {
 
 .pallet-dashboard-nav .nav-button {
   justify-content: flex-start;
-  min-height: 62px;
+  min-height: 72px;
   height: auto;
-  padding: 14px 18px;
+  padding: 18px 20px;
   text-align: left;
   border-radius: 18px;
   box-shadow: 0 18px 34px rgba(15, 23, 42, 0.16);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .nav-icon--text {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 12px;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.18);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -3189,6 +3214,10 @@ body.darkmode .nav-icon--text {
     grid-template-columns: 1fr;
   }
 
+  .pallet-topbar-brand {
+    width: 100%;
+  }
+
   .pallet-panel__header {
     flex-direction: column;
   }
@@ -3200,6 +3229,20 @@ body.darkmode .nav-icon--text {
 }
 
 @media (max-width: 700px) {
+  .pallet-topbar-brand {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .pallet-topbar-brand .system-logo {
+    max-height: 44px;
+  }
+
+  .pallet-topbar-link {
+    min-height: 42px;
+    padding: 0 14px;
+  }
+
   .pallet-nav-shell,
   .pallet-panel,
   .pallet-form-card {
