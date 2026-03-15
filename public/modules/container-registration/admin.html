@@ -724,13 +724,40 @@ const socket = io("/container-registration");
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
 let isAuthed = false;
+const DEFAULT_ADMIN_PERMISSIONS = {
+  history: false,
+  historyExport: false,
+  historyClear: false,
+  manageTime: false,
+  manageStatus: false,
+  resetContainer: false,
+  resetAll: false
+};
+let adminPermissions = { ...DEFAULT_ADMIN_PERMISSIONS };
 
-function setAdminAccessState(allowed, message = "") {
+function setAdminAccessState(allowed, message = "", permissions = {}) {
   isAuthed = !!allowed;
+  adminPermissions = { ...DEFAULT_ADMIN_PERMISSIONS, ...(permissions || {}) };
+
+  const canUseGrid = isAuthed && (
+    adminPermissions.manageTime
+    || adminPermissions.manageStatus
+    || adminPermissions.resetContainer
+  );
+  const canUseHistory = isAuthed && (
+    adminPermissions.history
+    || adminPermissions.historyExport
+    || adminPermissions.historyClear
+  );
+
   document.getElementById("authBlock").style.display = isAuthed ? "none" : "block";
-  document.getElementById("controlSection").style.display = isAuthed ? "block" : "none";
-  document.getElementById("grid").style.display = isAuthed ? "grid" : "none";
-  document.getElementById("historyPanel").style.display = isAuthed ? "block" : "none";
+  document.getElementById("controlSection").style.display = canUseGrid ? "block" : "none";
+  document.getElementById("grid").style.display = canUseGrid ? "grid" : "none";
+  document.getElementById("historyPanel").style.display = canUseHistory ? "block" : "none";
+  document.getElementById("resetAllBtn").style.display = isAuthed && adminPermissions.resetAll ? "" : "none";
+  document.getElementById("histRefresh").style.display = adminPermissions.history ? "" : "none";
+  document.getElementById("histCSV").style.display = adminPermissions.historyExport ? "" : "none";
+  document.getElementById("histClear").style.display = adminPermissions.historyClear ? "" : "none";
 
   const note = document.querySelector("#authBlock .note");
   if (note && message) {
@@ -957,6 +984,98 @@ function applyOne(id, data){
 
 }
 
+function renderAll(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  for(let i=1;i<=8;i++){
+    const c = current[i];
+    const reg = registeredTime(c.registeredAt);
+
+    const card = document.createElement("div");
+    card.className = "card " + cardClass(c.status);
+    card.id = "card-"+i;
+
+    card.innerHTML = `
+      <div class="cardTop">
+        <div>
+          <div class="slotLabel">Slot ${String(i).padStart(2, "0")}</div>
+          <div class="name">Container ${i}</div>
+        </div>
+        <div class="statusTag ${tagClass(c.status)}" id="tag-${i}">${statusText(c.status)}</div>
+      </div>
+
+      <div class="controls">
+        <div class="regBox ${normalizedStatus(c.status) !== "slot_created" ? "is-active" : ""}" id="regBox-${i}">Angemeldet um: <span id="reg-${i}">${reg}</span></div>
+
+        <div>
+          <label>Kennzeichen (vom Fahrer)</label>
+          <div class="readonly" id="plate-${i}">${c.plate && c.plate.trim() ? c.plate : "---"}</div>
+          <div class="note">Bei Anmeldung wird Status automatisch Orange.</div>
+        </div>
+
+        <div>
+          <label>Termin (Uhrzeit)</label>
+          <input type="time" id="time-${i}" value="${c.time || ""}" ${adminPermissions.manageTime ? "" : "disabled"} />
+          <div class="note">Aenderung wird sofort gespeichert.</div>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <button class="btn ${normalizedStatus(c.status)==="slot_created" ? "redActive" : ""}" id="btn-slot-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>1 · Slot erstellt</button>
+          <button class="btn ${normalizedStatus(c.status)==="registered" ? "orangeActive" : ""}" id="btn-registered-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>2 · Angemeldet</button>
+        </div>
+        <div class="row" style="flex-wrap:wrap;">
+          <button class="btn ${normalizedStatus(c.status)==="to_ramp" ? "blueActive" : ""}" id="btn-ramp-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>3 · An die Rampe</button>
+          <button class="btn ${normalizedStatus(c.status)==="waiting_customs" ? "violetActive" : ""}" id="btn-customs-wait-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>4 · Warten auf Zollfreigabe</button>
+        </div>
+        <div class="row">
+          <button class="btn ${normalizedStatus(c.status)==="customs_released" ? "greenActive" : ""}" id="btn-customs-ok-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>5 · Zollfreigabe erteilt</button>
+        </div>
+
+        <button class="smallBtn" id="reset-${i}" style="width:100%;${adminPermissions.resetContainer ? "" : "display:none;"}">Container zuruecksetzen</button>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    const timeEl = document.getElementById("time-"+i);
+    let timeTimer = null;
+    timeEl.addEventListener("input", (e) => {
+      if (!adminPermissions.manageTime) return;
+      clearTimeout(timeTimer);
+      timeTimer = setTimeout(() => {
+        socket.emit("adminSetTime", { id: i, time: e.target.value });
+      }, 200);
+    });
+
+    document.getElementById("btn-slot-"+i).addEventListener("click", () => {
+      if (!adminPermissions.manageStatus) return;
+      socket.emit("adminSetStatus", { id: i, status: "slot_created" });
+    });
+    document.getElementById("btn-registered-"+i).addEventListener("click", () => {
+      if (!adminPermissions.manageStatus) return;
+      socket.emit("adminSetStatus", { id: i, status: "registered" });
+    });
+    document.getElementById("btn-ramp-"+i).addEventListener("click", () => {
+      if (!adminPermissions.manageStatus) return;
+      socket.emit("adminSetStatus", { id: i, status: "to_ramp" });
+    });
+    document.getElementById("btn-customs-wait-"+i).addEventListener("click", () => {
+      if (!adminPermissions.manageStatus) return;
+      socket.emit("adminSetStatus", { id: i, status: "waiting_customs" });
+    });
+    document.getElementById("btn-customs-ok-"+i).addEventListener("click", () => {
+      if (!adminPermissions.manageStatus) return;
+      socket.emit("adminSetStatus", { id: i, status: "customs_released" });
+    });
+    document.getElementById("reset-"+i).addEventListener("click", () => {
+      if (!adminPermissions.resetContainer) return;
+      if (confirm(`Container ${i} wirklich zuruecksetzen?`)) {
+        socket.emit("adminResetContainer", { id: i });
+      }
+    });
+  }
+}
+
 // ===== Historie UI (abgeschlossene Buchungen + Detailverlauf) =====
 const TYPE_LABELS = {
   "admin_reset_container": "Abgeschlossen"
@@ -1035,6 +1154,7 @@ function renderHistory(entries){
 }
 
 function refreshHistory(){
+  if (!adminPermissions.history) return;
   const limit = Number(document.getElementById("histLimit").value || 200);
   socket.emit("adminGetHistory", { limit });
 }
@@ -1084,12 +1204,12 @@ socket.on("init", (state) => {
   socket.emit("adminAuth");
 });
 
-socket.on("adminAuthResult", ({ ok, user: authUser }) => {
-  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte pruefe die im Adminbereich gesetzten Rechte.");
+socket.on("adminAuthResult", ({ ok, user: authUser, permissions }) => {
+  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte pruefe die im Adminbereich gesetzten Rechte.", permissions);
 
   if (isAuthed){
     renderAll();
-    refreshHistory();
+    if (adminPermissions.history) refreshHistory();
     showToast(authUser ? `Admin aktiviert (${authUser})` : "Admin aktiviert");
   } else {
     showToast("Kein Admin-Zugriff");
@@ -1118,14 +1238,26 @@ document.getElementById("histRefresh").addEventListener("click", () => {
 });
 
 document.getElementById("histCSV").addEventListener("click", () => {
-  if (!isAuthed) return;
-  window.location.href = "/admin-history.csv";
+  if (!isAuthed || !adminPermissions.historyExport) return;
+  window.location.href = "/api/modules/container-registration/admin-history.csv";
 });
 
 document.getElementById("histClear").addEventListener("click", () => {
-  if (!isAuthed) return;
+  if (!isAuthed || !adminPermissions.historyClear) return;
   if (confirm("Historie wirklich löschen?")) socket.emit("adminClearHistory");
 });
+
+document.getElementById("resetAllBtn").addEventListener("click", (event) => {
+  if (isAuthed && adminPermissions.resetAll) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+document.getElementById("histRefresh").addEventListener("click", (event) => {
+  if (isAuthed && adminPermissions.history) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
 
 document.getElementById("settingsToggle").addEventListener("click", (event) => {
   event.stopPropagation();

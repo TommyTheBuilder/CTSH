@@ -68,13 +68,18 @@ function createPermissionDefaults() {
         open: false,
         viewer: false,
         history: false,
+        history_export: false,
+        history_clear: false,
         manage_time: false,
         manage_status: false,
         reset_container: false,
         reset_all: false
       },
       container_planning: {
-        open: false
+        open: false,
+        create: false,
+        edit: false,
+        delete: false
       }
     },
     warehouse: deepClone(WAREHOUSE_PERMISSION_DEFAULTS),
@@ -121,13 +126,18 @@ function createFullAccessPermissions() {
         open: true,
         viewer: true,
         history: true,
+        history_export: true,
+        history_clear: true,
         manage_time: true,
         manage_status: true,
         reset_container: true,
         reset_all: true
       },
       container_planning: {
-        open: true
+        open: true,
+        create: true,
+        edit: true,
+        delete: true
       }
     },
     warehouse: deepClone(WAREHOUSE_PERMISSION_FULL_ACCESS),
@@ -144,6 +154,8 @@ function syncLegacyPermissionAliases(perms) {
   const containerAdmin = Boolean(
     legacyIntegrations.container_admin
     || containerRegistration.history
+    || containerRegistration.history_export
+    || containerRegistration.history_clear
     || containerRegistration.manage_time
     || containerRegistration.manage_status
     || containerRegistration.reset_container
@@ -162,7 +174,17 @@ function syncLegacyPermissionAliases(perms) {
       || legacyIntegrations.container_viewer
       || legacyIntegrations.container_admin
     ),
-    history: Boolean(containerRegistration.history || legacyIntegrations.container_admin),
+    history: Boolean(
+      containerRegistration.history
+      || containerRegistration.history_export
+      || containerRegistration.history_clear
+      || legacyIntegrations.container_admin
+    ),
+    history_export: Boolean(
+      containerRegistration.history_export
+      || legacyIntegrations.container_admin
+    ),
+    history_clear: Boolean(containerRegistration.history_clear || legacyIntegrations.container_admin),
     manage_time: Boolean(containerRegistration.manage_time || legacyIntegrations.container_admin),
     manage_status: Boolean(containerRegistration.manage_status || legacyIntegrations.container_admin),
     reset_container: Boolean(containerRegistration.reset_container || legacyIntegrations.container_admin),
@@ -174,7 +196,13 @@ function syncLegacyPermissionAliases(perms) {
       containerPlanning.open
       || legacyIntegrations.container_planning
       || legacyIntegrations.container_admin
-    )
+      || containerPlanning.create
+      || containerPlanning.edit
+      || containerPlanning.delete
+    ),
+    create: Boolean(containerPlanning.create || legacyIntegrations.container_admin),
+    edit: Boolean(containerPlanning.edit || legacyIntegrations.container_admin),
+    delete: Boolean(containerPlanning.delete || legacyIntegrations.container_admin)
   };
 
   output.integrations = {
@@ -203,6 +231,8 @@ function hasContainerRegistrationAdminAccess(perms) {
   const section = perms?.modules?.container_registration;
   return Boolean(
     section?.history
+    || section?.history_export
+    || section?.history_clear
     || section?.manage_time
     || section?.manage_status
     || section?.reset_container
@@ -230,6 +260,14 @@ function hasContainerHistoryPermission(perms) {
   return Boolean(perms?.admin?.full_access || perms?.modules?.container_registration?.history);
 }
 
+function hasContainerHistoryExportPermission(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.modules?.container_registration?.history_export);
+}
+
+function hasContainerHistoryClearPermission(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.modules?.container_registration?.history_clear);
+}
+
 function hasContainerTimeManagementPermission(perms) {
   return Boolean(perms?.admin?.full_access || perms?.modules?.container_registration?.manage_time);
 }
@@ -250,6 +288,18 @@ function hasContainerPlanningPermission(perms) {
   return Boolean(perms?.admin?.full_access || perms?.modules?.container_planning?.open);
 }
 
+function hasContainerPlanningCreatePermission(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.modules?.container_planning?.create);
+}
+
+function hasContainerPlanningEditPermission(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.modules?.container_planning?.edit);
+}
+
+function hasContainerPlanningDeletePermission(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.modules?.container_planning?.delete);
+}
+
 function hasWarehouseModulePermission(perms) {
   return Boolean(perms?.admin?.full_access || hasAnyPermission(perms?.warehouse));
 }
@@ -260,7 +310,12 @@ module.exports = {
   deepMerge,
   hasAnyPermission,
   hasContainerHistoryPermission,
+  hasContainerHistoryExportPermission,
+  hasContainerHistoryClearPermission,
   hasContainerPlanningPermission,
+  hasContainerPlanningCreatePermission,
+  hasContainerPlanningDeletePermission,
+  hasContainerPlanningEditPermission,
   hasContainerRegistrationAdminAccess,
   hasContainerRegistrationModuleAccess,
   hasContainerRegistrationPermission,

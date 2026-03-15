@@ -243,7 +243,20 @@ let refreshInFlight = null;
 let refreshQueued = false;
 let liveRefreshTimer = null;
 let currentLanguage = normalizeLanguage(localStorage.getItem(LANGUAGE_KEY) || "de");
+let planningPermissions = { open: false, create: false, edit: false, delete: false };
 const mobileCalendarMedia = window.matchMedia("(max-width: 720px)");
+
+function canCreatePlanningBookings() {
+  return !!planningPermissions.create;
+}
+
+function canEditPlanningBookings() {
+  return !!planningPermissions.edit;
+}
+
+function canDeletePlanningBookings() {
+  return !!planningPermissions.delete;
+}
 
 function normalizeLanguage(value) {
   const normalized = String(value || "").trim().toLowerCase().slice(0, 2);
@@ -325,6 +338,7 @@ initApp();
 async function initApp() {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
+  await loadPlanningPermissions();
   await applyInitialTheme();
   applyTranslations();
   render();
@@ -403,6 +417,24 @@ async function ensureAuthenticated() {
   return false;
 }
 
+async function loadPlanningPermissions() {
+  try {
+    const response = await fetch("/api/my-permissions", {
+      credentials: "include",
+      headers: portalToken ? { Authorization: `Bearer ${portalToken}` } : {}
+    });
+    const payload = response.ok ? await response.json() : {};
+    planningPermissions = {
+      open: !!payload?.modules?.container_planning?.open,
+      create: !!payload?.modules?.container_planning?.create,
+      edit: !!payload?.modules?.container_planning?.edit,
+      delete: !!payload?.modules?.container_planning?.delete
+    };
+  } catch {
+    planningPermissions = { open: false, create: false, edit: false, delete: false };
+  }
+}
+
 async function safeReadJson(response) {
   try {
     return await response.json();
@@ -448,6 +480,9 @@ async function loadBookingsForCurrentMonth() {
 }
 
 async function createBooking(booking) {
+  if (!canCreatePlanningBookings()) {
+    throw new Error("Keine Berechtigung zum Anlegen von Planungsbuchungen.");
+  }
   const response = await fetch("/api/modules/container-planning/bookings", {
     method: "POST",
     headers: {
@@ -476,6 +511,9 @@ async function createBooking(booking) {
 }
 
 async function deleteBooking(bookingId) {
+  if (!canDeletePlanningBookings()) {
+    throw new Error("Keine Berechtigung zum Loeschen von Planungsbuchungen.");
+  }
   const response = await fetch(`/api/modules/container-planning/bookings/${encodeURIComponent(bookingId)}`, {
     method: "DELETE",
     credentials: "include",
@@ -488,6 +526,9 @@ async function deleteBooking(bookingId) {
 }
 
 async function updateBookingDate(bookingId, date) {
+  if (!canEditPlanningBookings()) {
+    throw new Error("Keine Berechtigung zum Verschieben von Planungsbuchungen.");
+  }
   const response = await fetch(`/api/modules/container-planning/bookings/${encodeURIComponent(bookingId)}/date`, {
     method: "PATCH",
     headers: {
@@ -617,6 +658,7 @@ function renderGrid() {
 
     dayCard.addEventListener("click", (event) => {
       if (event.target.closest(".booking-card")) return;
+      if (!canCreatePlanningBookings()) return;
       bookingModal.open(ymd);
     });
 
@@ -630,6 +672,7 @@ function renderGrid() {
     dayCard.addEventListener("drop", async (event) => {
       event.preventDefault();
       dayCard.classList.remove("is-drop-target");
+      if (!canEditPlanningBookings()) return;
       const bookingId = event.dataTransfer.getData("text/booking-id");
       const booking = bookings.find((item) => item.id === bookingId);
       if (!booking) return;
@@ -671,7 +714,7 @@ function getDayStatusLabel(count) {
 function createBookingCard(booking, { compact = false } = {}) {
   const card = document.createElement("div");
   card.className = `booking-card ${compact ? "booking-card--compact" : ""}`.trim();
-  card.draggable = true;
+  card.draggable = canEditPlanningBookings();
   card.dataset.type = booking.type;
   const detailLines = [
     hasDisplayValue(booking.container) ? `${escapeHtml(t("bookingCardContainer"))}: ${escapeHtml(booking.container)}` : "",
@@ -692,6 +735,10 @@ function createBookingCard(booking, { compact = false } = {}) {
   });
 
   card.addEventListener("dragstart", (event) => {
+    if (!canEditPlanningBookings()) {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.setData("text/booking-id", booking.id);
     event.dataTransfer.effectAllowed = "move";
   });
@@ -1176,12 +1223,14 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     attachmentsTitle.textContent = t("attachmentsTitle");
     attachmentsHint.textContent = t("attachmentsHint");
     deleteBookingButton.textContent = t("deleteBooking");
+    deleteBookingButton.style.display = canDeletePlanningBookings() ? "" : "none";
     footerCloseButton.textContent = t("close");
     if (currentBooking) renderDetails();
   }
 
   function renderDetails() {
     if (!currentBooking) return;
+    deleteBookingButton.style.display = canDeletePlanningBookings() ? "" : "none";
     detailsTitle.textContent = `${t("bookingPrefix")}: ${currentBooking.title}`;
     const metaEntries = [
       { label: t("titleLabel"), value: currentBooking.title },
@@ -1260,6 +1309,7 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     }
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
+      if (!canDeletePlanningBookings()) return;
       const translatedConfirmed = await confirmDialog.confirm({
         title: t("deleteBookingConfirmTitle"),
         message: t("deleteBookingConfirmMessage", { title: currentBooking.title })
