@@ -214,6 +214,10 @@ function syncLegacyPermissionAliases(perms) {
     container_admin: containerAdmin
   };
 
+  if (output.warehouse && typeof output.warehouse === "object") {
+    delete output.warehouse.articles;
+  }
+
   return output;
 }
 

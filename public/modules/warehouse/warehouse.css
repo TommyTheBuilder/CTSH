@@ -614,13 +614,14 @@ body.light .warehouse-topbar {
 
 .warehouse-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1.4fr) repeat(2, minmax(180px, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+  align-items: end;
   margin-bottom: 16px;
 }
 
 .warehouse-toolbar--history {
-  grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(150px, 1fr)) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .warehouse-table-wrap {
@@ -742,15 +743,16 @@ body.light .warehouse-topbar {
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
 }
 
 .warehouse-slot-legend__swatch--free {
-  background: #dcfce7;
+  background: #22c55e;
 }
 
 .warehouse-slot-legend__swatch--occupied {
-  background: #fee2e2;
+  background: #ef4444;
 }
 
 .warehouse-slot-modal__grid {
@@ -766,9 +768,10 @@ body.light .warehouse-topbar {
   min-height: 64px;
   padding: 12px 8px;
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  color: #0f172a;
-  font-weight: 700;
+  border: 2px solid transparent;
+  color: #ffffff;
+  font-weight: 800;
+  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
@@ -776,16 +779,18 @@ body.light .warehouse-topbar {
 .warehouse-slot-cell:hover,
 .warehouse-slot-cell:focus-visible {
   transform: translateY(-2px);
-  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.1);
-  border-color: rgba(15, 118, 110, 0.3);
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.2);
+  border-color: rgba(255, 255, 255, 0.86);
 }
 
 .warehouse-slot-cell--free {
-  background: #dcfce7;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  border-color: #15803d;
 }
 
 .warehouse-slot-cell--occupied {
-  background: #fee2e2;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
 }
 
 .warehouse-slot-cell__number {
@@ -1142,16 +1147,6 @@ body.darkmode .warehouse-slot-detail-row strong,
 body.dark .warehouse-slot-cell,
 body.darkmode .warehouse-slot-cell {
   color: #f8fafc;
-}
-
-body.dark .warehouse-slot-cell--free,
-body.darkmode .warehouse-slot-cell--free {
-  background: rgba(34, 197, 94, 0.18);
-}
-
-body.dark .warehouse-slot-cell--occupied,
-body.darkmode .warehouse-slot-cell--occupied {
-  background: rgba(239, 68, 68, 0.2);
 }
 
 @media (max-width: 1380px) {
