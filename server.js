@@ -1188,12 +1188,12 @@ async function getDashboardLiveFeedItems(req, limit) {
     let idx = 1;
 
     if (lockedLocationId) {
-      where.push(`h.location_id = $${idx++}`);
+      where.push(`b.location_id = $${idx++}`);
       params.push(lockedLocationId);
     }
 
     if (lockedDepartmentId) {
-      where.push(`h.department_id = $${idx++}`);
+      where.push(`b.department_id = $${idx++}`);
       params.push(lockedDepartmentId);
     }
 
@@ -1201,45 +1201,51 @@ async function getDashboardLiveFeedItems(req, limit) {
     const rows = (await q(
       `
       SELECT
-        h.id,
-        h.action,
-        h.created_at,
-        h.receipt_no,
-        COALESCE(u.username, '(geloescht)') AS changed_by,
-        COALESCE(c.license_plate, '') AS license_plate,
-        COALESCE(c.entrepreneur, '') AS entrepreneur,
+        MIN(b.id) AS id,
+        MIN(b.created_at) AS created_at,
+        MAX(b.receipt_no) AS receipt_no,
+        MAX(b.license_plate) AS license_plate,
+        MAX(b.entrepreneur) AS entrepreneur,
+        COALESCE(SUM(CASE WHEN b.type = 'IN' THEN b.quantity ELSE 0 END), 0) AS qty_in,
+        COALESCE(SUM(CASE WHEN b.type = 'OUT' THEN b.quantity ELSE 0 END), 0) AS qty_out,
         COALESCE(l.name, 'Standort') AS location_name,
         COALESCE(d.name, 'Abteilung') AS department_name
-      FROM booking_case_history h
-      LEFT JOIN users u ON u.id = h.changed_by
-      LEFT JOIN booking_cases c ON c.id = h.case_id
-      LEFT JOIN locations l ON l.id = h.location_id
-      LEFT JOIN departments d ON d.id = h.department_id
+      FROM bookings b
+      LEFT JOIN locations l ON l.id = b.location_id
+      LEFT JOIN departments d ON d.id = b.department_id
       WHERE ${where.join(" AND ")}
-      ORDER BY h.created_at DESC, h.id DESC
+      GROUP BY
+        COALESCE(NULLIF(b.receipt_no, ''), CONCAT('booking-', b.id::text)),
+        l.name,
+        d.name
+      ORDER BY MIN(b.created_at) DESC, MIN(b.id) DESC
       LIMIT $${idx}
       `,
       params
     )).rows;
 
     for (const row of rows) {
-      const reference = row.receipt_no
-        ? `Beleg ${row.receipt_no}`
-        : row.license_plate
-          ? `Kennzeichen ${row.license_plate}`
-          : row.entrepreneur || `Vorgang ${row.id}`;
-
       items.push({
         id: `booking-case-${row.id}`,
         app: "Paletten Buchungen",
-        title: getDashboardCaseActionLabel(row.action),
-        meta: dashboardFeedJoin([reference, row.location_name, row.department_name, row.changed_by ? `von ${row.changed_by}` : ""]),
+        title: row.receipt_no ? `Beleg ${row.receipt_no}` : "Paletten Buchung",
+        meta: dashboardFeedJoin([
+          row.license_plate ? `Kennzeichen ${row.license_plate}` : "",
+          row.entrepreneur || "",
+          `${Number(row.qty_in || 0)} IN / ${Number(row.qty_out || 0)} OUT`,
+          row.location_name,
+          row.department_name
+        ]),
         at: row.created_at
       });
     }
   }
 
-  if (hasContainerAdminPermission(req.user, perms)) {
+  if (
+    hasContainerViewerPermission(perms)
+    || hasContainerRegistrationPermission(perms)
+    || hasContainerAdminPermission(req.user, perms)
+  ) {
     const rows = (await q(
       `
       SELECT
@@ -1250,6 +1256,7 @@ async function getDashboardLiveFeedItems(req, limit) {
         plate,
         details
       FROM container_registration_history
+      WHERE type = 'driver_register'
       ORDER BY at DESC, id DESC
       LIMIT $1
       `,
@@ -1257,10 +1264,11 @@ async function getDashboardLiveFeedItems(req, limit) {
     )).rows;
 
     for (const row of rows) {
+      const bookingNo = String(row?.details?.bookingNo || "").trim();
       items.push({
         id: `container-registration-${row.id}`,
         app: "Container Anmeldung",
-        title: getDashboardContainerEventLabel(row.type),
+        title: bookingNo ? `Anmeldung ${bookingNo}` : "Container Anmeldung",
         meta: buildContainerEventMeta(row),
         at: row.at
       });
