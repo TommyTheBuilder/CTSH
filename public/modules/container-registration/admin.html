@@ -720,7 +720,12 @@ body.dark .sectionBadge{
 
 <script src="/public/shared-theme.js"></script>
 <script>
-const socket = io("/container-registration");
+const portalToken = String(localStorage.getItem("token") || "").trim();
+const socket = io("/container-registration", {
+  withCredentials: true,
+  query: portalToken ? { portalToken } : undefined,
+  auth: portalToken ? { token: portalToken } : undefined
+});
 const DASHBOARD_URL = "/public/dashboard.html";
 let current = {};
 let isAuthed = false;
