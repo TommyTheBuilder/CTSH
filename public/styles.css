@@ -2077,6 +2077,8 @@ body.darkmode .site-copyright {
 
 .module-button {
   position: relative;
+  width: 100%;
+  appearance: none;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2088,11 +2090,13 @@ body.darkmode .site-copyright {
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #ffffff;
   text-decoration: none;
+  font: inherit;
   font-weight: 600;
   letter-spacing: 0.01em;
   box-shadow: 0 18px 32px rgba(15, 23, 42, 0.18);
   overflow: hidden;
   isolation: isolate;
+  cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
@@ -2112,6 +2116,10 @@ body.darkmode .site-copyright {
 
 .module-button--pallet {
   background: linear-gradient(150deg, #0f8b82, #084b61 68%, #07273d);
+}
+
+.module-button--warehouse {
+  background: linear-gradient(150deg, #c78b2d, #8d5f28 60%, #4f3118);
 }
 
 .module-button--registration {
@@ -2416,6 +2424,10 @@ body.darkmode .site-copyright {
 
 body.light .module-dashboard-main {
   color: #0f172a;
+}
+
+body.light .module-button--warehouse {
+  background: linear-gradient(150deg, #d7a84e, #a86a28 60%, #5a3417);
 }
 
 body.light .module-dashboard-main .dashboard-title-row .pill {
@@ -3416,15 +3428,6 @@ body.darkmode .nav-icon--symbol {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
-}
-
-.module-card-footer {
-  gap: 10px;
-}
-
-.module-card-open,
-.module-card-admin {
-  width: auto;
 }
 
 .admin-module-pills {

@@ -522,8 +522,8 @@ function hasContainerViewerPermission(perms) {
   return permissionsConfig.hasContainerViewerPermission(perms);
 }
 
-function hasContainerAdminPermission(_user, perms) {
-  return permissionsConfig.hasContainerRegistrationAdminAccess(perms);
+function hasContainerAdminPermission(user, perms) {
+  return isAppAdmin(user) || permissionsConfig.hasContainerRegistrationAdminAccess(perms);
 }
 
 function hasContainerHistoryPermission(perms) {
