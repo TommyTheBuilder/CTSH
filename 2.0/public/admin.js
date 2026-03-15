@@ -1,0 +1,1374 @@
+let token = localStorage.getItem("token");
+
+function sanitizeAdminUrl() {
+  const url = new URL(window.location.href);
+  const hadSsoToken = url.searchParams.has("ssoToken");
+  const hadSessionToken = url.searchParams.has("session");
+  const hadToken = url.searchParams.has("token");
+  if (!hadSsoToken && !hadSessionToken && !hadToken) return;
+
+  url.searchParams.delete("ssoToken");
+  url.searchParams.delete("session");
+  url.searchParams.delete("token");
+  url.searchParams.delete("user");
+  history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+}
+
+async function trySsoIntake() {
+  const params = new URLSearchParams(window.location.search);
+  const ssoToken = String(params.get("token") || params.get("ssoToken") || params.get("session") || "").trim();
+  if (!ssoToken) return false;
+
+  try {
+    const response = await fetch("/api/auth/sso-exchange", {
+      credentials: "include",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: ssoToken })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.token) {
+      localStorage.removeItem("token");
+      window.location.href = "/login.html";
+      return false;
+    }
+
+    localStorage.setItem("token", data.token);
+    token = data.token;
+    sanitizeAdminUrl();
+    return true;
+  } catch {
+    localStorage.removeItem("token");
+    window.location.href = "/login.html";
+    return false;
+  }
+}
+
+function api(path, opts = {}) {
+  return fetch(path, {
+    credentials: "include",
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": "Bearer " + token } : {}),
+      ...(opts.headers || {})
+    }
+  });
+}
+function $(id) { return document.getElementById(id); }
+
+function applyModuleNaming() {
+  const containerPlanningPermission = $("p_integrations_container_planning");
+  const permissionLabel = containerPlanningPermission?.parentElement;
+  if (permissionLabel) {
+    permissionLabel.lastChild.textContent = " Container und LKW Planung öffnen";
+  }
+}
+const PERMISSION_CARD_META = {
+  bookings: {
+    eyebrow: "Operativ",
+    description: "Rechte für Erfassung, Einsicht und Belegbearbeitung."
+  },
+  "Bestände": {
+    eyebrow: "Reporting",
+    description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
+  },
+  "Vorgänge": {
+    eyebrow: "Workflow",
+    description: "Rechte für den kompletten Lebenszyklus von Fällen."
+  },
+  master: {
+    eyebrow: "Grunddaten",
+    description: "Pflege von Standorten, Abteilungen und Transportpartnern."
+  },
+  users: {
+    eyebrow: "Zugriff",
+    description: "Steuert Benutzerpflege und Abteilungsfokus im Admin-Bereich."
+  },
+  roles: {
+    eyebrow: "Governance",
+    description: "Steuert Rollenpflege und optionalen Vollzugriff."
+  },
+  filters: {
+    eyebrow: "Navigation",
+    description: "Erweitert Auswahlmöglichkeiten über zugewiesene Standorte hinaus."
+  },
+  integrations: {
+    eyebrow: "Module",
+    description: "Steuert direkte Zugriffe auf angebundene Container-Module."
+  }
+};
+
+PERMISSION_CARD_META.stock = {
+  eyebrow: "Reporting",
+  description: "Steuert Sichtbarkeit und Tiefe der Bestandsauswertung."
+};
+
+PERMISSION_CARD_META.cases = {
+  eyebrow: "Workflow",
+  description: "Rechte für den kompletten Lebenszyklus von Fällen."
+};
+
+function enhancePermissionCards() {
+  document.querySelectorAll(".permBox").forEach((box) => {
+    const titleEl = box.querySelector("b");
+    if (!titleEl || box.querySelector(".permBox-head")) return;
+
+    const rawTitle = titleEl.textContent.trim();
+    const firstCheckboxId = box.querySelector('input[type="checkbox"]')?.id || "";
+    const metaKey = firstCheckboxId.split("_")[1] || "";
+    const meta = PERMISSION_CARD_META[metaKey] || {
+      eyebrow: "Bereich",
+      description: "Berechtigungen für diesen Bereich."
+    };
+
+    box.dataset.permGroup = box.dataset.permGroup || rawTitle;
+
+    const head = document.createElement("div");
+    head.className = "permBox-head";
+    head.innerHTML = `
+      <div>
+        <span class="section-eyebrow">${meta.eyebrow}</span>
+        <b>${rawTitle}</b>
+        <p>${meta.description}</p>
+      </div>
+      <span class="permBox-count">0/0</span>
+    `;
+
+    box.insertBefore(head, titleEl);
+    titleEl.remove();
+  });
+}
+
+function getPermissionBoxes() {
+  const boxes = document.querySelectorAll(".permissions-grid .permBox");
+  if (boxes.length) return Array.from(boxes);
+  return Array.from(document.querySelectorAll(".modern-perm-grid .permBox"));
+}
+
+function updatePermissionCardCounts() {
+  getPermissionBoxes().forEach((box) => {
+    const checkboxes = Array.from(box.querySelectorAll('input[type="checkbox"]'));
+    const checked = checkboxes.filter((input) => input.checked).length;
+    const total = checkboxes.length;
+    const countEl = box.querySelector(".permBox-count");
+    if (countEl) countEl.textContent = `${checked}/${total}`;
+    box.classList.toggle("is-dimmed", checked === 0);
+  });
+}
+
+function applyPermissionFilters() {
+  const term = String($("permissionSearch")?.value || "").trim().toLowerCase();
+  const onlyActive = !!$("permissionShowEnabledOnly")?.checked;
+
+  getPermissionBoxes().forEach((box) => {
+    const labels = Array.from(box.querySelectorAll("label"));
+    const title = box.querySelector(".permBox-head b")?.textContent?.trim().toLowerCase() || "";
+    const description = box.querySelector(".permBox-head p")?.textContent?.trim().toLowerCase() || "";
+    const boxMatches = !term || title.includes(term) || description.includes(term);
+
+    let visibleCount = 0;
+    labels.forEach((label) => {
+      const checkbox = label.querySelector('input[type="checkbox"]');
+      const text = label.textContent.trim().toLowerCase();
+      const matchesTerm = !term || boxMatches || text.includes(term);
+      const matchesActive = !onlyActive || !!checkbox?.checked;
+      const visible = matchesTerm && matchesActive;
+      label.classList.toggle("is-hidden", !visible);
+      if (visible) visibleCount += 1;
+    });
+
+    box.classList.toggle("is-empty", visibleCount === 0);
+  });
+}
+
+function bindPermissionPanel() {
+  getPermissionBoxes().forEach((box) => {
+    box.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        updatePermissionCardCounts();
+        applyPermissionFilters();
+      });
+    });
+  });
+
+  $("permissionSearch")?.addEventListener("input", applyPermissionFilters);
+  $("permissionShowEnabledOnly")?.addEventListener("change", applyPermissionFilters);
+}
+
+function setMsg(id, text, ok = false) {
+  const el = $(id);
+  if (!el) return;
+  el.style.color = ok ? "#0a7a2f" : "#b00020";
+  el.textContent = text || "";
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(d);
+}
+
+function showPasswordModal(show) {
+  const back = $("passwordModalBack");
+  if (!back) return;
+  back.style.display = show ? "flex" : "none";
+  back.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function closeSettingsMenu() {
+  const menu = $("settingsMenu");
+  const trigger = $("settingsTriggerBtn");
+  if (!menu || !trigger) return;
+  menu.classList.remove("open");
+  trigger.setAttribute("aria-expanded", "false");
+}
+
+function openSettingsMenu() {
+  const menu = $("settingsMenu");
+  const trigger = $("settingsTriggerBtn");
+  if (!menu || !trigger) return;
+  menu.classList.add("open");
+  trigger.setAttribute("aria-expanded", "true");
+}
+
+function bindSettingsMenu() {
+  const trigger = $("settingsTriggerBtn");
+  const wrap = $("settingsMenuWrap");
+  const menu = $("settingsMenu");
+  const darkmodeBtn = $("menuDarkmodeBtn");
+  const openPasswordBtn = $("openChangePasswordBtn");
+  if (!trigger || !wrap || !menu) return;
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (menu.classList.contains("open")) closeSettingsMenu();
+    else openSettingsMenu();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!wrap.contains(event.target)) closeSettingsMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSettingsMenu();
+      showPasswordModal(false);
+    }
+  });
+
+  darkmodeBtn?.addEventListener("click", () => {
+    const themeToggleBtn = $("themeToggleBtn");
+    if (themeToggleBtn) themeToggleBtn.click();
+    closeSettingsMenu();
+  });
+
+  openPasswordBtn?.addEventListener("click", () => {
+    closeSettingsMenu();
+    setMsg("passwordModalMsg", "", true);
+    $("currentPassword").value = "";
+    $("newPassword").value = "";
+    $("confirmPassword").value = "";
+    showPasswordModal(true);
+  });
+}
+
+function bindPasswordModal() {
+  const back = $("passwordModalBack");
+  const closeBtn = $("closePasswordModalBtn");
+  const cancelBtn = $("cancelPasswordBtn");
+  const saveBtn = $("savePasswordBtn");
+  if (!back || !closeBtn || !cancelBtn || !saveBtn) return;
+
+  const close = () => showPasswordModal(false);
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+  back.addEventListener("click", (event) => {
+    if (event.target === back) close();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    const current_password = String($("currentPassword").value || "").trim();
+    const new_password = String($("newPassword").value || "").trim();
+    const confirm_password = String($("confirmPassword").value || "").trim();
+
+    if (!current_password || !new_password || !confirm_password) {
+      setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
+      return;
+    }
+    if (new_password.length < 8) {
+      setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
+      return;
+    }
+    if (new_password !== confirm_password) {
+      setMsg("passwordModalMsg", "Die neuen Passwörter stimmen nicht überein.");
+      return;
+    }
+
+    saveBtn.disabled = true;
+    setMsg("passwordModalMsg", "Passwort wird gespeichert ...", true);
+    try {
+      const r = await api("/api/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password, new_password })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht geändert werden.");
+        return;
+      }
+      setMsg("passwordModalMsg", "Passwort erfolgreich geändert.", true);
+      setTimeout(() => showPasswordModal(false), 700);
+    } catch {
+      setMsg("passwordModalMsg", "Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+let LOCATIONS = [];
+let DEPARTMENTS = [];
+let ENTREPRENEURS = [];
+let ROLES = [];
+let USERS = [];
+let EDIT_ENTREPRENEUR_ID = null;
+let IS_ADMIN = false;
+let PERMS = {};
+let ADMIN_HISTORY = [];
+const ADMIN_HISTORY_PAGE_SIZE = 20;
+let ADMIN_HISTORY_PAGE = 0;
+let ADMIN_HISTORY_HAS_MORE = false;
+
+const USER_FILTERS = {
+  username: "",
+  departmentId: "",
+  locationId: ""
+};
+
+// ---------------- Tabs ----------------
+function bindTabs() {
+  document.querySelectorAll(".tabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      ["roles","master","users","history"].forEach(t => {
+        const sec = document.getElementById("tab-" + t);
+        if (sec) sec.style.display = (t === tab) ? "" : "none";
+      });
+    });
+  });
+}
+
+// ---------------- Auth UI ----------------
+$("logoutBtn")?.addEventListener("click", () => {
+  closeSettingsMenu();
+  api("/api/logout", { method: "POST", headers: {} })
+    .catch(() => null)
+    .finally(() => {
+      localStorage.removeItem("token");
+      window.location.href = "/login.html";
+    });
+});
+$("backBtn")?.addEventListener("click", () => {
+  closeSettingsMenu();
+  window.location.href = "/app.html";
+});
+$("dashboardBtn")?.addEventListener("click", () => {
+  closeSettingsMenu();
+  window.location.href = "/public/dashboard.html";
+});
+
+// ---------------- Loaders ----------------
+async function loadMe() {
+  const r = await api("/api/me", { method: "GET", headers: {} });
+  if (!r.ok) { localStorage.removeItem("token"); window.location.href = "/login.html"; return; }
+  const me = await r.json();
+  $("me").textContent = `${me.username} • ${me.business_role_name || "-"}`;
+  IS_ADMIN = me.role === "admin";
+}
+
+async function loadPerms() {
+  const r = await api("/api/my-permissions", { method: "GET", headers: {} });
+  PERMS = r.ok ? await r.json() : {};
+}
+
+async function loadLocations() {
+  const r = await api("/api/locations", { method: "GET", headers: {} });
+  LOCATIONS = r.ok ? await r.json() : [];
+
+  // table
+  const body = $("locBody");
+  if (body) {
+    body.innerHTML = "";
+    LOCATIONS.forEach(l => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${l.name}</td>
+        <td><button class="danger" data-del-loc="${l.id}">Löschen</button></td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  // user create select
+  const sel = $("uLocation");
+  if (sel) {
+    sel.innerHTML = `<option value="">(kein Standort)</option>`;
+    LOCATIONS.forEach(l => {
+      const o = document.createElement("option");
+      o.value = l.id;
+      o.textContent = l.name;
+      sel.appendChild(o);
+    });
+  }
+
+  const editLocSel = $("editUserLocation");
+  if (editLocSel) {
+    editLocSel.innerHTML = `<option value="">(kein Standort)</option>`;
+    LOCATIONS.forEach(l => {
+      const o = document.createElement("option");
+      o.value = l.id;
+      o.textContent = l.name;
+      editLocSel.appendChild(o);
+    });
+  }
+
+  const histLocSel = $("adminHistLocation");
+  if (histLocSel) {
+    histLocSel.innerHTML = `<option value="">Bitte wählen</option>`;
+    if (PERMS?.filters?.all_locations) {
+      const allOpt = document.createElement("option");
+      allOpt.value = "-1";
+      allOpt.textContent = "Alle Standorte";
+      histLocSel.appendChild(allOpt);
+    }
+    LOCATIONS.forEach(l => {
+      const o = document.createElement("option");
+      o.value = l.id;
+      o.textContent = l.name;
+      histLocSel.appendChild(o);
+    });
+  }
+
+  populateUserFilters();
+  renderUsersTable();
+
+  // bind delete
+  document.querySelectorAll("[data-del-loc]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del-loc");
+      if (!confirm("Standort wirklich löschen? (nur möglich wenn keine Buchungen vorhanden sind)")) return;
+
+      const rr = await api(`/api/admin/locations/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await rr.json().catch(() => ({}));
+      if (!rr.ok) return setMsg("locMsg", data.error || "Löschen nicht möglich");
+      setMsg("locMsg", "Standort gelöscht", true);
+      await loadLocations();
+    });
+  });
+}
+
+
+async function loadDepartments() {
+  const r = await api("/api/departments", { method: "GET", headers: {} });
+  DEPARTMENTS = r.ok ? await r.json() : [];
+
+  const body = $("depBody");
+  if (!body) return;
+  body.innerHTML = "";
+  DEPARTMENTS.forEach(d => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${d.name}</td>
+      <td><button class="danger" data-del-dep="${d.id}">Löschen</button></td>
+    `;
+    body.appendChild(tr);
+  });
+
+  document.querySelectorAll("[data-del-dep]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del-dep");
+      if (!confirm("Abteilung wirklich löschen? (nur möglich wenn keine Buchungen vorhanden sind)")) return;
+
+      const rr = await api(`/api/admin/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await rr.json().catch(() => ({}));
+      if (!rr.ok) return setMsg("depMsg", data.error || "Löschen nicht möglich");
+      setMsg("depMsg", "Abteilung gelöscht", true);
+      await loadDepartments();
+    });
+  });
+
+  const fixedSelect = $("uFixedDepartment");
+  if (fixedSelect) {
+    fixedSelect.innerHTML = `<option value="">(keine)</option>`;
+    DEPARTMENTS.forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.id;
+      o.textContent = d.name;
+      fixedSelect.appendChild(o);
+    });
+  }
+
+  const editSelect = $("editUserDepartment");
+  if (editSelect) {
+    editSelect.innerHTML = `<option value="">(keine)</option>`;
+    DEPARTMENTS.forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.id;
+      o.textContent = d.name;
+      editSelect.appendChild(o);
+    });
+  }
+
+  const histDepSel = $("adminHistDepartment");
+  if (histDepSel) {
+    histDepSel.innerHTML = `<option value="">Bitte wählen</option>`;
+    DEPARTMENTS.forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.id;
+      o.textContent = d.name;
+      histDepSel.appendChild(o);
+    });
+  }
+
+  populateUserFilters();
+  renderUsersTable();
+}
+
+async function loadAdminHistory({ resetPage = false } = {}) {
+  if (resetPage) ADMIN_HISTORY_PAGE = 0;
+
+  const location_id = Number($("adminHistLocation")?.value || 0);
+  const department_id = Number($("adminHistDepartment")?.value || 0);
+  if (!location_id || !department_id) {
+    const wrap = $("adminHistoryWrap");
+    if (wrap) wrap.innerHTML = `<div class="muted">Bitte Standort und Abteilung auswählen.</div>`;
+    return;
+  }
+
+  const qs = new URLSearchParams({
+    location_id: String(location_id),
+    department_id: String(department_id),
+    limit: String(ADMIN_HISTORY_PAGE_SIZE),
+    offset: String(ADMIN_HISTORY_PAGE * ADMIN_HISTORY_PAGE_SIZE),
+    ...(($("adminHistFrom")?.value || "") ? { date_from: $("adminHistFrom").value } : {}),
+    ...(($("adminHistTo")?.value || "") ? { date_to: $("adminHistTo").value } : {}),
+    ...((($("adminHistEntrepreneur")?.value || "").trim()) ? { entrepreneur: ($("adminHistEntrepreneur").value || "").trim() } : {}),
+    ...((($("adminHistPlate")?.value || "").trim()) ? { license_plate: ($("adminHistPlate").value || "").trim() } : {}),
+    ...((($("adminHistReceipt")?.value || "").trim()) ? { receipt_no: ($("adminHistReceipt").value || "").trim() } : {})
+  }).toString();
+
+  const r = await api(`/api/bookings?${qs}`, { method: "GET", headers: {} });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const wrap = $("adminHistoryWrap");
+    if (wrap) wrap.innerHTML = `<div class="muted">${data?.error || "Historie konnte nicht geladen werden."}</div>`;
+    return;
+  }
+
+  ADMIN_HISTORY = Array.isArray(data?.items) ? data.items : [];
+  ADMIN_HISTORY_HAS_MORE = !!data?.has_more;
+  renderAdminHistory();
+}
+
+function renderChangeDetails(changes) {
+  if (!Array.isArray(changes) || changes.length === 0) return "<span class='muted'>Keine Details</span>";
+
+  const FIELD_LABELS = {
+    receipt_no: "Belegnummer",
+    license_plate: "Kennzeichen",
+    entrepreneur: "Frachtführer",
+    note: "Notiz",
+    qty_in: "Menge (IN)",
+    qty_out: "Menge (OUT)",
+    product_type: "Produktart",
+    employee_code: "Mitarbeiter-ID",
+    status: "Status"
+  };
+
+  return `
+    <div class="change-grid" role="list">
+      ${changes.map(c => {
+        const field = FIELD_LABELS[c?.field] || c?.field || "Feld";
+        const from = (c?.from ?? "-");
+        const to = (c?.to ?? "-");
+        return `
+          <div class="change-row" role="listitem">
+            <div class="change-field">${field}</div>
+            <div class="change-values">
+              <span class="change-old">${from}</span>
+              <span class="change-arrow" aria-hidden="true">→</span>
+              <span class="change-new">${to}</span>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function translateCaseAction(action) {
+  const ACTION_LABELS = {
+    approve: "Genehmigt",
+    submit: "Eingereicht",
+    claim: "Übernommen / Beansprucht",
+    create: "Erstellt"
+  };
+  return ACTION_LABELS[action] || action || "-";
+}
+
+async function openCaseHistory(caseId) {
+  const back = $("adminCaseHistoryModalBack");
+  const body = $("adminCaseHistoryBody");
+  if (!back || !body) return;
+  back.style.display = "flex";
+  back.setAttribute("aria-hidden", "false");
+  body.innerHTML = "<div class='muted'>Lade Änderungshistorie ...</div>";
+
+  const r = await api(`/api/cases/${encodeURIComponent(caseId)}/history`, { method: "GET", headers: {} });
+  const data = await r.json().catch(() => []);
+  if (!r.ok) {
+    body.innerHTML = `<div class='muted'>${data?.error || "Historie konnte nicht geladen werden."}</div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="rollcard-list change-history-list">
+      ${(data || []).map(entry => `
+        <div class="rollcard change-history-card">
+          <div><b>${formatDateTime(entry.created_at)}</b> · ${entry.changed_by || "-"}</div>
+          <div style="margin-top:6px;"><b>Aktion:</b> ${translateCaseAction(entry.action)}</div>
+          <div style="margin-top:8px;"><b>Änderung:</b> ${renderChangeDetails(entry.changes)}</div>
+        </div>
+      `).join("")}
+      ${(data || []).length === 0 ? `<div class="muted">Keine Änderungen gefunden.</div>` : ""}
+    </div>
+  `;
+}
+
+function closeCaseHistoryModal() {
+  const back = $("adminCaseHistoryModalBack");
+  if (!back) return;
+  back.style.display = "none";
+  back.setAttribute("aria-hidden", "true");
+}
+
+function renderAdminHistory() {
+  const wrap = $("adminHistoryWrap");
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div class="rollcard-list">
+      ${ADMIN_HISTORY.map(h => `
+        <div class="rollcard">
+          <div class="rollcard-grid">
+            <div class="rollcard-item"><label>Datum</label><div>${formatDateTime(h.created_at)}</div></div>
+            <div class="rollcard-item"><label>Beleg</label><div>${h.receipt_no || "-"}</div></div>
+            <div class="rollcard-item"><label>Kennzeichen</label><div>${h.license_plate || "-"}</div></div>
+            <div class="rollcard-item"><label>Frachtführer</label><div>${h.entrepreneur || "-"}</div></div>
+            <div class="rollcard-item"><label>IN</label><div>${h.qty_in ?? 0}</div></div>
+            <div class="rollcard-item"><label>OUT</label><div>${h.qty_out ?? 0}</div></div>
+            <div class="rollcard-item"><label>Historie</label><div>${h.case_id ? `<button class="secondary" data-admin-case-history="${h.case_id}">Änderungshistorie</button>` : "-"}</div></div>
+          </div>
+        </div>
+      `).join("")}
+      ${ADMIN_HISTORY.length === 0 ? `<div class="muted">Keine Buchungen gefunden.</div>` : ""}
+    </div>
+    <div class="row" style="margin-top:10px; align-items:center; gap:10px;">
+      <button class="secondary" id="adminHistoryPrevBtn" ${ADMIN_HISTORY_PAGE === 0 ? "disabled" : ""}>Zurück</button>
+      <button class="secondary" id="adminHistoryNextBtn" ${!ADMIN_HISTORY_HAS_MORE ? "disabled" : ""}>Weiter</button>
+      <span class="muted">Seite ${ADMIN_HISTORY_PAGE + 1} · max. ${ADMIN_HISTORY_PAGE_SIZE} Buchungen pro Seite</span>
+    </div>
+  `;
+
+  $("adminHistoryPrevBtn")?.addEventListener("click", async () => {
+    if (ADMIN_HISTORY_PAGE === 0) return;
+    ADMIN_HISTORY_PAGE -= 1;
+    await loadAdminHistory();
+  });
+  $("adminHistoryNextBtn")?.addEventListener("click", async () => {
+    if (!ADMIN_HISTORY_HAS_MORE) return;
+    ADMIN_HISTORY_PAGE += 1;
+    await loadAdminHistory();
+  });
+  document.querySelectorAll("[data-admin-case-history]").forEach(btn => {
+    btn.addEventListener("click", () => openCaseHistory(btn.getAttribute("data-admin-case-history")));
+  });
+}
+
+async function loadEntrepreneurs() {
+  const r = await api("/api/admin/entrepreneurs", { method: "GET", headers: {} });
+  ENTREPRENEURS = r.ok ? await r.json() : [];
+
+  const body = $("entBody");
+  if (!body) return;
+  body.innerHTML = "";
+  ENTREPRENEURS.forEach(e => {
+    const tr = document.createElement("tr");
+    const address = [
+      e.street,
+      [e.postal_code, e.city].filter(Boolean).join(" ")
+    ].filter(Boolean).join(", ");
+    tr.innerHTML = `
+      <td><b>${e.name}</b></td>
+      <td>${address || "-"}</td>
+      <td>
+        <button class="secondary" data-ent-edit="${e.id}">Bearbeiten</button>
+        <button class="danger" data-ent-del="${e.id}">Löschen</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  });
+
+  document.querySelectorAll("[data-ent-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-ent-edit");
+      const ent = ENTREPRENEURS.find(e => String(e.id) === String(id));
+      if (!ent) return;
+      EDIT_ENTREPRENEUR_ID = ent.id;
+      $("entName").value = ent.name || "";
+      $("entStreet").value = ent.street || "";
+      $("entPostal").value = ent.postal_code || "";
+      $("entCity").value = ent.city || "";
+      setMsg("entMsg", "Bearbeitungsmodus aktiv", true);
+    });
+  });
+
+  document.querySelectorAll("[data-ent-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-ent-del");
+      if (!confirm("Frachtführer wirklich löschen?")) return;
+      const rr = await api(`/api/admin/entrepreneurs/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await rr.json().catch(() => ({}));
+      if (!rr.ok) return setMsg("entMsg", data.error || "Löschen fehlgeschlagen");
+      setMsg("entMsg", "Frachtführer gelöscht", true);
+      if (String(EDIT_ENTREPRENEUR_ID) === String(id)) {
+        EDIT_ENTREPRENEUR_ID = null;
+        $("entName").value = "";
+        $("entStreet").value = "";
+        $("entPostal").value = "";
+        $("entCity").value = "";
+      }
+      await loadEntrepreneurs();
+    });
+  });
+}
+
+async function loadRoles() {
+  const r = await api("/api/admin/roles", { method: "GET", headers: {} });
+  ROLES = r.ok ? await r.json() : [];
+
+  // Role select (edit)
+  const sel = $("roleSelect");
+  if (sel) {
+    sel.innerHTML = "";
+    ROLES.forEach(role => {
+      const o = document.createElement("option");
+      o.value = role.id;
+      o.textContent = role.name;
+      sel.appendChild(o);
+    });
+    if (ROLES.length && !sel.value) {
+      sel.value = String(ROLES[0].id);
+    }
+  }
+
+  // Role select (user create)
+  const userRoleSel = $("uRoleId");
+  if (userRoleSel) {
+    userRoleSel.innerHTML = `<option value="">(keine)</option>`;
+    ROLES.forEach(role => {
+      const o = document.createElement("option");
+      o.value = role.id;
+      o.textContent = role.name;
+      userRoleSel.appendChild(o);
+    });
+  }
+
+  const editUserRoleSel = $("editUserRoleId");
+  if (editUserRoleSel) {
+    editUserRoleSel.innerHTML = `<option value="">(keine)</option>`;
+    ROLES.forEach(role => {
+      const o = document.createElement("option");
+      o.value = role.id;
+      o.textContent = role.name;
+      editUserRoleSel.appendChild(o);
+    });
+  }
+
+  // apply permissions for currently selected
+  if (sel && sel.value) applyRoleToCheckboxes(Number(sel.value));
+  else {
+    updatePermissionCardCounts();
+    applyPermissionFilters();
+  }
+}
+
+function getFilteredUsers() {
+  const usernameFilter = USER_FILTERS.username.trim().toLowerCase();
+  return USERS.filter(u => {
+    const usernameMatches = !usernameFilter
+      || String(u.username || "").toLowerCase().includes(usernameFilter);
+    const departmentMatches = !USER_FILTERS.departmentId
+      || String(u.fixed_department_id || "") === String(USER_FILTERS.departmentId);
+    const locationMatches = !USER_FILTERS.locationId
+      || String(u.location_id || "") === String(USER_FILTERS.locationId);
+    return usernameMatches && departmentMatches && locationMatches;
+  });
+}
+
+function renderUsersTable() {
+  const body = $("usersBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  const locName = (id) => LOCATIONS.find(x => String(x.id) === String(id))?.name || "-";
+  const roleName = (id) => ROLES.find(x => String(x.id) === String(id))?.name || "-";
+  const depName = (id) => DEPARTMENTS.find(x => String(x.id) === String(id))?.name || "-";
+
+  getFilteredUsers().forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><b>${u.username}</b></td>
+      <td>${locName(u.location_id)}</td>
+      <td>${roleName(u.role_id)}</td>
+      <td>${depName(u.fixed_department_id)}</td>
+      <td>${u.is_active ? "aktiv" : "inaktiv"}</td>
+      <td>
+        <button class="secondary" data-reset="${u.id}">Passwort</button>
+        <button class="danger" data-disable="${u.id}">Löschen</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  });
+
+  body.querySelectorAll("[data-reset]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-reset");
+      const pw = prompt("Neues Passwort eingeben:");
+      if (!pw) return;
+      const rr = await api(`/api/admin/users/${encodeURIComponent(id)}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await rr.json().catch(() => ({}));
+      if (!rr.ok) return setMsg("userMsg", data.error || "Passwort konnte nicht gesetzt werden");
+      setMsg("userMsg", "Passwort gesetzt", true);
+    });
+  });
+
+  body.querySelectorAll("[data-disable]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-disable");
+      if (!confirm("Benutzer wirklich löschen?")) return;
+      const rr = await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await rr.json().catch(() => ({}));
+      if (!rr.ok) return setMsg("userMsg", data.error || "Konnte nicht löschen");
+      setMsg("userMsg", "Benutzer gelöscht", true);
+      await loadUsers();
+    });
+  });
+}
+
+function populateUserFilters() {
+  const depSel = $("usersFilterDepartment");
+  if (depSel) {
+    depSel.innerHTML = `<option value="">(alle Abteilungen)</option>`;
+    DEPARTMENTS.forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.id;
+      o.textContent = d.name;
+      depSel.appendChild(o);
+    });
+    depSel.value = USER_FILTERS.departmentId;
+  }
+
+  const locSel = $("usersFilterLocation");
+  if (locSel) {
+    locSel.innerHTML = `<option value="">(alle Standorte)</option>`;
+    LOCATIONS.forEach(l => {
+      const o = document.createElement("option");
+      o.value = l.id;
+      o.textContent = l.name;
+      locSel.appendChild(o);
+    });
+    locSel.value = USER_FILTERS.locationId;
+  }
+}
+
+async function loadUsers() {
+  const r = await api("/api/admin/users", { method: "GET", headers: {} });
+  USERS = r.ok ? await r.json() : [];
+
+  renderUsersTable();
+
+  const editSelect = $("editUserSelect");
+  if (editSelect) {
+    editSelect.innerHTML = `<option value="">(bitte wählen)</option>`;
+    USERS.forEach(u => {
+      const o = document.createElement("option");
+      o.value = u.id;
+      o.textContent = u.username;
+      editSelect.appendChild(o);
+    });
+  }
+
+  applyUserEditSelection();
+}
+
+function applyUserEditSelection() {
+  const sel = $("editUserSelect");
+  if (!sel) return;
+  const id = sel.value;
+  const user = USERS.find(u => String(u.id) === String(id));
+  if ($("editUserLocation")) {
+    $("editUserLocation").value = user?.location_id ? String(user.location_id) : "";
+  }
+  $("editUserRoleId").value = user?.role_id ? String(user.role_id) : "";
+  $("editUserDepartment").value = user?.fixed_department_id ? String(user.fixed_department_id) : "";
+}
+
+// ---------------- Role permission UI ----------------
+function getPermCheckboxes() {
+  return {
+    bookings: {
+      create: $("p_bookings_create")?.checked || false,
+      view: $("p_bookings_view")?.checked || false,
+      export: $("p_bookings_export")?.checked || false,
+      receipt: $("p_bookings_receipt")?.checked || false,
+      edit: $("p_bookings_edit")?.checked || false,
+      delete: $("p_bookings_delete")?.checked || false,
+      translogica: $("p_bookings_translogica")?.checked || false
+    },
+    stock: {
+      view: $("p_stock_view")?.checked || false,
+      overall: $("p_stock_overall")?.checked || false
+    },
+    cases: {
+      create: $("p_cases_create")?.checked || false,
+      internal_transfer: $("p_cases_internal_transfer")?.checked || false,
+      require_employee_code: $("p_cases_employee_code")?.checked || false,
+      claim: $("p_cases_claim")?.checked || false,
+      edit: $("p_cases_edit")?.checked || false,
+      submit: $("p_cases_submit")?.checked || false,
+      approve: $("p_cases_approve")?.checked || false,
+      cancel: $("p_cases_cancel")?.checked || false,
+      delete: $("p_cases_delete")?.checked || false
+    },
+    filters: {
+      all_locations: $("p_filters_all_locations")?.checked || false
+    },
+    masterdata: {
+      manage: $("p_master_manage")?.checked || false,
+      entrepreneurs_manage: $("p_master_entrepreneurs_manage")?.checked || false
+    },
+    users: {
+      manage: $("p_users_manage")?.checked || false,
+      view_department: $("p_users_view_department")?.checked || false
+    },
+    roles: { manage: $("p_roles_manage")?.checked || false },
+    integrations: {
+      container_login: $("p_integrations_container_registration")?.checked || false,
+      container_registration: $("p_integrations_container_registration")?.checked || false,
+      container_planning: $("p_integrations_container_planning")?.checked || false,
+      container_viewer: $("p_integrations_container_viewer")?.checked || false,
+      container_admin: $("p_integrations_container_admin")?.checked || false
+    },
+    admin: { full_access: $("p_admin_full_access")?.checked || false }
+  };
+}
+
+function setPermCheckboxes(perms) {
+  const p = perms || {};
+  $("p_bookings_create").checked = !!p?.bookings?.create;
+  $("p_bookings_view").checked = !!p?.bookings?.view;
+  $("p_bookings_export").checked = !!p?.bookings?.export;
+  $("p_bookings_receipt").checked = !!p?.bookings?.receipt;
+  $("p_bookings_edit").checked = !!p?.bookings?.edit;
+  $("p_bookings_delete").checked = !!p?.bookings?.delete;
+  if ($("p_bookings_translogica")) {
+    $("p_bookings_translogica").checked = !!p?.bookings?.translogica;
+  }
+
+  $("p_stock_view").checked = !!p?.stock?.view;
+  $("p_stock_overall").checked = !!p?.stock?.overall;
+
+  $("p_cases_create").checked = !!p?.cases?.create;
+  if ($("p_cases_internal_transfer")) {
+    $("p_cases_internal_transfer").checked = !!p?.cases?.internal_transfer;
+  }
+  $("p_cases_employee_code").checked = !!p?.cases?.require_employee_code;
+  $("p_cases_claim").checked = !!p?.cases?.claim;
+  $("p_cases_edit").checked = !!p?.cases?.edit;
+  $("p_cases_submit").checked = !!p?.cases?.submit;
+  $("p_cases_approve").checked = !!p?.cases?.approve;
+  $("p_cases_cancel").checked = !!p?.cases?.cancel;
+  if ($("p_cases_delete")) {
+    $("p_cases_delete").checked = !!p?.cases?.delete;
+  }
+  if ($("p_filters_all_locations")) {
+    $("p_filters_all_locations").checked = !!p?.filters?.all_locations;
+  }
+
+  $("p_master_manage").checked = !!p?.masterdata?.manage;
+  if ($("p_master_entrepreneurs_manage")) {
+    $("p_master_entrepreneurs_manage").checked = !!p?.masterdata?.entrepreneurs_manage;
+  }
+  $("p_users_manage").checked = !!p?.users?.manage;
+  if ($("p_users_view_department")) {
+    $("p_users_view_department").checked = !!p?.users?.view_department;
+  }
+  $("p_roles_manage").checked = !!p?.roles?.manage;
+  if ($("p_integrations_container_registration")) {
+    $("p_integrations_container_registration").checked = !!(p?.integrations?.container_login || p?.integrations?.container_registration);
+  }
+  if ($("p_integrations_container_planning")) {
+    $("p_integrations_container_planning").checked = !!p?.integrations?.container_planning;
+  }
+  if ($("p_integrations_container_viewer")) {
+    $("p_integrations_container_viewer").checked = !!p?.integrations?.container_viewer;
+  }
+  if ($("p_integrations_container_admin")) {
+    $("p_integrations_container_admin").checked = !!p?.integrations?.container_admin;
+  }
+  if ($("p_admin_full_access")) {
+    $("p_admin_full_access").checked = !!p?.admin?.full_access;
+  }
+}
+
+function applyRoleToCheckboxes(roleId) {
+  const role = ROLES.find(r => Number(r.id) === Number(roleId));
+  if (!role) {
+    setPermCheckboxes({});
+    updatePermissionCardCounts();
+    applyPermissionFilters();
+    return;
+  }
+  setPermCheckboxes(role.permissions || {});
+  updatePermissionCardCounts();
+  applyPermissionFilters();
+}
+
+// ---------------- Actions ----------------
+// Roles
+$("createRoleBtn")?.addEventListener("click", async () => {
+  setMsg("roleMsg", "");
+  const name = ($("roleName").value || "").trim();
+  if (!name) return setMsg("roleMsg", "Bitte Rollenname eingeben");
+
+  const rr = await api("/api/admin/roles", {
+    method: "POST",
+    body: JSON.stringify({ name, permissions: {
+      bookings: { create:true, view:true, export:true, receipt:true, edit:false, delete:false, translogica:false },
+      stock: { view:true, overall:true },
+      cases: {
+        create: true,
+        internal_transfer: false,
+        require_employee_code: false,
+        claim: false,
+        edit: false,
+        submit: false,
+        approve: false,
+        cancel: false,
+        delete: false
+      },
+      filters: { all_locations: false },
+      masterdata: { manage:false, entrepreneurs_manage:false },
+      users: { manage:false, view_department:false },
+      roles: { manage:false },
+      integrations: {
+        container_login:false,
+        container_registration:false,
+        container_planning:false,
+        container_viewer:false,
+        container_admin:false
+      },
+      admin: { full_access:false }
+    }})
+  });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("roleMsg", data.error || "Rolle konnte nicht angelegt werden");
+  setMsg("roleMsg", "Rolle angelegt", true);
+  $("roleName").value = "";
+  await loadRoles();
+  $("roleSelect").value = String(data.id);
+  applyRoleToCheckboxes(data.id);
+});
+
+$("reloadRolesBtn")?.addEventListener("click", loadRoles);
+
+$("roleSelect")?.addEventListener("change", () => {
+  applyRoleToCheckboxes(Number($("roleSelect").value));
+});
+
+$("saveRoleBtn")?.addEventListener("click", async () => {
+  setMsg("roleEditMsg", "");
+  const id = Number($("roleSelect").value);
+  if (!id) return setMsg("roleEditMsg", "Bitte Rolle auswählen");
+
+  const permissions = getPermCheckboxes();
+  const rr = await api(`/api/admin/roles/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ permissions })
+  });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("roleEditMsg", data.error || "Speichern fehlgeschlagen");
+
+  setMsg("roleEditMsg", "Gespeichert", true);
+  await loadRoles();
+  $("roleSelect").value = String(id);
+  applyRoleToCheckboxes(id);
+});
+
+$("deleteRoleBtn")?.addEventListener("click", async () => {
+  setMsg("roleEditMsg", "");
+  const id = Number($("roleSelect").value);
+  if (!id) return setMsg("roleEditMsg", "Bitte Rolle auswählen");
+  if (!confirm("Rolle wirklich löschen? (nur wenn keinem User zugewiesen)")) return;
+
+  const rr = await api(`/api/admin/roles/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("roleEditMsg", data.error || "Löschen fehlgeschlagen");
+  setMsg("roleEditMsg", "Rolle gelöscht", true);
+  await loadRoles();
+});
+
+// Masterdata: create location/department
+$("createLocBtn")?.addEventListener("click", async () => {
+  setMsg("locMsg", "");
+  const name = ($("locName").value || "").trim();
+  if (!name) return setMsg("locMsg", "Bitte Standortname eingeben");
+
+  const rr = await api("/api/admin/locations", { method: "POST", body: JSON.stringify({ name }) });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("locMsg", data.error || "Standort konnte nicht angelegt werden!");
+  setMsg("locMsg", "Standort angelegt", true);
+  $("locName").value = "";
+  await loadLocations();
+});
+
+$("createDepBtn")?.addEventListener("click", async () => {
+  setMsg("depMsg", "");
+  const name = ($("depName").value || "").trim();
+  if (!name) return setMsg("depMsg", "Bitte Abteilungsname eingeben");
+
+  const rr = await api("/api/admin/departments", { method: "POST", body: JSON.stringify({ name }) });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("depMsg", data.error || "Abteilung konnte nicht angelegt werden");
+  setMsg("depMsg", "Abteilung angelegt", true);
+  $("depName").value = "";
+  await loadDepartments();
+});
+
+$("saveEntBtn")?.addEventListener("click", async () => {
+  setMsg("entMsg", "");
+  const name = ($("entName").value || "").trim();
+  const street = ($("entStreet").value || "").trim();
+  const postal_code = ($("entPostal").value || "").trim();
+  const city = ($("entCity").value || "").trim();
+  if (!name) return setMsg("entMsg", "Bitte Frachtführername eingeben");
+
+  const payload = {
+    name,
+    street: street || null,
+    postal_code: postal_code || null,
+    city: city || null
+  };
+
+  let rr;
+  if (EDIT_ENTREPRENEUR_ID) {
+    rr = await api(`/api/admin/entrepreneurs/${encodeURIComponent(EDIT_ENTREPRENEUR_ID)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  } else {
+    rr = await api("/api/admin/entrepreneurs", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("entMsg", data.error || "Speichern fehlgeschlagen");
+  setMsg("entMsg", EDIT_ENTREPRENEUR_ID ? "Frachtführer aktualisiert" : "Frachtführer angelegt", true);
+  EDIT_ENTREPRENEUR_ID = null;
+  $("entName").value = "";
+  $("entStreet").value = "";
+  $("entPostal").value = "";
+  $("entCity").value = "";
+  await loadEntrepreneurs();
+});
+
+$("clearEntBtn")?.addEventListener("click", () => {
+  EDIT_ENTREPRENEUR_ID = null;
+  $("entName").value = "";
+  $("entStreet").value = "";
+  $("entPostal").value = "";
+  $("entCity").value = "";
+  setMsg("entMsg", "");
+});
+
+// Users
+$("createUserBtn")?.addEventListener("click", async () => {
+  setMsg("userMsg", "");
+  const username = ($("uName").value || "").trim();
+  const password = ($("uPass").value || "").trim();
+  const location_id = $("uLocation").value || null;
+  const role_id = $("uRoleId").value || null;
+  const fixed_department_id = $("uFixedDepartment").value || null;
+
+  if (!username || !password) return setMsg("userMsg", "Username und Passwort sind Pflicht");
+  if (!role_id) return setMsg("userMsg", "Bitte Business-Rolle auswählen");
+
+  const rr = await api("/api/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ username, password, role: "disponent", location_id, role_id, fixed_department_id })
+  });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("userMsg", data.error || "User konnte nicht angelegt werden");
+
+  setMsg("userMsg", "User angelegt", true);
+  $("uName").value = "";
+  $("uPass").value = "";
+  $("uFixedDepartment").value = "";
+  await loadUsers();
+});
+
+$("reloadUsersBtn")?.addEventListener("click", loadUsers);
+$("usersFilterUsername")?.addEventListener("input", (e) => {
+  USER_FILTERS.username = e.target.value || "";
+  renderUsersTable();
+});
+$("usersFilterDepartment")?.addEventListener("change", (e) => {
+  USER_FILTERS.departmentId = e.target.value || "";
+  renderUsersTable();
+});
+$("usersFilterLocation")?.addEventListener("change", (e) => {
+  USER_FILTERS.locationId = e.target.value || "";
+  renderUsersTable();
+});
+$("editUserSelect")?.addEventListener("change", applyUserEditSelection);
+
+$("printReceiptDriverBtn")?.addEventListener("click", () => {
+  setMsg("printReceiptMsg", "");
+  window.open("/receipt.html?driverSlip=1", "_blank", "noopener,noreferrer");
+  setMsg("printReceiptMsg", "Fahrer Palettenschein geöffnet", true);
+});
+
+$("printReceiptWarehouseBtn")?.addEventListener("click", () => {
+  setMsg("printReceiptMsg", "");
+  window.open("/receipt.html?warehouseSlip=1", "_blank", "noopener,noreferrer");
+  setMsg("printReceiptMsg", "Lager Palettenschein geöffnet", true);
+});
+
+$("adminReloadHistoryBtn")?.addEventListener("click", () => loadAdminHistory({ resetPage: true }));
+$("adminHistLocation")?.addEventListener("change", () => loadAdminHistory({ resetPage: true }));
+$("adminHistDepartment")?.addEventListener("change", () => loadAdminHistory({ resetPage: true }));
+$("adminHistFrom")?.addEventListener("change", () => loadAdminHistory({ resetPage: true }));
+$("adminHistTo")?.addEventListener("change", () => loadAdminHistory({ resetPage: true }));
+$("adminHistEntrepreneur")?.addEventListener("input", () => {
+  clearTimeout(window.__adminHistEntT);
+  window.__adminHistEntT = setTimeout(() => loadAdminHistory({ resetPage: true }), 250);
+});
+$("adminHistPlate")?.addEventListener("input", () => {
+  clearTimeout(window.__adminHistPlateT);
+  window.__adminHistPlateT = setTimeout(() => loadAdminHistory({ resetPage: true }), 250);
+});
+$("adminHistReceipt")?.addEventListener("input", () => {
+  clearTimeout(window.__adminHistRecT);
+  window.__adminHistRecT = setTimeout(() => loadAdminHistory({ resetPage: true }), 250);
+});
+
+$("closeAdminCaseHistoryBtn")?.addEventListener("click", closeCaseHistoryModal);
+$("adminCaseHistoryModalBack")?.addEventListener("click", (event) => {
+  if (event.target === $("adminCaseHistoryModalBack")) closeCaseHistoryModal();
+});
+
+$("saveUserBtn")?.addEventListener("click", async () => {
+  setMsg("userEditMsg", "");
+  const id = $("editUserSelect").value;
+  if (!id) return setMsg("userEditMsg", "Bitte Benutzer auswählen");
+
+  const location_id = $("editUserLocation").value || null;
+  const role_id = $("editUserRoleId").value || null;
+  const fixed_department_id = $("editUserDepartment").value || null;
+  if (!role_id) return setMsg("userEditMsg", "Bitte Business-Rolle auswählen");
+
+  const rr = await api(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ location_id, role_id, fixed_department_id })
+  });
+  const data = await rr.json().catch(() => ({}));
+  if (!rr.ok) return setMsg("userEditMsg", data.error || "Speichern fehlgeschlagen");
+
+  setMsg("userEditMsg", "Gespeichert", true);
+  await loadUsers();
+  $("editUserSelect").value = String(id);
+  applyUserEditSelection();
+});
+
+
+
+// ---------------- Init ----------------
+(async function init() {
+  try {
+    await trySsoIntake();
+    if (!token) {
+      window.location.href = "/login.html";
+      return;
+    }
+
+    bindTabs();
+    bindSettingsMenu();
+    bindPasswordModal();
+    applyModuleNaming();
+    enhancePermissionCards();
+    bindPermissionPanel();
+    updatePermissionCardCounts();
+    await loadMe();
+    await loadPerms();
+
+    const hasFullAdminAccess = !!PERMS?.admin?.full_access || IS_ADMIN;
+
+    if (!hasFullAdminAccess && !PERMS?.users?.view_department) {
+      window.location.href = "/app.html";
+      return;
+    }
+
+    const tabBtn = (name) => document.querySelector(`.tabs button[data-tab="${name}"]`);
+    if (!hasFullAdminAccess) {
+      if (tabBtn("roles")) tabBtn("roles").style.display = "none";
+      if (tabBtn("master")) tabBtn("master").style.display = "none";
+      if (tabBtn("users")) {
+        tabBtn("users").classList.add("active");
+        tabBtn("users").click();
+      }
+      if (tabBtn("history")) tabBtn("history").style.display = "none";
+    }
+
+    if (hasFullAdminAccess) {
+      await loadRoles();
+      await loadLocations();
+      await loadDepartments();
+      await loadEntrepreneurs();
+      await loadUsers();
+      await loadAdminHistory({ resetPage: true });
+    } else {
+      await loadLocations();
+      await loadDepartments();
+      await loadUsers();
+    }
+  } catch (e) {
+    console.error(e);
+    // Falls hier etwas knallt, sieht man es im Browser in der Console
+  }
+})();

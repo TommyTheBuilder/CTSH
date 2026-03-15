@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Administration</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body>
+<header class="topbar topbar-modern admin-topbar">
+  <div class="system-logo-wrap">
+    <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
+    <a href="dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
+    <a href="/public/dashboard.html" class="system-logo-home" aria-label="Zum Dashboard"></a>
+  </div>
+  <div class="row topbar-actions" style="align-items:center;">
+    <div class="settings-menu-wrap" id="settingsMenuWrap">
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">⚙️</button>
+      <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
+        <button class="secondary" id="backBtn" role="menuitem">Zur App</button>
+        <button class="secondary" id="dashboardBtn" role="menuitem">Dashboard</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+        <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
+      </div>
+    </div>
+    <div id="themeToggleMount" style="display:none;"></div>
+  </div>
+</header>
+
+<main class="dashboard-main admin-main">
+  <section class="dashboard-header admin-header">
+    <div class="dashboard-title-row">
+      <div class="admin-title-block">
+        <div class="admin-eyebrow">Admin Center</div>
+        <b>Administration</b>
+      </div>
+      <span class="pill" id="me">-</span>
+    </div>
+    <div class="tabs admin-tabs">
+      <button data-tab="roles" class="active nav-button"><span class="nav-icon">🔐</span>Rollen & Rechte</button>
+      <button data-tab="master" class="nav-button"><span class="nav-icon">🏷️</span>Stammdaten</button>
+      <button data-tab="users" class="nav-button"><span class="nav-icon">👥</span>Benutzer</button>
+      <button data-tab="history" class="nav-button"><span class="nav-icon">📅</span>Historie</button>
+    </div>
+  </section>
+
+  <section class="admin-toolbar-row">
+    <div class="card admin-card admin-quick-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Schnellaktionen</span>
+          <h3>Belegdruck</h3>
+        </div>
+      </div>
+      <div class="quick-action-grid">
+        <button class="primary" id="printReceiptDriverBtn">Fahrer Palettenschein</button>
+        <button class="secondary" id="printReceiptWarehouseBtn">Lager Palettenschein</button>
+      </div>
+      <p id="printReceiptMsg"></p>
+    </div>
+  </section>
+
+  <section id="tab-roles">
+    <div class="card admin-card role-create-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Neue Rolle</span>
+          <h3>Rolle anlegen</h3>
+        </div>
+      </div>
+      <div class="row role-create-row">
+        <div>
+          <label for="roleName">Rollenname</label>
+          <input id="roleName" placeholder="z.B. Dispo">
+        </div>
+        <div>
+          <button class="primary" id="createRoleBtn">Rolle anlegen</button>
+        </div>
+      </div>
+      <p id="roleMsg"></p>
+    </div>
+
+    <div class="card admin-card rights-admin-card">
+      <div class="admin-card-head">
+        <div>
+          <span class="section-eyebrow">Rechte Verwaltung</span>
+          <h3>Rollen und Rechte</h3>
+        </div>
+        <button class="secondary" id="reloadRolesBtn">Neu laden</button>
+      </div>
+
+      <div class="rights-controls">
+        <div class="rights-role-field">
+          <label for="roleSelect">Rolle auswählen</label>
+          <select id="roleSelect"></select>
+        </div>
+        <div class="rights-action">
+          <button class="primary" id="saveRoleBtn">Berechtigungen speichern</button>
+        </div>
+        <div class="rights-action">
+          <button class="danger" id="deleteRoleBtn">Rolle löschen</button>
+        </div>
+      </div>
+
+      <div class="rights-filter-bar">
+        <div class="rights-filter-field">
+          <label for="permissionSearch">Rechte suchen</label>
+          <input id="permissionSearch" type="search" placeholder="z.B. Historie, Export, Container">
+        </div>
+        <label class="rights-toggle-chip" for="permissionShowEnabledOnly">
+          <input type="checkbox" id="permissionShowEnabledOnly">
+          <span>Nur aktive Rechte anzeigen</span>
+        </label>
+      </div>
+
+      <div class="permGrid modern-perm-grid permissions-grid">
+        <div class="permBox">
+          <b>Buchungen</b>
+          <label><input type="checkbox" id="p_bookings_create"> Anlegen</label>
+          <label><input type="checkbox" id="p_bookings_view"> Anzeigen</label>
+          <label><input type="checkbox" id="p_bookings_export"> Exportieren</label>
+          <label><input type="checkbox" id="p_bookings_receipt"> Beleg</label>
+          <label><input type="checkbox" id="p_bookings_edit"> Bearbeiten (manuell ändern)</label>
+          <label><input type="checkbox" id="p_bookings_delete"> Löschen</label>
+          <label><input type="checkbox" id="p_bookings_translogica"> Translogica-Kästchen bearbeiten</label>
+        </div>
+
+        <div class="permBox">
+          <b>Bestände</b>
+          <label><input type="checkbox" id="p_stock_view"> Anzeigen</label>
+          <label><input type="checkbox" id="p_stock_overall"> Gesamtbestand (Komplett-Bestand)</label>
+          <small class="muted">Steuert die Auswahl „Komplett-Bestand (je Abteilung)“ im Dashboard.</small>
+        </div>
+
+        <div class="permBox">
+          <b>Vorgänge</b>
+          <label><input type="checkbox" id="p_cases_create"> Aviso anlegen</label>
+          <label><input type="checkbox" id="p_cases_internal_transfer"> Interne Lagerumbuchung</label>
+          <label><input type="checkbox" id="p_cases_employee_code"> Lagermitarbeiter (2-stellig) bei Status 2 Pflicht</label>
+          <label><input type="checkbox" id="p_cases_claim"> Übernehmen</label>
+          <label><input type="checkbox" id="p_cases_edit"> Ändern</label>
+          <label><input type="checkbox" id="p_cases_submit"> Zur Prüfung senden</label>
+          <label><input type="checkbox" id="p_cases_approve"> Buchen/abschließen</label>
+          <label><input type="checkbox" id="p_cases_cancel"> Stornieren</label>
+          <label><input type="checkbox" id="p_cases_delete"> Löschen</label>
+        </div>
+
+        <div class="permBox">
+          <b>Stammdaten</b>
+          <label><input type="checkbox" id="p_master_manage"> Verwalten</label>
+          <label><input type="checkbox" id="p_master_entrepreneurs_manage"> Frachtführerstammdaten verwalten</label>
+          <small class="muted">Standorte/Abteilungen pflegen</small>
+        </div>
+
+        <div class="permBox">
+          <b>Benutzer</b>
+          <label><input type="checkbox" id="p_users_manage"> Verwalten</label>
+          <label><input type="checkbox" id="p_users_view_department"> Nur eigene Abteilung anzeigen</label>
+          <small class="muted">Benutzer anlegen/ändern</small>
+        </div>
+
+        <div class="permBox">
+          <b>Rollen</b>
+          <label><input type="checkbox" id="p_roles_manage"> Verwalten</label>
+          <label><input type="checkbox" id="p_admin_full_access"> Admin-Zugriff & Vollzugriff</label>
+          <small class="muted">Steuert den Admin-Button und gewährt vollständigen Zugriff auf alle Funktionen.</small>
+        </div>
+
+        <div class="permBox">
+          <b>Filter</b>
+          <label><input type="checkbox" id="p_filters_all_locations"> Standortfilter „Alle Standorte“ (Vorgänge/Historie)</label>
+          <small class="muted">Erlaubt die Auswahl über alle Standorte statt nur den zugewiesenen Standort.</small>
+        </div>
+        <div class="permBox">
+          <b>Integrationen</b>
+          <label><input type="checkbox" id="p_integrations_container_registration"> Container Anmeldung öffnen</label>
+          <label><input type="checkbox" id="p_integrations_container_planning"> Container Planung öffnen</label>
+          <label><input type="checkbox" id="p_integrations_container_viewer"> Container Statusboard öffnen</label>
+          <label><input type="checkbox" id="p_integrations_container_admin"> Container Admin steuern</label>
+          <small class="muted">Diese Rechte steuern direkt den Zugriff auf Container-Anmeldung, Statusboard und Adminseite.</small>
+        </div>
+      </div>
+
+      <p id="roleEditMsg"></p>
+    </div>
+  </section>
+
+  <section id="tab-master" style="display:none;">
+    <div class="admin-section-grid admin-section-grid-master">
+      <div class="card admin-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Standorte</span>
+            <h3>Standorte verwalten</h3>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="locName">Neuer Standort</label>
+            <input id="locName" placeholder="z.B. Lager Wien">
+          </div>
+          <button class="primary" id="createLocBtn">Anlegen</button>
+        </div>
+        <p id="locMsg"></p>
+
+        <div class="admin-table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Aktion</th></tr></thead>
+            <tbody id="locBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card admin-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Partner</span>
+            <h3>Frachtführer</h3>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="entName">Frachtführername</label>
+            <input id="entName" placeholder="z.B. Spedition Müller">
+          </div>
+          <div>
+            <label for="entStreet">Straße</label>
+            <input id="entStreet" placeholder="z.B. Musterstraße 12">
+          </div>
+          <div>
+            <label for="entPostal">PLZ</label>
+            <input id="entPostal" placeholder="z.B. 1010">
+          </div>
+          <div>
+            <label for="entCity">Ort</label>
+            <input id="entCity" placeholder="z.B. Wien">
+          </div>
+          <div>
+            <button class="primary" id="saveEntBtn">Speichern</button>
+          </div>
+          <div>
+            <button class="secondary" id="clearEntBtn">Zurücksetzen</button>
+          </div>
+        </div>
+        <small class="muted">Zum Bearbeiten in der Liste unten auf „Bearbeiten“ klicken.</small>
+        <p id="entMsg"></p>
+
+        <div class="admin-table-wrap">
+          <table>
+            <thead><tr><th>Frachtführer</th><th>Adresse</th><th>Aktion</th></tr></thead>
+            <tbody id="entBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card admin-card admin-card-wide">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Abteilungen</span>
+            <h3>Abteilungen strukturieren</h3>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="depName">Neue Abteilung</label>
+            <input id="depName" placeholder="z.B. Wareneingang">
+          </div>
+          <button class="primary" id="createDepBtn">Anlegen</button>
+        </div>
+        <p id="depMsg"></p>
+        <small class="muted">Beim Löschen bleiben bestehende Buchungen/Vorgänge erhalten.</small>
+
+        <div class="admin-table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Aktion</th></tr></thead>
+            <tbody id="depBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-users" style="display:none;">
+    <div class="admin-section-grid">
+    <div class="card admin-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Neuer Benutzer</span>
+          <h3>Benutzer anlegen</h3>
+          <p>Neuen Zugang inklusive Standort, Rolle und optionaler Abteilung anlegen.</p>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="uName">Benutzername</label>
+          <input id="uName" placeholder="z.B. max">
+        </div>
+        <div>
+          <label for="uPass">Passwort</label>
+          <input id="uPass" placeholder="Passwort" type="password" autocomplete="new-password">
+        </div>
+        <div>
+          <label for="uLocation">Standort</label>
+          <select id="uLocation"></select>
+        </div>
+        <div>
+          <label for="uRoleId">Business-Rolle (Rechte)</label>
+          <select id="uRoleId"></select>
+          <small class="muted">Pflichtfeld für Berechtigungen</small>
+        </div>
+        <div>
+          <label for="uFixedDepartment">Fixe Abteilung</label>
+          <select id="uFixedDepartment"></select>
+          <small class="muted">Optional (für Abteilungs-Benachrichtigungen)</small>
+        </div>
+        <div>
+          <button class="primary" id="createUserBtn">Anlegen</button>
+        </div>
+      </div>
+      <p id="userMsg"></p>
+    </div>
+
+    <div class="card admin-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Bestehender Benutzer</span>
+          <h3>Benutzer bearbeiten</h3>
+          <p>Rolle, Standort und feste Abteilung zentral nachziehen.</p>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="editUserSelect">Benutzer</label>
+          <select id="editUserSelect"></select>
+        </div>
+        <div>
+          <label for="editUserLocation">Standort</label>
+          <select id="editUserLocation"></select>
+        </div>
+        <div>
+          <label for="editUserRoleId">Business-Rolle (Rechte)</label>
+          <select id="editUserRoleId"></select>
+        </div>
+        <div>
+          <label for="editUserDepartment">Fixe Abteilung</label>
+          <select id="editUserDepartment"></select>
+        </div>
+        <div>
+          <button class="primary" id="saveUserBtn">Speichern</button>
+        </div>
+      </div>
+      <p id="userEditMsg"></p>
+    </div>
+    </div>
+
+    <div class="card admin-card">
+      <div class="admin-card-head">
+        <div>
+          <span class="section-eyebrow">Benutzerliste</span>
+          <h3>Benutzer im Überblick</h3>
+        </div>
+        <button class="secondary" id="reloadUsersBtn">Neu laden</button>
+      </div>
+      <div class="row users-filter-row">
+        <div>
+          <label for="usersFilterUsername">Filter Benutzername</label>
+          <input id="usersFilterUsername" placeholder="z.B. max">
+        </div>
+        <div>
+          <label for="usersFilterDepartment">Filter Abteilung</label>
+          <select id="usersFilterDepartment"></select>
+        </div>
+        <div>
+          <label for="usersFilterLocation">Filter Standort</label>
+          <select id="usersFilterLocation"></select>
+        </div>
+      </div>
+      <div class="admin-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Benutzer</th>
+              <th>Standort</th>
+              <th>Business-Rolle</th>
+              <th>Fixe Abteilung</th>
+              <th>Status</th>
+              <th>Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-history" style="display:none;">
+    <div class="card admin-card">
+      <div class="admin-card-head">
+        <div>
+          <span class="section-eyebrow">Historie</span>
+          <h3>Buchungshistorie</h3>
+          <p>Suche schneller nach Zeitraum, Standort, Abteilung, Kennzeichen oder Belegnummer.</p>
+        </div>
+        <button class="secondary" id="adminReloadHistoryBtn">Neu laden</button>
+      </div>
+      <div class="row history-filter-row">
+        <div>
+          <label for="adminHistLocation">Standort</label>
+          <select id="adminHistLocation"></select>
+        </div>
+        <div>
+          <label for="adminHistDepartment">Abteilung</label>
+          <select id="adminHistDepartment"></select>
+        </div>
+        <div>
+          <label for="adminHistFrom">Von</label>
+          <input id="adminHistFrom" type="date">
+        </div>
+        <div>
+          <label for="adminHistTo">Bis</label>
+          <input id="adminHistTo" type="date">
+        </div>
+        <div>
+          <label for="adminHistEntrepreneur">Frachtführer</label>
+          <input id="adminHistEntrepreneur" placeholder="Name">
+        </div>
+        <div>
+          <label for="adminHistPlate">Kennzeichen</label>
+          <input id="adminHistPlate" placeholder="z.B. W123AB">
+        </div>
+        <div>
+          <label for="adminHistReceipt">Belegnummer</label>
+          <input id="adminHistReceipt" placeholder="z.B. ICS...">
+        </div>
+      </div>
+      <div id="adminHistoryWrap" class="admin-history-wrap"></div>
+    </div>
+  </section>
+</main>
+
+<div id="adminCaseHistoryModalBack" class="modal-backdrop case-history-host" style="display:none;" aria-hidden="true">
+  <div class="modal case-history-panel">
+    <div class="modal-head">
+      <h3 style="margin:0;">Änderungshistorie</h3>
+      <button type="button" class="icon-button" id="closeAdminCaseHistoryBtn" aria-label="Schließen">✕</button>
+    </div>
+    <div id="adminCaseHistoryBody" style="max-height:65vh; overflow:auto; margin-top:10px;"></div>
+  </div>
+</div>
+
+<script src="/public/theme.js"></script>
+<div class="modalBack" id="passwordModalBack" aria-hidden="true">
+  <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+    <div class="password-modal-head">
+      <h3 id="passwordModalTitle">Passwort ändern</h3>
+      <button class="secondary" id="closePasswordModalBtn" type="button">Schließen</button>
+    </div>
+    <p class="muted" style="margin-top:0;">Verwenden Sie ein sicheres Passwort mit mindestens 8 Zeichen.</p>
+    <div class="row" style="margin-top:8px;">
+      <div>
+        <label for="currentPassword">Aktuelles Passwort</label>
+        <input id="currentPassword" type="password" autocomplete="new-password" placeholder="Aktuelles Passwort">
+      </div>
+      <div>
+        <label for="newPassword">Neues Passwort</label>
+        <input id="newPassword" type="password" autocomplete="off" placeholder="Mindestens 8 Zeichen">
+      </div>
+      <div>
+        <label for="confirmPassword">Neues Passwort wiederholen</label>
+        <input id="confirmPassword" type="password" autocomplete="off" placeholder="Passwort bestätigen">
+      </div>
+    </div>
+    <p id="passwordModalMsg"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:8px;">
+      <button class="secondary" id="cancelPasswordBtn" type="button">Abbrechen</button>
+      <button class="primary" id="savePasswordBtn" type="button">Passwort speichern</button>
+    </div>
+  </div>
+</div>
+  <footer class="site-copyright">© 2026 / CTSH Systems</footer>
+<script src="/public/admin.js"></script>
+</body>
+</html>

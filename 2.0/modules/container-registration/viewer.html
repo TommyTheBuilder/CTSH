@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Container Board</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root {
+  --header-bg: #0a192f;
+  --brand-blue: #2563EB;
+
+  --body-bg: #F3F4F6;
+  --panel-bg: #FFFFFF;
+  --panel-border: #E2E8F0;
+  --panel-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --text-main: #111827;
+  --text-muted: #475569;
+  --table-head-bg: #E2E8F0;
+  --table-head-text: #334155;
+
+  --status-red: #ef4444;
+  --status-orange: #f59e0b;
+  --status-blue: #3b82f6;
+  --status-violet: #8b5cf6;
+  --status-green: #22c55e;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at top center, rgba(37,99,235,.08), transparent 26%),
+    linear-gradient(180deg, #f7f9fc 0%, #edf2f7 100%);
+}
+
+body.dark {
+  --body-bg: #121826;
+  --panel-bg: #1E2536;
+  --panel-border: #334155;
+  --panel-shadow: none;
+  --text-main: #F8FAFC;
+  --text-muted: #CBD5E1;
+  --table-head-bg: #0F172A;
+  --table-head-text: #E2E8F0;
+}
+body.dark{
+  background:
+    radial-gradient(circle at top center, rgba(59,130,246,.16), transparent 24%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  background-color: var(--header-bg);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+}
+
+.headerBar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+}
+
+.logoLink {
+  display: inline-flex;
+  align-items: center;
+}
+
+.logoImage {
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.iconBtn,
+.navBtn {
+  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.iconBtn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.navBtn {
+  height: 40px;
+  padding: 0 14px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.navBtn.primary,
+.langToggle {
+  background: var(--brand-blue);
+  border-color: var(--brand-blue);
+  color: #fff;
+}
+
+.settingsWrap { position: relative; }
+
+.settingsMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 240px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15,23,42,.25);
+  display: none;
+  z-index: 30;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+}
+
+.settingsMenu.open { display: block; }
+
+.menuItem {
+  width: 100%;
+  display: block;
+  text-align: left;
+  border: 0;
+  margin: 0;
+  padding: 11px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.menuItem.darkSection {
+  background: #1F2937;
+  color: #fff;
+  font-weight: 700;
+}
+
+.menuItem.lightSection {
+  background: var(--panel-bg);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.menuItem.lightSection:last-of-type { border-bottom: 0; }
+.menuItemLink { text-decoration: none; }
+
+.toolbar {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.titleBlock { max-width: 760px; }
+.titleBlock h1 { margin: 0; font-size: 24px; }
+.titleBlock .sub { margin: 6px 0 0; color: rgba(255,255,255,.85); font-size: 14px; }
+
+.legend {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-main);
+  box-shadow: var(--panel-shadow);
+  font-size: 13px;
+}
+
+.dot { width: 10px; height: 10px; border-radius: 999px; }
+.dot.red { background: var(--status-red); }
+.dot.orange { background: var(--status-orange); }
+.dot.blue { background: var(--status-blue); }
+.dot.violet { background: var(--status-violet); }
+.dot.green { background: var(--status-green); }
+
+.langToggle {
+  border-radius: 999px;
+  height: 36px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 700;
+  border: 0;
+}
+
+.wrap {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 26px 20px 34px;
+  display: flex;
+  justify-content: center;
+}
+
+.grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 360px));
+  justify-content: center;
+  gap: 22px;
+}
+
+.card {
+  border-radius: 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+  overflow: hidden;
+  border-top-width: 4px;
+}
+
+.card.status-red { border-color: rgba(239,68,68,.30); border-top-color: rgba(239,68,68,.65); }
+.card.status-orange { border-color: rgba(245,158,11,.34); border-top-color: rgba(245,158,11,.72); }
+.card.status-blue { border-color: rgba(59,130,246,.34); border-top-color: rgba(59,130,246,.72); }
+.card.status-violet { border-color: rgba(139,92,246,.32); border-top-color: rgba(139,92,246,.70); }
+.card.status-green { border-color: rgba(34,197,94,.30); border-top-color: rgba(34,197,94,.68); }
+
+.cardTop {
+  padding: 18px 20px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+}
+
+.slotLabel {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.name { font-weight: 800; letter-spacing: .3px; font-size: 22px; }
+.pills { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+.pill {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-muted);
+}
+
+.pill.tone-red { background: rgba(239,68,68,.18); border-color: rgba(239,68,68,.35); color: var(--white); }
+.pill.tone-orange { background: rgba(245,158,11,.20); border-color: rgba(245,158,11,.45); color: var(--white); }
+.pill.tone-blue { background: rgba(59,130,246,.20); border-color: rgba(59,130,246,.45); color: var(--white); }
+.pill.tone-violet { background: rgba(139,92,246,.20); border-color: rgba(139,92,246,.45); color: var(--white); }
+.pill.tone-green { background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.35); color: var(--white); }
+
+.statusArea {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  min-height: 220px;
+}
+
+.regBox {
+  width: 100%;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.bigPlate {
+  width: 100%;
+  text-align: center;
+  font-weight: 900;
+  font-size: clamp(28px, 3.4vw, 40px);
+  letter-spacing: 3px;
+  padding: 16px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: #FFFFFF;
+  color: #0b1220;
+}
+
+body.dark .bigPlate {
+  background: #0F172A;
+  border-color: #334155;
+  color: #F8FAFC;
+}
+
+.metaRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.bar {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: #E2E8F0;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+}
+
+body.dark .bar { background: #0F172A; }
+
+.barFill { height: 100%; width: 100%; }
+.barFill.red { background: var(--status-red); }
+.barFill.orange { background: var(--status-orange); }
+.barFill.blue { background: var(--status-blue); }
+.barFill.violet { background: var(--status-violet); }
+.barFill.green { background: var(--status-green); }
+
+.rampCta {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(34,197,94,.45);
+  background: rgba(34,197,94,.14);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.rampCta a { color: #166534; font-weight: 700; }
+body.dark .rampCta a { color: #dcfce7; }
+.rampUrl { margin-top: 4px; color: #15803d; font-size: 12px; word-break: break-all; }
+body.dark .rampUrl { color: #bbf7d0; }
+
+.emptyState {
+  grid-column: 1 / -1;
+  border-radius: 18px;
+  border: 1px dashed var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-muted);
+  padding: 28px 22px;
+  text-align: center;
+}
+
+@media (max-width: 780px) {
+  .headerBar {
+    padding: 10px 16px;
+  }
+  .wrap {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .cardTop {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pills {
+    justify-content: flex-start;
+  }
+  .metaRow {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="headerBar">
+    <a href="./viewer.html" class="logoLink" aria-label="ICS Home">
+      <img src="./logo.png" alt="ICS Logo" class="logoImage" />
+    </a>
+
+    <div class="headerActions">
+      <div class="settingsWrap">
+        <button class="iconBtn" id="settingsToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen">⚙️</button>
+        <div class="settingsMenu" id="settingsMenu" role="menu">
+          <button class="menuItem lightSection" type="button" id="darkmodeToggle">Darkmode umschalten</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="titleBlock">
+      <h1 id="title">Container Status</h1>
+      <div class="sub" id="subtitle">Live-Übersicht</div>
+    </div>
+    <div class="legend">
+      <button id="langToggle" class="langToggle" type="button">English</button>
+      <div class="badge"><span class="dot red"></span><span id="legend-red">Slot erstellt</span></div>
+      <div class="badge"><span class="dot orange"></span><span id="legend-orange">Angemeldet</span></div>
+      <div class="badge"><span class="dot blue"></span><span id="legend-blue">An die Rampe</span></div>
+      <div class="badge"><span class="dot violet"></span><span id="legend-violet">Warten auf Zollfreigabe</span></div>
+      <div class="badge"><span class="dot green"></span><span id="legend-green">Zollfreigabe erteilt</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="grid" class="grid"></div>
+  </div>
+</main>
+
+<script src="/public/shared-theme.js"></script>
+<script>
+const socket = io("/container-registration");
+let audioContext = null;
+let notificationRegistration = null;
+let alertsPrimed = false;
+let currentLang = localStorage.getItem("viewerLang") || "de";
+let currentState = null;
+const queryParams = new URLSearchParams(window.location.search);
+const filteredPlate = normalizePlate(queryParams.get("plate"));
+const filteredSlot = Number(queryParams.get("slot"));
+let focusedContainerId = Number.isInteger(filteredSlot) && filteredSlot >= 1 && filteredSlot <= 8 ? filteredSlot : null;
+const ALERT_REPEAT_COUNT = 3;
+const ALERT_REPEAT_INTERVAL = 0.95;
+const ALERT_VIBRATION_CYCLE = [180, 120, 180, 120, 180];
+const ALERT_VIBRATION_CYCLE_DURATION = ALERT_VIBRATION_CYCLE.reduce((total, duration) => total + duration, 0);
+const ALERT_VIBRATION_GAP = Math.max(0, Math.round((ALERT_REPEAT_INTERVAL * 1000) - ALERT_VIBRATION_CYCLE_DURATION));
+
+const I18N = {
+  de: {
+    title: "Container Status",
+    subtitle: "Live-Übersicht",
+    statusRed: "Slot erstellt",
+    statusOrange: "Angemeldet",
+    statusBlue: "An die Rampe",
+    statusViolet: "Warten auf Zollfreigabe",
+    statusGreen: "Zollfreigabe erteilt",
+    scheduleLabel: "Termin",
+    registeredAt: "Angemeldet um",
+    registered: "Angemeldet",
+    routeCta: "📍 Route zur Rampe öffnen",
+    toggle: "English"
+  },
+  en: {
+    title: "Container Status",
+    subtitle: "Live overview",
+    statusRed: "Slot created",
+    statusOrange: "Checked in",
+    statusBlue: "Go to ramp",
+    statusViolet: "Waiting for customs release",
+    statusGreen: "Customs released",
+    scheduleLabel: "Slot",
+    registeredAt: "Checked in at",
+    registered: "Checked in",
+    routeCta: "📍 Open route to ramp",
+    toggle: "Deutsch"
+  }
+};
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("dark", isDark);
+}
+
+async function initializeTheme() {
+  if (window.CtshTheme?.resolveInitialTheme) {
+    await window.CtshTheme.resolveInitialTheme({ bodyClass: "dark" });
+    return;
+  }
+
+  applyTheme("light");
+}
+
+function toggleSettingsMenu(force) {
+  const menu = document.getElementById("settingsMenu");
+  const btn = document.getElementById("settingsToggle");
+  const shouldOpen = typeof force === "boolean" ? force : !menu.classList.contains("open");
+  menu.classList.toggle("open", shouldOpen);
+  btn.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+function syncViewerHomeLink() {
+  const homeLink = document.querySelector(".logoLink");
+  if (!homeLink) return;
+  homeLink.href = window.location.search ? `./viewer.html${window.location.search}` : "./viewer.html";
+}
+
+function t(key){
+  return I18N[currentLang]?.[key] || I18N.de[key] || key;
+}
+
+function isGreenStatus(status){
+  const normalized = String(status || "").trim().toLowerCase();
+  return normalized === "green" || normalized === "to_ramp" || normalized === "waiting_customs" || normalized === "customs_released";
+}
+
+function statusText(status){
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "customs_released") return t("statusGreen");
+  if (normalized === "waiting_customs") return t("statusViolet");
+  if (normalized === "to_ramp" || normalized === "green") return t("statusBlue");
+  if (normalized === "registered" || normalized === "orange") return t("statusOrange");
+  return t("statusRed");
+}
+
+function statusTone(status){
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "customs_released") return "green";
+  if (normalized === "waiting_customs") return "violet";
+  if (normalized === "to_ramp" || normalized === "green") return "blue";
+  if (normalized === "registered" || normalized === "orange") return "orange";
+  return "red";
+}
+
+function timeText(t){ return (t && t.trim()) ? t.trim() : "--:--"; }
+function plateText(p){ return (p && p.trim()) ? p.trim() : "---"; }
+function normalizePlate(value){ return String(value || "").trim().toUpperCase(); }
+
+function isOwnedContainer(id, container) {
+  const normalizedId = Number(id);
+  const normalizedPlate = normalizePlate(container?.plate);
+
+  if (focusedContainerId && filteredPlate) {
+    return normalizedId === focusedContainerId && normalizedPlate === filteredPlate;
+  }
+
+  if (focusedContainerId) return normalizedId === focusedContainerId;
+  if (filteredPlate) return !!normalizedPlate && normalizedPlate === filteredPlate;
+  return true;
+}
+
+function rampLinkHtml(status){
+  if (!isGreenStatus(status)) return "";
+  return `<div class="rampCta"><a href="https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6" target="_blank" rel="noopener noreferrer">${t("routeCta")}</a><div class="rampUrl">https://maps.app.goo.gl/PCRKCpGGHQVNt7XG6</div></div>`;
+}
+
+function registeredTime(iso){
+  if (!iso) return "--:--";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function getVisibleContainerIds(state){
+  if (focusedContainerId && filteredPlate) {
+    return state[focusedContainerId] && isOwnedContainer(focusedContainerId, state[focusedContainerId])
+      ? [focusedContainerId]
+      : [];
+  }
+
+  if (focusedContainerId && state[focusedContainerId]) return [focusedContainerId];
+
+  if (filteredPlate) {
+    for (let i = 1; i <= 8; i++) {
+      if (isOwnedContainer(i, state[i])) {
+        focusedContainerId = i;
+        return [i];
+      }
+    }
+    return [];
+  }
+
+  return [1, 2, 3, 4, 5, 6, 7, 8];
+}
+
+function renderAll(state){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  const visibleIds = getVisibleContainerIds(state);
+  if (!visibleIds.length) {
+    grid.innerHTML = `<div class="emptyState">Kein gebuchter Slot für Kennzeichen <b>${filteredPlate}</b> gefunden.</div>`;
+    return;
+  }
+
+  for (const i of visibleIds){
+    const c = state[i];
+    const time = timeText(c.time);
+    const reg = registeredTime(c.registeredAt);
+
+    const card = document.createElement("div");
+    card.className = "card status-" + statusTone(c.status);
+    card.id = "card-" + i;
+
+    card.innerHTML = `
+      <div class="cardTop">
+        <div>
+          <div class="slotLabel">Slot ${String(i).padStart(2, "0")}</div>
+          <div class="name">Container ${i}</div>
+        </div>
+        <div class="pills">
+          <div class="pill tone-${statusTone(c.status)}" id="pill-${i}">${statusText(c.status)}</div>
+          <div class="pill" id="time-${i}">⏱ Termin ${time}</div>
+        </div>
+      </div>
+      <div class="statusArea">
+        <div class="regBox" id="regBox-${i}">🕒 ${t("registeredAt")}: <span id="reg-${i}">${reg}</span></div>
+        <div class="bigPlate" id="plate-${i}">${plateText(c.plate)}</div>
+        <div class="metaRow">
+          <div id="metaStatus-${i}">${statusText(c.status)}</div>
+          <div id="metaTime-${i}">${t("scheduleLabel")}: ${time}</div>
+          <div id="metaReg-${i}">${t("registered")}: ${reg}</div>
+        </div>
+        <div id="ramp-${i}" style="width:100%;">${rampLinkHtml(c.status)}</div>
+        <div class="bar"><div class="barFill ${statusTone(c.status)}" id="bar-${i}"></div></div>
+      </div>
+    `;
+
+    grid.appendChild(card);
+  }
+}
+
+function renderUnavailableState(message){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = `<div class="muted" style="padding:18px 0;">${message}</div>`;
+}
+
+function applyOne(id, data){
+  const time = timeText(data.time);
+  const reg = registeredTime(data.registeredAt);
+  const tone = statusTone(data.status);
+
+  document.getElementById("card-"+id).className = "card status-" + tone;
+  document.getElementById("pill-"+id).textContent = statusText(data.status);
+  document.getElementById("pill-"+id).className = "pill tone-" + tone;
+  document.getElementById("time-"+id).textContent = "⏱ Termin " + time;
+  document.getElementById("plate-"+id).textContent = plateText(data.plate);
+  document.getElementById("metaStatus-"+id).textContent = statusText(data.status);
+  document.getElementById("metaTime-"+id).textContent = t("scheduleLabel") + ": " + time;
+  document.getElementById("metaReg-"+id).textContent = t("registered") + ": " + reg;
+  document.getElementById("ramp-"+id).innerHTML = rampLinkHtml(data.status);
+  document.getElementById("bar-"+id).className = "barFill " + statusTone(data.status);
+}
+
+function applyStaticTranslations(){
+  document.getElementById("title").textContent = t("title");
+  document.getElementById("subtitle").textContent = t("subtitle");
+  document.getElementById("legend-red").textContent = t("statusRed");
+  document.getElementById("legend-orange").textContent = t("statusOrange");
+  document.getElementById("legend-blue").textContent = t("statusBlue");
+  document.getElementById("legend-violet").textContent = t("statusViolet");
+  document.getElementById("legend-green").textContent = t("statusGreen");
+  document.getElementById("langToggle").textContent = t("toggle");
+}
+
+async function ensureAudioContext() {
+  try {
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === "suspended") await audioContext.resume();
+    return audioContext;
+  } catch (error) {
+    console.warn("Audiokontext konnte nicht initialisiert werden:", error);
+    return null;
+  }
+}
+
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) return "denied";
+  if (Notification.permission !== "default") return Notification.permission;
+
+  try {
+    return await Notification.requestPermission();
+  } catch (error) {
+    console.warn("Benachrichtigungsrechte konnten nicht angefragt werden:", error);
+    return Notification.permission;
+  }
+}
+
+function scheduleChime(ctx, startAt) {
+  const tones = [
+    { frequency: 659.25, duration: 0.20, gain: 0.22 },
+    { frequency: 880.0, duration: 0.34, gain: 0.18 }
+  ];
+
+  tones.forEach((tone, index) => {
+    const offset = index === 0 ? 0 : 0.22;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    const toneStart = startAt + offset;
+    const toneEnd = toneStart + tone.duration;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+    gainNode.gain.setValueAtTime(0.0001, toneStart);
+    gainNode.gain.exponentialRampToValueAtTime(tone.gain, toneStart + 0.03);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.start(toneStart);
+    oscillator.stop(toneEnd);
+  });
+}
+
+function getAlertVibrationPattern() {
+  const pattern = [];
+
+  for (let repeat = 0; repeat < ALERT_REPEAT_COUNT; repeat += 1) {
+    pattern.push(...ALERT_VIBRATION_CYCLE);
+    if (repeat < ALERT_REPEAT_COUNT - 1 && ALERT_VIBRATION_GAP > 0) {
+      pattern.push(ALERT_VIBRATION_GAP);
+    }
+  }
+
+  return pattern;
+}
+
+async function playProfessionalAlert() {
+  const ctx = await ensureAudioContext();
+  if (!ctx || ctx.state !== "running") return;
+
+  const startAt = ctx.currentTime + 0.03;
+  for (let repeat = 0; repeat < ALERT_REPEAT_COUNT; repeat += 1) {
+    scheduleChime(ctx, startAt + (repeat * ALERT_REPEAT_INTERVAL));
+  }
+}
+
+async function showBackgroundNotification(id, data) {
+  if (!document.hidden) return;
+
+  const permission = await requestNotificationPermission();
+  if (permission !== "granted") return;
+
+  const title = `Container ${id}: ${statusText(data.status)}`;
+  const body = `${t("scheduleLabel")}: ${timeText(data.time)} • ${plateText(data.plate)}`;
+  const options = {
+    body,
+    vibrate: getAlertVibrationPattern(),
+    tag: `container-status-${id}`,
+    renotify: true,
+    requireInteraction: true,
+    icon: "/public/logo.png",
+    badge: "/public/logo.png",
+    data: { url: window.location.href }
+  };
+
+  try {
+    if (notificationRegistration?.showNotification) {
+      await notificationRegistration.showNotification(title, options);
+      return;
+    }
+
+    new Notification(title, options);
+  } catch (error) {
+    console.warn("Systembenachrichtigung konnte nicht angezeigt werden:", error);
+  }
+}
+
+async function triggerNotification(id, data){
+  if (navigator.vibrate) navigator.vibrate(getAlertVibrationPattern());
+  await playProfessionalAlert();
+  await showBackgroundNotification(id, data);
+}
+
+function primeAlerts() {
+  if (alertsPrimed) return;
+  alertsPrimed = true;
+  void ensureAudioContext();
+  void requestNotificationPermission();
+}
+
+async function initializeAlerts() {
+  if ("serviceWorker" in navigator) {
+    try {
+      notificationRegistration = await navigator.serviceWorker.register("/container-registration/viewer-sw.js");
+    } catch (error) {
+      console.warn("Viewer Service Worker konnte nicht registriert werden:", error);
+    }
+  }
+
+  ["pointerdown", "touchstart", "keydown"].forEach((eventName) => {
+    window.addEventListener(eventName, primeAlerts, { passive: true });
+  });
+}
+
+document.getElementById("langToggle").addEventListener("click", () => {
+  currentLang = currentLang === "de" ? "en" : "de";
+  localStorage.setItem("viewerLang", currentLang);
+  applyStaticTranslations();
+  if (currentState) renderAll(currentState);
+});
+
+document.getElementById("settingsToggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleSettingsMenu();
+});
+
+document.getElementById("darkmodeToggle").addEventListener("click", async () => {
+  const nextTheme = document.body.classList.contains("dark") ? "light" : "dark";
+  applyTheme(nextTheme);
+  if (window.CtshTheme?.persistTheme) {
+    await window.CtshTheme.persistTheme(nextTheme);
+  }
+  toggleSettingsMenu(false);
+});
+
+document.addEventListener("click", (event) => {
+  const wrap = document.querySelector(".settingsWrap");
+  if (!wrap.contains(event.target)) toggleSettingsMenu(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") toggleSettingsMenu(false);
+});
+
+socket.on("init", (state) => {
+  currentState = state;
+  applyStaticTranslations();
+  renderAll(state);
+});
+
+socket.on("statusChanged", ({ id, data }) => {
+  const numericId = Number(id);
+  if (!currentState) return;
+
+  currentState[numericId] = data;
+
+  const visibleIds = getVisibleContainerIds(currentState);
+  const shouldShowUpdatedCard = visibleIds.includes(numericId);
+  const cardEl = document.getElementById("card-" + numericId);
+
+  if (cardEl && shouldShowUpdatedCard) applyOne(numericId, data);
+  else renderAll(currentState);
+
+  if (shouldShowUpdatedCard && isOwnedContainer(numericId, data)) {
+    void triggerNotification(numericId, data);
+  }
+});
+
+socket.on("connect_error", () => {
+  renderUnavailableState("Portal-Sitzung fehlt, ist abgelaufen oder die Freigabe fehlt. Bitte ueber das Portal mit den passenden Rechten neu oeffnen.");
+});
+
+void initializeTheme();
+void initializeAlerts();
+applyStaticTranslations();
+syncViewerHomeLink();
+</script>
+</body>
+</html>

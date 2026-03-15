@@ -1,0 +1,3567 @@
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { Parser } = require("json2csv");
+const ExcelJS = require("exceljs");
+const path = require('path');
+const crypto = require("crypto");
+
+const { pool } = require("./db_pg");
+const { authRequired, adminRequired, JWT_SECRET } = require("./middleware_auth");
+const { requirePermission } = require("./middleware_permissions");
+const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
+const { createWarehouseRouter } = require("./modules/warehouse/router");
+const {
+  WAREHOUSE_PERMISSION_DEFAULTS,
+  WAREHOUSE_PERMISSION_FULL_ACCESS
+} = require("./modules/warehouse/permissions");
+
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "https://paletten-ms.de";
+const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
+const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
+const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
+const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
+const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
+const MODULE_CONTAINER_REGISTRATION_ADMIN_PATH = "/modules/container-registration/admin.html";
+const MODULE_CONTAINER_REGISTRATION_DRIVER_PATH = "/modules/container-registration/driver.html";
+const MODULE_CONTAINER_REGISTRATION_VIEWER_PATH = "/modules/container-registration/viewer.html";
+
+const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").trim();
+const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "paletten-ms.de").trim();
+const AUTH_COOKIE_SAME_SITE = String(process.env.AUTH_COOKIE_SAME_SITE || "None").trim();
+const AUTH_COOKIE_MAX_AGE_SECONDS = Number(process.env.AUTH_COOKIE_MAX_AGE_SECONDS || 12 * 60 * 60);
+
+function buildAuthCookieOptions() {
+  const options = {
+    httpOnly: true,
+    secure: true,
+    sameSite: AUTH_COOKIE_SAME_SITE,
+    path: "/",
+    maxAge: AUTH_COOKIE_MAX_AGE_SECONDS * 1000
+  };
+  if (AUTH_COOKIE_DOMAIN) {
+    options.domain = AUTH_COOKIE_DOMAIN;
+  }
+  return options;
+}
+
+function setAuthCookie(res, token) {
+  if (!AUTH_COOKIE_NAME || !token) return;
+  res.cookie(AUTH_COOKIE_NAME, token, buildAuthCookieOptions());
+}
+
+function clearAuthCookie(res) {
+  if (!AUTH_COOKIE_NAME) return;
+  const { maxAge, ...clearOptions } = buildAuthCookieOptions();
+  res.clearCookie(AUTH_COOKIE_NAME, clearOptions);
+}
+
+function getRequestToken(req, options = {}) {
+  const {
+    allowHeader = true,
+    allowQuery = true,
+    allowCookie = true
+  } = options;
+
+  if (allowHeader) {
+    const header = String(req.headers.authorization || "");
+    const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (headerToken) return headerToken;
+  }
+
+  if (allowQuery) {
+    const queryToken = String(req.query?.portalToken || req.query?.token || "").trim();
+    if (queryToken) return queryToken;
+  }
+
+  if (allowCookie) {
+    const cookieHeader = String(req.headers.cookie || "");
+    const cookieMatch = cookieHeader.match(new RegExp(`(?:^|;\\s*)${AUTH_COOKIE_NAME}=([^;]+)`));
+    if (cookieMatch?.[1]) {
+      return decodeURIComponent(cookieMatch[1]);
+    }
+  }
+
+  return "";
+}
+
+function getAuthenticatedPortalUser(req, options) {
+  const token = getRequestToken(req, options);
+  if (!token) return null;
+
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+function requireModulePageAccess(permissionResolver) {
+  return async (req, res, next) => {
+    const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
+    if (!user) {
+      return res.redirect("/login.html");
+    }
+
+    try {
+      const perms = await getMyPermissions(user);
+      const allowed = typeof permissionResolver === "function" ? permissionResolver(user, perms) : true;
+      if (!allowed) {
+        return res.redirect("/public/dashboard.html");
+      }
+
+      req.user = user;
+      req.portalPermissions = perms;
+      return next();
+    } catch (error) {
+      console.error("requireModulePageAccess error:", error);
+      return res.status(500).send("Permission check failed");
+    }
+  };
+}
+
+function getAllowedOrigins() {
+  if (CORS_ORIGIN === "*") return "*";
+  return Array.from(new Set(CORS_ORIGIN.split(",").map((x) => x.trim()).filter(Boolean)));
+}
+
+function corsOriginResolver(origin, callback) {
+  const allowedOrigins = getAllowedOrigins();
+  if (allowedOrigins === "*") return callback(null, true);
+  if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+  console.warn("[CORS] Blocked origin:", origin, "Allowed origins:", allowedOrigins.join(", "));
+  return callback(new Error("Not allowed by CORS"));
+}
+
+const app = express();
+app.set("trust proxy", true);
+app.disable("x-powered-by");
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'", "'unsafe-inline'"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "img-src": ["'self'", "data:", "blob:"],
+      "connect-src": ["'self'", "ws:", "wss:"]
+    }
+  }
+}));
+app.use(cors({ origin: corsOriginResolver, credentials: true }));
+app.use(express.json({ limit: MAX_BODY_SIZE }));
+app.get("/", (req, res) => res.redirect("/login.html"));
+app.get("/login", (req, res) => res.redirect("/login.html"));
+// Backward compatibility: some deployments still open pages via /public/*.html.
+// Mount static assets on both / and /public so relative links keep working.
+app.use("/public", express.static(path.join(__dirname, "public")));
+app.use("/modules", async (req, res, next) => {
+  if (!req.path.endsWith(".html")) return next();
+
+  const user = getAuthenticatedPortalUser(req, { allowHeader: false, allowQuery: false, allowCookie: true });
+  if (!user) return res.redirect("/login.html");
+
+  try {
+    const perms = await getMyPermissions(user);
+    let allowed = false;
+    if (req.path.startsWith("/container-planning")) {
+      allowed = hasContainerPlanningPermission(perms);
+    } else if (req.path === "/container-registration/admin.html") {
+      allowed = hasContainerAdminPermission(user, perms);
+    } else if (req.path === "/container-registration/driver.html") {
+      allowed = hasContainerRegistrationPermission(perms);
+    } else if (req.path === "/container-registration/viewer.html") {
+      allowed = hasContainerViewerPermission(perms);
+    } else if (req.path.startsWith("/warehouse")) {
+      allowed = hasWarehouseModulePermission(perms);
+    }
+
+    if (!allowed) return res.redirect("/public/dashboard.html");
+    return next();
+  } catch (error) {
+    console.error("Module HTML gate failed:", error);
+    return res.status(500).send("Permission check failed");
+  }
+});
+app.use("/modules", express.static(path.join(__dirname, "public/modules")));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const httpServer = require("http").createServer(app);
+const io = require("socket.io")(httpServer, {
+  cors: {
+    origin: corsOriginResolver,
+    credentials: true
+  }
+});
+
+io.on("connection", (socket) => {
+  socket.on("joinLocation", (locationId) => {
+    if (locationId) socket.join(`loc:${locationId}`);
+  });
+
+  socket.on("joinUser", (userId) => {
+    const parsedUserId = Number(userId);
+    if (Number.isInteger(parsedUserId) && parsedUserId > 0) {
+      socket.join(`user:${parsedUserId}`);
+    }
+  });
+});
+
+const containerRegistrationNamespace = io.of("/container-registration");
+const containerPlanningNamespace = io.of("/container-planning");
+const CONTAINER_REGISTRATION_STATUS_SLOT_CREATED = "slot_created";
+const CONTAINER_REGISTRATION_STATUS_REGISTERED = "registered";
+const CONTAINER_REGISTRATION_STATUS_TO_RAMP = "to_ramp";
+const CONTAINER_REGISTRATION_STATUS_WAITING_CUSTOMS = "waiting_customs";
+const CONTAINER_REGISTRATION_STATUS_CUSTOMS_RELEASED = "customs_released";
+const CONTAINER_REGISTRATION_STATUSES = [
+  CONTAINER_REGISTRATION_STATUS_SLOT_CREATED,
+  CONTAINER_REGISTRATION_STATUS_REGISTERED,
+  CONTAINER_REGISTRATION_STATUS_TO_RAMP,
+  CONTAINER_REGISTRATION_STATUS_WAITING_CUSTOMS,
+  CONTAINER_REGISTRATION_STATUS_CUSTOMS_RELEASED
+];
+const CONTAINER_REGISTRATION_HISTORY_MAX = Number(process.env.CONTAINER_REGISTRATION_HISTORY_MAX || 5000);
+let containerRegistrationState = {};
+
+async function q(sql, params = []) {
+  return pool.query(sql, params);
+}
+
+function normalizeProductType(value) {
+  const normalized = String(value || "euro").trim().toLowerCase();
+  if (!PRODUCT_TYPES.includes(normalized)) {
+    return { ok: false, msg: "product_type invalid" };
+  }
+  return { ok: true, productType: normalized };
+}
+
+// ---------- Helpers ----------
+async function nextReceiptNo(locationId) {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const datePart = `${y}${m}${d}`;
+  const loc = await q(`SELECT name FROM locations WHERE id=$1`, [locationId]);
+  const locName = loc.rowCount ? String(loc.rows[0].name || "") : "";
+  const letterMatch = locName.match(/[A-Za-zÄÖÜ]/);
+  const numberMatch = locName.match(/\d+/);
+  const locLetter = letterMatch ? letterMatch[0].toUpperCase() : "L";
+  const locNumber = numberMatch ? numberMatch[0] : String(locationId);
+  const locationIndicator = `${locLetter}${locNumber}`;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const row = await client.query(`SELECT next_no FROM receipt_seq WHERE id=1 FOR UPDATE`);
+    const no = Number(row.rows[0].next_no);
+    await client.query(`UPDATE receipt_seq SET next_no = next_no + 1 WHERE id=1`);
+    await client.query("COMMIT");
+    return `ICS${locationIndicator}-${datePart}-${String(no).padStart(6, "0")}`;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function previewReceiptNo(locationId) {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const datePart = `${y}${m}${d}`;
+  const loc = await q(`SELECT name FROM locations WHERE id=$1`, [locationId]);
+  const locName = loc.rowCount ? String(loc.rows[0].name || "") : "";
+  const letterMatch = locName.match(/[A-Za-zÄÖÜ]/);
+  const numberMatch = locName.match(/\d+/);
+  const locLetter = letterMatch ? letterMatch[0].toUpperCase() : "L";
+  const locNumber = numberMatch ? numberMatch[0] : String(locationId);
+  const locationIndicator = `${locLetter}${locNumber}`;
+
+  const row = await q(`SELECT next_no FROM receipt_seq WHERE id=1`);
+  const no = Number(row.rows[0]?.next_no || 1);
+  return `ICS${locationIndicator}-${datePart}-${String(no).padStart(6, "0")}`;
+}
+
+function normalizePlate(plateRaw) {
+  const plate = String(plateRaw || "").trim().toUpperCase();
+  if (!plate) return { ok: false, msg: "Kennzeichen ist Pflicht" };
+  if (plate.includes("-")) return { ok: false, msg: "Kennzeichen bitte ohne '-' eingeben" };
+  if (/\s/.test(plate)) return { ok: false, msg: "Kennzeichen bitte ohne Leerzeichen eingeben" };
+  if (!/^[A-Z0-9ÄÖÜ]+$/.test(plate)) return { ok: false, msg: "Kennzeichen nur Buchstaben/Zahlen (ohne Sonderzeichen)" };
+  if (plate.length < 3) return { ok: false, msg: "Kennzeichen zu kurz" };
+  return { ok: true, plate };
+}
+
+function normalizeEmployeeCode(codeRaw) {
+  const code = safeTrim(codeRaw);
+  if (!code) return null;
+  const normalized = code.toUpperCase();
+  if (!/^[A-Z0-9]{2}$/.test(normalized)) {
+    return { ok: false, msg: "Lagermitarbeiter muss genau 2 Zeichen haben (Buchstaben/Zahlen)" };
+  }
+  return { ok: true, code: normalized };
+}
+
+function safeTrim(v) {
+  const s = (v === undefined || v === null) ? "" : String(v);
+  const t = s.trim();
+  return t ? t : null;
+}
+
+function flattenPermissionRoles(perms, prefix = "") {
+  const roles = [];
+  if (!perms || typeof perms !== "object") return roles;
+  for (const [key, value] of Object.entries(perms)) {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (value === true) {
+      roles.push(nextKey);
+      continue;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      roles.push(...flattenPermissionRoles(value, nextKey));
+    }
+  }
+  return roles;
+}
+
+
+function hasContainerRegistrationPermission(perms) {
+  return !!(
+    perms?.integrations?.container_login
+    || perms?.integrations?.container_registration
+    || perms?.integrations?.container_admin
+    || perms?.admin?.full_access
+  );
+}
+
+function hasContainerPlanningPermission(perms) {
+  return !!(
+    perms?.integrations?.container_planning
+    || perms?.integrations?.container_admin
+    || perms?.admin?.full_access
+  );
+}
+
+function hasContainerViewerPermission(perms) {
+  return !!(
+    perms?.integrations?.container_viewer
+    || hasContainerRegistrationPermission(perms)
+    || perms?.admin?.full_access
+  );
+}
+
+function hasContainerAdminPermission(user, perms) {
+  return !!(perms?.admin?.full_access || perms?.integrations?.container_admin);
+}
+
+function hasWarehouseModulePermission(perms) {
+  return !!(
+    perms?.warehouse?.dashboard?.view
+    || perms?.warehouse?.customers?.view
+    || perms?.warehouse?.customers?.manage
+    || perms?.warehouse?.articles?.view
+    || perms?.warehouse?.articles?.manage
+    || perms?.warehouse?.storage_locations?.view
+    || perms?.warehouse?.storage_locations?.manage
+    || perms?.warehouse?.inventory?.view
+    || perms?.warehouse?.inventory?.manage
+    || perms?.warehouse?.transactions?.create
+    || perms?.warehouse?.transactions?.view
+    || perms?.warehouse?.transactions?.export
+    || perms?.warehouse?.transactions?.manage
+    || perms?.warehouse?.picking?.view
+    || perms?.warehouse?.picking?.manage
+    || perms?.warehouse?.picking?.process
+    || perms?.admin?.full_access
+  );
+}
+
+function buildContainerSessionToken(payload) {
+  const payloadEncoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signatureEncoded = crypto.createHmac("sha256", SHARED_AUTH_SECRET)
+    .update(payloadEncoded)
+    .digest("base64url");
+  return `${payloadEncoded}.${signatureEncoded}`;
+}
+
+function buildSharedAuthJwt(payload) {
+  return jwt.sign(payload, SHARED_AUTH_SECRET, { algorithm: "HS256" });
+}
+
+async function logCaseHistory({ caseId, locationId, departmentId, receiptNo = null, changedBy, action, changes = [] }) {
+  await q(
+    `
+    INSERT INTO booking_case_history (case_id, location_id, department_id, receipt_no, changed_by, action, changes)
+    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
+    `,
+    [
+      Number(caseId),
+      Number(locationId),
+      Number(departmentId),
+      receiptNo || null,
+      Number(changedBy),
+      String(action || "change"),
+      JSON.stringify(Array.isArray(changes) ? changes : [])
+    ]
+  );
+}
+
+function normalizeEmail(emailRaw) {
+  const email = safeTrim(emailRaw);
+  if (!email) return null;
+  const normalized = email.toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    return { ok: false, msg: "E-Mail-Adresse ungültig" };
+  }
+  return { ok: true, email: normalized };
+}
+
+async function createLocationStatus1Notifications(caseRow) {
+  try {
+    const locationInfo = await q(
+      `SELECT name FROM locations WHERE id=$1`,
+      [caseRow.location_id]
+    );
+    const locationName = locationInfo.rowCount ? locationInfo.rows[0].name : `Standort ${caseRow.location_id}`;
+
+    const recipients = await q(
+      `SELECT id FROM users WHERE is_active=TRUE AND location_id=$1`,
+      [caseRow.location_id]
+    );
+
+    for (const recipient of recipients.rows) {
+      if (Number(recipient.id) === Number(caseRow.created_by)) continue;
+      const inserted = await q(
+        `INSERT INTO user_notifications (user_id, case_id, title, message)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, case_id, title, message, is_read, created_at`,
+        [recipient.id, caseRow.id, "Aviso Standort (Status 1)", `Neues Aviso #${caseRow.id} am ${locationName}.`]
+      );
+      io.to(`user:${recipient.id}`).emit("notificationCreated", inserted.rows[0]);
+    }
+  } catch (err) {
+    console.error("Standort-Notification fehlgeschlagen:", err);
+  }
+}
+
+async function createDepartmentStatus3Notifications(caseRow) {
+  try {
+    if (!caseRow.department_id) return;
+
+    const departmentInfo = await q(
+      `SELECT name FROM departments WHERE id=$1`,
+      [caseRow.department_id]
+    );
+    const departmentName = departmentInfo.rowCount ? departmentInfo.rows[0].name : `Abteilung ${caseRow.department_id}`;
+
+    const recipients = await q(
+      `SELECT id FROM users WHERE is_active=TRUE AND fixed_department_id=$1`,
+      [caseRow.department_id]
+    );
+
+    for (const recipient of recipients.rows) {
+      if (Number(recipient.id) === Number(caseRow.submitted_by || caseRow.created_by)) continue;
+      const inserted = await q(
+        `INSERT INTO user_notifications (user_id, case_id, title, message)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, case_id, title, message, is_read, created_at`,
+        [recipient.id, caseRow.id, "Aviso Abteilung (Status 3)", `Aviso #${caseRow.id} ist in Prüfung (${departmentName}).`]
+      );
+      io.to(`user:${recipient.id}`).emit("notificationCreated", inserted.rows[0]);
+    }
+  } catch (err) {
+    console.error("Abteilungs-Notification fehlgeschlagen:", err);
+  }
+}
+
+async function pruneNotificationsForUser(userId) {
+  const deletedByStatus = await q(
+    `DELETE FROM user_notifications n
+     USING booking_cases c
+     WHERE n.case_id = c.id
+       AND n.user_id = $1
+       AND (
+         (n.title='Aviso Standort (Status 1)' AND c.status >= 3)
+         OR (n.title='Aviso Abteilung (Status 3)' AND c.status >= 4)
+       )
+     RETURNING n.id`,
+    [userId]
+  );
+
+  const deletedOrphans = await q(
+    `DELETE FROM user_notifications n
+     WHERE n.user_id = $1
+       AND NOT EXISTS (
+         SELECT 1 FROM booking_cases c WHERE c.id = n.case_id
+       )
+     RETURNING n.id`,
+    [userId]
+  );
+
+  const deletedIds = [
+    ...deletedByStatus.rows.map((row) => row.id),
+    ...deletedOrphans.rows.map((row) => row.id)
+  ];
+  if (deletedIds.length > 0) {
+    io.to(`user:${userId}`).emit("notificationsDeleted", {
+      notification_ids: deletedIds
+    });
+  }
+}
+
+function emitNotificationsDeleted(payloadByUser) {
+  for (const [userId, notificationIds] of payloadByUser.entries()) {
+    io.to(`user:${userId}`).emit("notificationsDeleted", {
+      notification_ids: notificationIds
+    });
+  }
+}
+
+async function deleteNotificationsForCase(caseId) {
+  const deleted = await q(
+    `DELETE FROM user_notifications
+     WHERE case_id=$1
+     RETURNING id, user_id`,
+    [caseId]
+  );
+
+  if (deleted.rowCount === 0) return;
+
+  const payloadByUser = new Map();
+  for (const row of deleted.rows) {
+    if (!payloadByUser.has(row.user_id)) payloadByUser.set(row.user_id, []);
+    payloadByUser.get(row.user_id).push(row.id);
+  }
+  emitNotificationsDeleted(payloadByUser);
+}
+
+async function deleteNotificationsForCaseByTitle(caseId, title) {
+  const deleted = await q(
+    `DELETE FROM user_notifications
+     WHERE case_id=$1 AND title=$2
+     RETURNING id, user_id`,
+    [caseId, title]
+  );
+
+  if (deleted.rowCount === 0) return;
+
+  const payloadByUser = new Map();
+  for (const row of deleted.rows) {
+    if (!payloadByUser.has(row.user_id)) payloadByUser.set(row.user_id, []);
+    payloadByUser.get(row.user_id).push(row.id);
+  }
+  emitNotificationsDeleted(payloadByUser);
+}
+
+async function getMyPermissions(user) {
+  const fullAccessPerms = {
+    bookings: { create: true, view: true, export: true, receipt: true, edit: true, delete: true, translogica: true },
+    stock: { view: true, overall: true },
+    cases: {
+      create: true,
+      internal_transfer: true,
+      claim: true,
+      edit: true,
+      submit: true,
+      approve: true,
+      cancel: true,
+      delete: true,
+      require_employee_code: false
+    },
+    filters: { all_locations: true },
+    masterdata: { manage: true, entrepreneurs_manage: true },
+    users: { manage: true, view_department: true },
+    roles: { manage: true },
+    integrations: {
+      container_login: true,
+      container_registration: true,
+      container_planning: true,
+      container_viewer: true,
+      container_admin: true
+    },
+    warehouse: { ...WAREHOUSE_PERMISSION_FULL_ACCESS },
+    admin: { full_access: true }
+  };
+
+  if (user.role === "admin") {
+    return fullAccessPerms;
+  }
+
+  const defaults = {
+    bookings: { create: true, view: true, export: true, receipt: true, edit: false, delete: false, translogica: false },
+    stock: { view: true, overall: true },
+    cases: {
+      create: true,
+      internal_transfer: false,
+      claim: false,
+      edit: false,
+      submit: false,
+      approve: false,
+      cancel: false,
+      delete: false,
+      require_employee_code: false
+    },
+    filters: { all_locations: false },
+    masterdata: { manage: false, entrepreneurs_manage: false },
+    users: { manage: false, view_department: false },
+    roles: { manage: false },
+    integrations: {
+      container_login: false,
+      container_registration: false,
+      container_planning: false,
+      container_viewer: false,
+      container_admin: false
+    },
+    warehouse: { ...WAREHOUSE_PERMISSION_DEFAULTS },
+    admin: { full_access: false }
+  };
+
+  if (!user.role_id) {
+    return defaults;
+  }
+
+  const r = await q(`SELECT permissions FROM roles WHERE id=$1`, [user.role_id]);
+  const raw = (r.rowCount ? r.rows[0].permissions : {}) || {};
+
+  function merge(b, o) {
+    const out = { ...b };
+    for (const k of Object.keys(o || {})) {
+      if (o[k] && typeof o[k] === "object" && !Array.isArray(o[k])) out[k] = merge(b[k] || {}, o[k]);
+      else out[k] = o[k];
+    }
+    return out;
+  }
+
+  const p = merge(defaults, raw);
+  if (p?.admin?.full_access) return fullAccessPerms;
+  return p;
+}
+
+// ---------- AUTH ----------
+async function loginHandler(req, res) {
+  const clientIp = req.clientIp || "unknown";
+
+  const { username, password } = req.body || {};
+  const normalizedUsername = String(username || "").trim();
+  if (!normalizedUsername || !password) return res.status(400).json({ error: "username/password required" });
+
+  const r = await q(
+    `SELECT id, username, password_hash, role, location_id, role_id, is_active
+     FROM users
+     WHERE LOWER(username)=LOWER($1)
+     LIMIT 1`,
+    [normalizedUsername]
+  );
+
+  const user = r.rows[0];
+  if (!user || user.is_active !== true) {
+    registerFailedLogin(clientIp);
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) {
+    registerFailedLogin(clientIp);
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  clearFailedLogin(clientIp);
+
+  const token = jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      location_id: user.location_id,
+      role_id: user.role_id || null
+    },
+    JWT_SECRET,
+    { expiresIn: "12h" }
+  );
+
+  setAuthCookie(res, token);
+
+  return res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      location_id: user.location_id,
+      role_id: user.role_id || null
+    }
+  });
+}
+
+// Brute-force protection applies only to login routes.
+app.post("/login", checkIpBlocked, loginHandler);
+app.post("/api/login", checkIpBlocked, loginHandler);
+
+function resolveIncomingSsoToken(req) {
+  return String(
+    req.body?.token
+    || req.body?.ssoToken
+    || req.body?.session
+    || req.query?.token
+    || req.query?.ssoToken
+    || req.query?.session
+    || ""
+  ).trim();
+}
+
+async function exchangeSsoToken(req, res) {
+  const ssoToken = resolveIncomingSsoToken(req);
+  if (!ssoToken) {
+    return res.status(400).json({ error: "token required" });
+  }
+
+  let claims;
+  try {
+    claims = jwt.verify(ssoToken, SHARED_AUTH_SECRET, { algorithms: ["HS256"] });
+  } catch {
+    return res.status(401).json({ error: "Invalid SSO token" });
+  }
+
+  const issuedAt = Number(claims?.iat || 0);
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  if (!issuedAt || (nowInSeconds - issuedAt) > SSO_MAX_TOKEN_AGE_SECONDS) {
+    return res.status(401).json({ error: "SSO token expired" });
+  }
+
+  const username = String(claims?.username || "").trim();
+  if (!username) {
+    return res.status(401).json({ error: "Invalid SSO token" });
+  }
+
+  const userResult = await q(
+    `SELECT id, username, role, location_id, role_id, is_active
+     FROM users
+     WHERE LOWER(username)=LOWER($1)
+     LIMIT 1`,
+    [username]
+  );
+
+  const user = userResult.rows[0];
+  if (!user || user.is_active !== true) {
+    return res.status(401).json({ error: "Invalid SSO token" });
+  }
+
+  const roleFromClaim = String(claims?.role || "").trim();
+  const tokenRole = roleFromClaim || user.role;
+
+  const token = jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      role: tokenRole,
+      location_id: user.location_id,
+      role_id: user.role_id || null
+    },
+    JWT_SECRET,
+    { expiresIn: "12h" }
+  );
+
+  setAuthCookie(res, token);
+
+  return res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: tokenRole,
+      location_id: user.location_id,
+      role_id: user.role_id || null
+    }
+  });
+}
+
+app.post("/api/auth/sso-exchange", exchangeSsoToken);
+app.post("/api/auth/sso-forward-token", exchangeSsoToken);
+app.get("/api/auth/sso-forward-token", exchangeSsoToken);
+
+app.get("/api/me", authRequired, async (req, res) => {
+  const r = await q(
+    `SELECT u.id,
+            u.username,
+            u.role,
+            u.location_id,
+            u.role_id,
+            u.is_active,
+            ro.name AS business_role_name
+     FROM users u
+     LEFT JOIN roles ro ON ro.id = u.role_id
+     WHERE u.id=$1`,
+    [req.user.id]
+  );
+  const user = r.rows[0];
+  if (!user || user.is_active !== true) return res.status(401).json({ error: "Not authenticated" });
+  res.json(user);
+});
+
+app.post("/api/logout", (_req, res) => {
+  clearAuthCookie(res);
+  res.json({ ok: true });
+});
+
+app.post("/api/change-password", authRequired, async (req, res) => {
+  const currentPassword = String(req.body?.current_password || "").trim();
+  const newPassword = String(req.body?.new_password || "").trim();
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "current_password und new_password erforderlich" });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" });
+  }
+
+  const userResult = await q(
+    "SELECT id, password_hash FROM users WHERE id=$1 LIMIT 1",
+    [req.user.id]
+  );
+  const user = userResult.rows[0];
+  if (!user) return res.status(404).json({ error: "Benutzer nicht gefunden" });
+
+  const ok = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!ok) return res.status(400).json({ error: "Aktuelles Passwort ist nicht korrekt" });
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: "Neues Passwort muss sich vom alten Passwort unterscheiden" });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await q(`UPDATE users SET password_hash=$1 WHERE id=$2`, [hash, req.user.id]);
+  res.json({ ok: true });
+});
+
+app.get("/api/theme", authRequired, async (req,res) => {
+
+  const userId = req.user.id;
+
+  const pref = await q(
+    `SELECT theme
+     FROM user_preferences
+     WHERE user_id=$1`,
+    [userId]
+  );
+
+  res.json({
+    theme: pref.rowCount ? pref.rows[0].theme : "light"
+  });
+});
+
+app.put("/api/theme", authRequired, async (req, res) => {
+
+  const nextTheme = String(req.body?.theme || "").trim().toLowerCase();
+
+  if (!["light","dark"].includes(nextTheme)) {
+    return res.status(400).json({ error: "invalid theme" });
+  }
+
+  const userId = req.user.id;
+
+  await q(
+    `INSERT INTO user_preferences (user_id, theme)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id)
+     DO UPDATE SET theme = EXCLUDED.theme, updated_at = now()`,
+    [userId, nextTheme]
+  );
+
+  res.json({ ok: true, theme: nextTheme });
+});
+
+app.get("/api/my-permissions", authRequired, async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  res.json(perms);
+});
+
+app.use("/api/warehouse", createWarehouseRouter({ authRequired, requirePermission }));
+
+async function createContainerRegistrationSession(req, res) {
+  const perms = await getMyPermissions(req.user);
+  const canOpenContainerRegistration = hasContainerRegistrationPermission(perms);
+
+  if (!canOpenContainerRegistration) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
+  const targetUrl = hasContainerAdminPermission(req.user, perms)
+    ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
+    : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
+
+  return res.json({
+    session: null,
+    token: null,
+    user: req.user.username,
+    url: targetUrl
+  });
+}
+
+app.get("/api/container-registration-session", authRequired, createContainerRegistrationSession);
+app.get("/api/sso/container-session", authRequired, createContainerRegistrationSession);
+
+
+async function createContainerPlanningSession(req, res) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerPlanningPermission(perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+
+  const portalToken = getRequestToken(req);
+  const separator = MODULE_CONTAINER_PLANNING_PATH.includes("?") ? "&" : "?";
+
+  return res.json({
+    session: null,
+    ssoToken: null,
+    token: null,
+    user: req.user.username,
+    url: portalToken ? `${MODULE_CONTAINER_PLANNING_PATH}${separator}portalToken=${encodeURIComponent(portalToken)}` : MODULE_CONTAINER_PLANNING_PATH
+  });
+}
+
+app.get("/api/container-planning-session", authRequired, createContainerPlanningSession);
+app.get("/api/sso/container-planning-session", authRequired, createContainerPlanningSession);
+
+app.get("/container-planning", requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (_req, res) => {
+  res.redirect(MODULE_CONTAINER_PLANNING_PATH);
+});
+app.get("/container-registration", requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
+  const targetUrl = hasContainerAdminPermission(req.user, req.portalPermissions)
+    ? MODULE_CONTAINER_REGISTRATION_ADMIN_PATH
+    : MODULE_CONTAINER_REGISTRATION_DRIVER_PATH;
+  res.redirect(targetUrl);
+});
+app.get("/warehouse", requireModulePageAccess((_user, perms) => hasWarehouseModulePermission(perms)), (_req, res) => {
+  res.redirect("/modules/warehouse/index.html");
+});
+app.get(MODULE_CONTAINER_PLANNING_PATH, requireModulePageAccess((_user, perms) => hasContainerPlanningPermission(perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-planning", "index.html"));
+});
+app.get(MODULE_CONTAINER_REGISTRATION_ADMIN_PATH, requireModulePageAccess((user, perms) => hasContainerAdminPermission(user, perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "admin.html"));
+});
+app.get(MODULE_CONTAINER_REGISTRATION_DRIVER_PATH, requireModulePageAccess((_user, perms) => hasContainerRegistrationPermission(perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "driver.html"));
+});
+app.get(MODULE_CONTAINER_REGISTRATION_VIEWER_PATH, requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer.html"));
+});
+app.get("/container-registration/viewer-sw.js", requireModulePageAccess((_user, perms) => hasContainerViewerPermission(perms)), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer-sw.js"));
+});
+
+function defaultRegistrationContainer(id) {
+  return {
+    id,
+    status: CONTAINER_REGISTRATION_STATUS_SLOT_CREATED,
+    plate: "",
+    time: "",
+    registeredAt: "",
+    bookingNo: null
+  };
+}
+
+function cloneRegistrationState() {
+  const state = {};
+  for (let i = 1; i <= 8; i += 1) {
+    state[i] = { ...(containerRegistrationState[i] || defaultRegistrationContainer(i)) };
+  }
+  return state;
+}
+
+async function loadContainerRegistrationState() {
+  const result = await q(
+    `SELECT id, status, plate, time, registered_at, booking_no
+     FROM container_registration_containers
+     ORDER BY id`
+  );
+
+  containerRegistrationState = {};
+  for (let i = 1; i <= 8; i += 1) {
+    containerRegistrationState[i] = defaultRegistrationContainer(i);
+  }
+
+  for (const row of result.rows) {
+    containerRegistrationState[row.id] = {
+      id: Number(row.id),
+      status: CONTAINER_REGISTRATION_STATUSES.includes(row.status)
+        ? row.status
+        : CONTAINER_REGISTRATION_STATUS_SLOT_CREATED,
+      plate: String(row.plate || ""),
+      time: String(row.time || ""),
+      registeredAt: row.registered_at ? new Date(row.registered_at).toISOString() : "",
+      bookingNo: Number.isInteger(row.booking_no) ? row.booking_no : null
+    };
+  }
+}
+
+async function saveContainerRegistrationContainer(id, data) {
+  await q(
+    `UPDATE container_registration_containers
+     SET status=$2, plate=$3, time=$4, registered_at=$5, booking_no=$6
+     WHERE id=$1`,
+    [id, data.status, data.plate, data.time, data.registeredAt || null, data.bookingNo || null]
+  );
+}
+
+async function saveAllContainerRegistrationContainers(state) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 1; i <= 8; i += 1) {
+      const data = state[i] || defaultRegistrationContainer(i);
+      await client.query(
+        `UPDATE container_registration_containers
+         SET status=$2, plate=$3, time=$4, registered_at=$5, booking_no=$6
+         WHERE id=$1`,
+        [i, data.status, data.plate, data.time, data.registeredAt || null, data.bookingNo || null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function logContainerRegistrationEvent(event) {
+  await q(
+    `INSERT INTO container_registration_history (at, type, container_id, plate, details)
+     VALUES ($1,$2,$3,$4,$5::jsonb)`,
+    [
+      event.at,
+      event.type,
+      event.containerId,
+      event.plate || "",
+      JSON.stringify(event.details || {})
+    ]
+  );
+
+  await q(
+    `DELETE FROM container_registration_history
+     WHERE id IN (
+       SELECT id
+       FROM container_registration_history
+       ORDER BY id DESC
+       OFFSET $1
+     )`,
+    [CONTAINER_REGISTRATION_HISTORY_MAX]
+  );
+}
+
+async function nextContainerRegistrationBookingNo() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      `UPDATE container_registration_booking_counter
+       SET value = value + 1
+       WHERE id = 1
+       RETURNING value`
+    );
+    await client.query("COMMIT");
+    return Number(updated.rows[0]?.value || 1);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getContainerRegistrationHistory(limit) {
+  const normalizedLimit = Math.max(1, Math.min(Number(limit || 200), 2000));
+  const result = await q(
+    `SELECT at, type, container_id AS "containerId", plate, details
+     FROM container_registration_history
+     ORDER BY id DESC
+     LIMIT $1`,
+    [normalizedLimit]
+  );
+  return result.rows;
+}
+
+async function getContainerRegistrationBookingTimeline(bookingNo) {
+  const normalizedBookingNo = Number(bookingNo);
+  if (!Number.isInteger(normalizedBookingNo) || normalizedBookingNo <= 0) return [];
+
+  const result = await q(
+    `SELECT at, type, container_id AS "containerId", plate, details
+     FROM container_registration_history
+     WHERE details->>'bookingNo' = $1
+     ORDER BY id ASC`,
+    [String(normalizedBookingNo)]
+  );
+  return result.rows;
+}
+
+async function clearContainerRegistrationHistory() {
+  await q("TRUNCATE TABLE container_registration_history RESTART IDENTITY");
+}
+
+function historyRowsToCsv(entries) {
+  const header = ["at", "type", "containerId", "plate", "details"];
+  const rows = [header.join(";")];
+  for (const entry of entries) {
+    rows.push([
+      entry.at || "",
+      entry.type || "",
+      entry.containerId || "",
+      String(entry.plate || "").replaceAll(";", " "),
+      JSON.stringify(entry.details || {}).replaceAll(";", " ")
+    ].join(";"));
+  }
+  return rows.join("\n");
+}
+
+function emitContainerRegistrationInit(socket) {
+  socket.emit("init", cloneRegistrationState());
+}
+
+function emitContainerRegistrationUpdate(id) {
+  containerRegistrationNamespace.emit("statusChanged", { id, data: { ...containerRegistrationState[id] } });
+}
+
+function getSocketPortalUser(socket, options = {}) {
+  const handshakeToken = String(
+    socket.handshake.auth?.token
+    || socket.handshake.query?.portalToken
+    || socket.handshake.query?.token
+    || ""
+  ).trim();
+  const fakeReq = {
+    headers: {
+      cookie: socket.handshake.headers.cookie || "",
+      ...(handshakeToken ? { authorization: `Bearer ${handshakeToken}` } : {})
+    },
+    query: {
+      portalToken: String(socket.handshake.query?.portalToken || "").trim(),
+      token: String(socket.handshake.query?.token || "").trim()
+    }
+  };
+  return getAuthenticatedPortalUser(fakeReq, options);
+}
+
+function emitContainerPlanningChange(action, bookingId) {
+  containerPlanningNamespace.emit("bookingsChanged", {
+    action,
+    bookingId,
+    at: new Date().toISOString()
+  });
+}
+
+function normalizeDashboardFeedLimit(rawLimit) {
+  const limit = Number(rawLimit);
+  if (!Number.isInteger(limit) || limit <= 0) return 10;
+  return Math.min(limit, 25);
+}
+
+function dashboardFeedJoin(parts) {
+  return parts.filter((part) => String(part || "").trim()).join(" | ");
+}
+
+function getDashboardCaseActionLabel(action) {
+  const labels = {
+    create: "Vorgang angelegt",
+    edit: "Vorgang bearbeitet",
+    claim: "Vorgang übernommen",
+    submit: "Zur Prüfung eingereicht",
+    approve: "Vorgang gebucht",
+    cancel: "Vorgang storniert",
+    set_translogica: "Translogica aktualisiert"
+  };
+  return labels[action] || "Vorgang aktualisiert";
+}
+
+function getDashboardContainerEventLabel(type) {
+  const labels = {
+    driver_register: "Container wurde angemeldet",
+    admin_set_status: "Containerstatus wurde aktualisiert",
+    admin_set_time: "Zeitfenster wurde aktualisiert",
+    admin_reset_container: "Containerdaten wurden zurückgesetzt"
+  };
+  return labels[type] || "Container-Vorgang aktualisiert";
+}
+
+function buildContainerEventMeta(row) {
+  const details = row?.details || {};
+  const bookingNo = String(details.bookingNo || "").trim();
+  const from = String(details.from || "").trim();
+  const to = String(details.to || "").trim();
+  const timeSlot = String(details.timeSlot || "").trim();
+  const changeLabel = row?.type === "admin_set_time" ? "Zeitfenster" : "Status";
+  const pieces = [
+    row?.containerId ? `Container: ${row.containerId}` : "",
+    row?.plate ? `Kennzeichen: ${row.plate}` : "",
+    bookingNo ? `Buchungsnummer: ${bookingNo}` : "",
+    from || to ? `${changeLabel}: von ${from || "-"} auf ${to || "-"}` : "",
+    timeSlot ? `Zeitfenster: ${timeSlot}` : ""
+  ];
+  return dashboardFeedJoin(pieces);
+}
+
+async function getDashboardLiveFeedItems(req, limit) {
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const lockedLocationId = (req.user.role !== "admin" && req.user.location_id && !canUseAllLocations)
+    ? Number(req.user.location_id)
+    : null;
+  const lockedDepartmentId = req.user.fixed_department_id ? Number(req.user.fixed_department_id) : null;
+  const perSourceLimit = Math.min(Math.max(limit, 8), 25);
+  const items = [];
+
+  if (perms?.bookings?.view) {
+    const params = [];
+    const where = ["1=1"];
+    let idx = 1;
+
+    if (lockedLocationId) {
+      where.push(`b.location_id = $${idx++}`);
+      params.push(lockedLocationId);
+    }
+
+    if (lockedDepartmentId) {
+      where.push(`b.department_id = $${idx++}`);
+      params.push(lockedDepartmentId);
+    }
+
+    params.push(perSourceLimit);
+    const rows = (await q(
+      `
+      SELECT
+        MIN(b.id) AS id,
+        MIN(b.created_at) AS created_at,
+        MAX(b.receipt_no) AS receipt_no,
+        MAX(b.license_plate) AS license_plate,
+        MAX(b.entrepreneur) AS entrepreneur,
+        COALESCE(SUM(CASE WHEN b.type = 'IN' THEN b.quantity ELSE 0 END), 0) AS qty_in,
+        COALESCE(SUM(CASE WHEN b.type = 'OUT' THEN b.quantity ELSE 0 END), 0) AS qty_out,
+        COALESCE(l.name, 'Standort') AS location_name,
+        COALESCE(d.name, 'Abteilung') AS department_name
+      FROM bookings b
+      LEFT JOIN locations l ON l.id = b.location_id
+      LEFT JOIN departments d ON d.id = b.department_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY
+        COALESCE(NULLIF(b.receipt_no, ''), CONCAT('booking-', b.id::text)),
+        l.name,
+        d.name
+      ORDER BY MIN(b.created_at) DESC, MIN(b.id) DESC
+      LIMIT $${idx}
+      `,
+      params
+    )).rows;
+
+    for (const row of rows) {
+      items.push({
+        id: `booking-case-${row.id}`,
+        app: "Paletten Buchungen",
+        title: row.receipt_no ? `Palettenbuchung ${row.receipt_no}` : "Palettenbuchung",
+        meta: dashboardFeedJoin([
+          row.license_plate ? `Kennzeichen: ${row.license_plate}` : "",
+          row.entrepreneur ? `Unternehmer: ${row.entrepreneur}` : "",
+          `Eingang: ${Number(row.qty_in || 0)}, Ausgang: ${Number(row.qty_out || 0)}`,
+          row.location_name ? `Standort: ${row.location_name}` : "",
+          row.department_name ? `Abteilung: ${row.department_name}` : ""
+        ]),
+        at: row.created_at
+      });
+    }
+  }
+
+  if (
+    hasContainerViewerPermission(perms)
+    || hasContainerRegistrationPermission(perms)
+    || hasContainerAdminPermission(req.user, perms)
+  ) {
+    const rows = (await q(
+      `
+      SELECT
+        id,
+        at,
+        type,
+        container_id AS "containerId",
+        plate,
+        details
+      FROM container_registration_history
+      WHERE type = 'driver_register'
+      ORDER BY at DESC, id DESC
+      LIMIT $1
+      `,
+      [perSourceLimit]
+    )).rows;
+
+    for (const row of rows) {
+      const bookingNo = String(row?.details?.bookingNo || "").trim();
+      items.push({
+        id: `container-registration-${row.id}`,
+        app: "Container Anmeldung",
+        title: bookingNo ? `Container-Anmeldung ${bookingNo}` : "Container-Anmeldung",
+        meta: buildContainerEventMeta(row),
+        at: row.at
+      });
+    }
+  }
+
+  if (hasContainerPlanningPermission(perms)) {
+    const rows = (await q(
+      `
+      SELECT
+        id,
+        title,
+        container_no AS "containerNo",
+        plate,
+        warehouse,
+        order_no AS "orderNo",
+        booking_date::text AS date,
+        created_at
+      FROM container_planning_bookings
+      ORDER BY created_at DESC, id DESC
+      LIMIT $1
+      `,
+      [perSourceLimit]
+    )).rows;
+
+    for (const row of rows) {
+      items.push({
+        id: `container-planning-${row.id}`,
+        app: "Container und LKW Planung",
+        title: row.title ? `Planungsbuchung: ${row.title}` : "Planungsbuchung",
+        meta: dashboardFeedJoin([
+          row.date ? `Termin: ${row.date}` : "",
+          row.containerNo ? `Container: ${row.containerNo}` : "",
+          row.plate ? `Kennzeichen: ${row.plate}` : "",
+          row.warehouse && row.warehouse !== "-" ? `Lager: ${row.warehouse}` : "",
+          row.orderNo ? `Auftrag: ${row.orderNo}` : ""
+        ]),
+        at: row.created_at
+      });
+    }
+  }
+
+  return items
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, limit);
+}
+
+async function requireContainerPlanningAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerPlanningPermission(perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  return next();
+}
+
+async function requireContainerViewerAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerViewerPermission(perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  return next();
+}
+
+async function requireContainerRegistrationAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerRegistrationPermission(perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  return next();
+}
+
+async function requireContainerAdminAccess(req, res, next) {
+  const perms = await getMyPermissions(req.user);
+  if (!hasContainerAdminPermission(req.user, perms)) {
+    return res.status(403).json({ error: "No Permissions" });
+  }
+  req.portalPermissions = perms;
+  return next();
+}
+
+app.get("/api/modules/container-planning/bookings", authRequired, requireContainerPlanningAccess, async (req, res) => {
+  const month = String(req.query.month || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ message: "Parameter month im Format YYYY-MM erforderlich." });
+  }
+
+  const from = `${month}-01`;
+  const toDate = new Date(`${from}T00:00:00`);
+  toDate.setMonth(toDate.getMonth() + 1);
+  const to = toDate.toISOString().slice(0, 10);
+
+  const result = await q(
+    `SELECT id, title, container_no AS "containerNo", customer, warehouse, plate,
+            order_no AS "orderNo", booking_date::text AS date, color
+     FROM container_planning_bookings
+     WHERE booking_date >= $1 AND booking_date < $2
+     ORDER BY booking_date ASC, created_at ASC`,
+    [from, to]
+  );
+
+  res.json(result.rows);
+});
+
+app.post("/api/modules/container-planning/bookings", authRequired, requireContainerPlanningAccess, async (req, res) => {
+  const { title, containerNo, customer, warehouse, plate, orderNo, date, color } = req.body || {};
+  if (!title || !date) {
+    return res.status(400).json({ message: "Titel und Datum sind erforderlich." });
+  }
+
+  const result = await q(
+    `INSERT INTO container_planning_bookings
+       (title, container_no, customer, warehouse, plate, order_no, booking_date, color, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING id, title, container_no AS "containerNo", customer, warehouse, plate,
+               order_no AS "orderNo", booking_date::text AS date, color`,
+    [
+      String(title).trim(),
+      String(containerNo || "").trim(),
+      String(customer || "-").trim() || "-",
+      String(warehouse || "-").trim() || "-",
+      String(plate || "").trim(),
+      String(orderNo || "").trim(),
+      String(date).trim(),
+      String(color || "#0ea5e9").trim(),
+      req.user.id
+    ]
+  );
+
+  emitContainerPlanningChange("created", result.rows[0].id);
+  res.status(201).json(result.rows[0]);
+});
+
+app.patch("/api/modules/container-planning/bookings/:id/date", authRequired, requireContainerPlanningAccess, async (req, res) => {
+  const id = Number(req.params.id);
+  const date = String(req.body?.date || "").trim();
+  if (!id) return res.status(400).json({ message: "Ungültige ID." });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "Datum muss im Format YYYY-MM-DD sein." });
+  }
+
+  const result = await q(
+    `UPDATE container_planning_bookings
+     SET booking_date = $2
+     WHERE id = $1
+     RETURNING id, title, container_no AS "containerNo", customer, warehouse, plate,
+               order_no AS "orderNo", booking_date::text AS date, color`,
+    [id, date]
+  );
+
+  if (!result.rowCount) return res.status(404).json({ message: "Eintrag nicht gefunden." });
+  emitContainerPlanningChange("moved", result.rows[0].id);
+  res.json(result.rows[0]);
+});
+
+app.delete("/api/modules/container-planning/bookings/:id", authRequired, requireContainerPlanningAccess, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Ungültige ID." });
+
+  const result = await q("DELETE FROM container_planning_bookings WHERE id = $1 RETURNING id", [id]);
+  if (!result.rowCount) return res.status(404).json({ message: "Eintrag nicht gefunden." });
+  emitContainerPlanningChange("deleted", id);
+  res.json({ ok: true });
+});
+
+app.get("/api/modules/container-registration/state", authRequired, requireContainerViewerAccess, async (_req, res) => {
+  res.json(cloneRegistrationState());
+});
+
+app.get("/api/modules/container-registration/history", authRequired, requireContainerAdminAccess, async (req, res) => {
+  const entries = await getContainerRegistrationHistory(req.query.limit);
+  res.json({ entries });
+});
+
+app.get("/api/modules/container-registration/history/:bookingNo", authRequired, requireContainerAdminAccess, async (req, res) => {
+  const entries = await getContainerRegistrationBookingTimeline(req.params.bookingNo);
+  res.json({ bookingNo: Number(req.params.bookingNo), entries });
+});
+
+app.get("/api/modules/container-registration/admin-history.csv", authRequired, requireContainerAdminAccess, async (_req, res) => {
+  const entries = await getContainerRegistrationHistory(1000);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=container-registration-history.csv");
+  res.send(historyRowsToCsv(entries.slice().reverse()));
+});
+
+app.get("/api/dashboard/live-feed", authRequired, async (req, res) => {
+  try {
+    const limit = normalizeDashboardFeedLimit(req.query.limit);
+    const items = await getDashboardLiveFeedItems(req, limit);
+    res.json({ items });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Live-Feed konnte nicht geladen werden." });
+  }
+});
+
+containerRegistrationNamespace.use(async (socket, next) => {
+  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
+  if (!user) return next(new Error("UNAUTHENTICATED"));
+
+  try {
+    const perms = await getMyPermissions(user);
+    socket.data.portalUser = user;
+    socket.data.portalPermissions = perms;
+    socket.data.canView = hasContainerViewerPermission(perms);
+    socket.data.canRegister = hasContainerRegistrationPermission(perms);
+    socket.data.canAdmin = hasContainerAdminPermission(user, perms);
+    if (!socket.data.canView) return next(new Error("FORBIDDEN"));
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+containerPlanningNamespace.use(async (socket, next) => {
+  const user = getSocketPortalUser(socket, { allowHeader: true, allowQuery: true, allowCookie: true });
+  if (!user) return next(new Error("UNAUTHENTICATED"));
+
+  try {
+    const perms = await getMyPermissions(user);
+    if (!hasContainerPlanningPermission(perms)) return next(new Error("FORBIDDEN"));
+    socket.data.portalUser = user;
+    socket.data.portalPermissions = perms;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+containerRegistrationNamespace.on("connection", (socket) => {
+  socket.data.isAdmin = false;
+  emitContainerRegistrationInit(socket);
+
+  socket.on("adminAuth", () => {
+    if (!socket.data.canAdmin) {
+      socket.data.isAdmin = false;
+      socket.emit("adminAuthResult", { ok: false });
+      return;
+    }
+    socket.data.isAdmin = true;
+    socket.emit("adminAuthResult", {
+      ok: true,
+      user: socket.data.portalUser?.username || "",
+      roles: flattenPermissionRoles(socket.data.portalPermissions)
+    });
+  });
+
+  socket.on("adminGetHistory", async ({ limit } = {}) => {
+    if (!socket.data.canAdmin) return;
+    try {
+      const entries = await getContainerRegistrationHistory(limit);
+      socket.emit("adminHistory", { entries });
+    } catch (error) {
+      socket.emit("adminHistory", { entries: [], error: error.message });
+    }
+  });
+
+  socket.on("adminGetBookingTimeline", async ({ bookingNo } = {}) => {
+    if (!socket.data.canAdmin) return;
+    try {
+      const entries = await getContainerRegistrationBookingTimeline(bookingNo);
+      socket.emit("adminBookingTimeline", { bookingNo, entries });
+    } catch (error) {
+      socket.emit("adminBookingTimeline", { bookingNo, entries: [], error: error.message });
+    }
+  });
+
+  socket.on("adminClearHistory", async () => {
+    if (!socket.data.canAdmin) return;
+    await clearContainerRegistrationHistory();
+    socket.emit("adminHistory", { entries: [] });
+  });
+
+  socket.on("driverRegister", async ({ id, plate } = {}) => {
+    if (!socket.data.canRegister) {
+      socket.emit("driverRegisterResult", { ok: false, message: "Keine Berechtigung." });
+      return;
+    }
+
+    const cid = Number(id);
+    if (!containerRegistrationState[cid]) {
+      socket.emit("driverRegisterResult", { ok: false, message: "Ungültiger Container." });
+      return;
+    }
+
+    const normalizedPlate = String(plate || "").trim().toUpperCase().slice(0, 20);
+    if (!normalizedPlate) {
+      socket.emit("driverRegisterResult", { ok: false, message: "Bitte Kennzeichen eingeben." });
+      return;
+    }
+
+    const selected = containerRegistrationState[cid];
+    const isFree = selected.status === CONTAINER_REGISTRATION_STATUS_SLOT_CREATED && !String(selected.plate || "").trim();
+    if (!isFree) {
+      socket.emit("driverRegisterResult", {
+        ok: false,
+        message: "Dieser Container ist bereits belegt. Bitte anderen Container wählen."
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const bookingNo = await nextContainerRegistrationBookingNo();
+    selected.plate = normalizedPlate;
+    selected.status = CONTAINER_REGISTRATION_STATUS_REGISTERED;
+    selected.registeredAt = nowIso;
+    selected.bookingNo = bookingNo;
+
+    await saveContainerRegistrationContainer(cid, selected);
+    emitContainerRegistrationUpdate(cid);
+
+    await logContainerRegistrationEvent({
+      type: "driver_register",
+      at: nowIso,
+      containerId: cid,
+      plate: normalizedPlate,
+      details: { bookingNo, timeSlot: selected.time || "", startedAt: nowIso }
+    });
+
+    socket.emit("driverRegisterResult", { ok: true, message: "Erfolgreich angemeldet. Bitte warten." });
+  });
+
+  socket.on("adminSetStatus", async ({ id, status } = {}) => {
+    if (!socket.data.canAdmin) return;
+    const cid = Number(id);
+    if (!containerRegistrationState[cid] || !CONTAINER_REGISTRATION_STATUSES.includes(status)) return;
+
+    const before = containerRegistrationState[cid].status;
+    containerRegistrationState[cid].status = status;
+    await saveContainerRegistrationContainer(cid, containerRegistrationState[cid]);
+    emitContainerRegistrationUpdate(cid);
+
+    await logContainerRegistrationEvent({
+      type: "admin_set_status",
+      at: new Date().toISOString(),
+      containerId: cid,
+      plate: containerRegistrationState[cid].plate || "",
+      details: { bookingNo: containerRegistrationState[cid].bookingNo || null, from: before, to: status }
+    });
+  });
+
+  socket.on("adminSetTime", async ({ id, time } = {}) => {
+    if (!socket.data.canAdmin) return;
+    const cid = Number(id);
+    if (!containerRegistrationState[cid]) return;
+
+    const safeTime = String(time || "").trim().slice(0, 5);
+    if (safeTime && !/^\d{2}:\d{2}$/.test(safeTime)) return;
+
+    const before = containerRegistrationState[cid].time;
+    containerRegistrationState[cid].time = safeTime;
+    await saveContainerRegistrationContainer(cid, containerRegistrationState[cid]);
+    emitContainerRegistrationUpdate(cid);
+
+    await logContainerRegistrationEvent({
+      type: "admin_set_time",
+      at: new Date().toISOString(),
+      containerId: cid,
+      plate: containerRegistrationState[cid].plate || "",
+      details: { bookingNo: containerRegistrationState[cid].bookingNo || null, from: before, to: safeTime }
+    });
+  });
+
+  socket.on("adminResetContainer", async ({ id } = {}) => {
+    if (!socket.data.canAdmin) return;
+    const cid = Number(id);
+    if (!containerRegistrationState[cid]) return;
+
+    const before = { ...containerRegistrationState[cid] };
+    containerRegistrationState[cid] = defaultRegistrationContainer(cid);
+    await saveContainerRegistrationContainer(cid, containerRegistrationState[cid]);
+    emitContainerRegistrationUpdate(cid);
+
+    await logContainerRegistrationEvent({
+      type: "admin_reset_container",
+      at: new Date().toISOString(),
+      containerId: cid,
+      plate: before.plate || "",
+      details: { bookingNo: before.bookingNo || null, completedAt: new Date().toISOString(), before }
+    });
+  });
+
+  socket.on("resetAll", async () => {
+    if (!socket.data.canAdmin) return;
+    const nextState = {};
+    for (let i = 1; i <= 8; i += 1) {
+      nextState[i] = defaultRegistrationContainer(i);
+    }
+    containerRegistrationState = nextState;
+    await saveAllContainerRegistrationContainers(containerRegistrationState);
+    containerRegistrationNamespace.emit("init", cloneRegistrationState());
+
+    await logContainerRegistrationEvent({
+      type: "admin_reset_all",
+      at: new Date().toISOString(),
+      containerId: 0,
+      plate: "",
+      details: {}
+    });
+  });
+});
+
+app.get("/api/notifications", authRequired, async (req, res) => {
+  await pruneNotificationsForUser(req.user.id);
+
+  const rows = (await q(
+    `SELECT id, user_id, case_id, title, message, is_read, created_at
+     FROM user_notifications
+     WHERE user_id=$1
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [req.user.id]
+  )).rows;
+  const unread = rows.filter((item) => !item.is_read).length;
+  res.json({ items: rows, unread });
+});
+
+app.put("/api/notifications/:id/read", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  await q(
+    `UPDATE user_notifications
+     SET is_read=TRUE, read_at=now()
+     WHERE id=$1 AND user_id=$2`,
+    [id, req.user.id]
+  );
+  res.json({ ok: true });
+});
+
+// ---------- LOCATIONS ----------
+app.get("/api/locations", authRequired, async (req, res) => {
+  res.json((await q(`SELECT id, name FROM locations ORDER BY name`)).rows);
+});
+
+app.post("/api/admin/locations", authRequired, adminRequired, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name required" });
+
+  const nm = String(name).trim();
+  const r = await q(`INSERT INTO locations (name) VALUES ($1) RETURNING id`, [nm]);
+  res.json({ id: r.rows[0].id, name: nm });
+});
+
+app.delete("/api/admin/locations/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const used = await q(`SELECT 1 FROM bookings WHERE location_id=$1 LIMIT 1`, [id]);
+  if (used.rowCount > 0) return res.status(400).json({ error: "Standort hat bereits Buchungen und kann nicht gelöscht werden" });
+
+  const usedCases = await q(`SELECT 1 FROM booking_cases WHERE location_id=$1 LIMIT 1`, [id]);
+  if (usedCases.rowCount > 0) return res.status(400).json({ error: "Standort hat bereits Vorgänge und kann nicht gelöscht werden" });
+
+  await q(`DELETE FROM locations WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+// ---------- DEPARTMENTS ----------
+app.get("/api/departments", authRequired, async (req, res) => {
+  res.json((await q(`SELECT id, name FROM departments ORDER BY name`)).rows);
+});
+
+app.post("/api/admin/departments", authRequired, adminRequired, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name required" });
+
+  const nm = String(name).trim();
+  const r = await q(`INSERT INTO departments (name) VALUES ($1) RETURNING id`, [nm]);
+  res.json({ id: r.rows[0].id, name: nm });
+});
+
+app.delete("/api/admin/departments/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  await q(`DELETE FROM departments WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+// ---------- ENTREPRENEURS ----------
+app.get("/api/entrepreneurs", authRequired, async (req, res) => {
+  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
+});
+
+app.post("/api/entrepreneurs", authRequired, async (req, res) => {
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  const r = await q(
+    `INSERT INTO entrepreneurs (name, street, postal_code, city)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (name) DO UPDATE
+     SET street = COALESCE(EXCLUDED.street, entrepreneurs.street),
+         postal_code = COALESCE(EXCLUDED.postal_code, entrepreneurs.postal_code),
+         city = COALESCE(EXCLUDED.city, entrepreneurs.city)
+     RETURNING id, name, street, postal_code, city`,
+    [name, street, postal_code, city]
+  );
+  res.json(r.rows[0]);
+});
+
+app.get("/api/entrepreneurs/manage", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
+});
+
+app.post("/api/entrepreneurs/manage", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  try {
+    const r = await q(
+      `INSERT INTO entrepreneurs (name, street, postal_code, city)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, street, postal_code, city`,
+      [name, street, postal_code, city]
+    );
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e && e.code === "23505") return res.status(400).json({ error: "Unternehmer existiert bereits" });
+    throw e;
+  }
+});
+
+app.put("/api/entrepreneurs/manage/:id", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  try {
+    const r = await q(
+      `UPDATE entrepreneurs
+       SET name=$1, street=$2, postal_code=$3, city=$4
+       WHERE id=$5
+       RETURNING id, name, street, postal_code, city`,
+      [name, street, postal_code, city, id]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e && e.code === "23505") return res.status(400).json({ error: "Unternehmer existiert bereits" });
+    throw e;
+  }
+});
+
+app.delete("/api/entrepreneurs/manage/:id", authRequired, requirePermission("masterdata.entrepreneurs_manage"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+  await q(`DELETE FROM entrepreneurs WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/entrepreneurs", authRequired, adminRequired, async (req, res) => {
+  res.json((await q(`SELECT id, name, street, postal_code, city FROM entrepreneurs ORDER BY name`)).rows);
+});
+
+app.post("/api/admin/entrepreneurs", authRequired, adminRequired, async (req, res) => {
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  try {
+    const r = await q(
+      `INSERT INTO entrepreneurs (name, street, postal_code, city)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, street, postal_code, city`,
+      [name, street, postal_code, city]
+    );
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e && e.code === "23505") return res.status(400).json({ error: "Unternehmer existiert bereits" });
+    throw e;
+  }
+});
+
+app.put("/api/admin/entrepreneurs/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const name = safeTrim(req.body?.name);
+  const street = safeTrim(req.body?.street);
+  const postal_code = safeTrim(req.body?.postal_code);
+  const city = safeTrim(req.body?.city);
+
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+
+  await q(
+    `UPDATE entrepreneurs
+     SET name=$1, street=$2, postal_code=$3, city=$4
+     WHERE id=$5`,
+    [name, street, postal_code, city, id]
+  );
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/entrepreneurs/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+  await q(`DELETE FROM entrepreneurs WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+// ---------- ROLES (Admin) ----------
+app.get("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
+  const rows = (await q(`SELECT id, name, permissions, created_at FROM roles ORDER BY name`)).rows;
+  res.json(rows);
+});
+
+app.post("/api/admin/roles", authRequired, adminRequired, async (req, res) => {
+  const { name, permissions } = req.body || {};
+  if (!name || !String(name).trim()) return res.status(400).json({ error: "name required" });
+
+  const roleName = String(name).trim();
+  const perms = (permissions && typeof permissions === "object") ? permissions : {};
+
+  try {
+    const r = await q(
+      `INSERT INTO roles (name, permissions) VALUES ($1, $2::jsonb)
+       RETURNING id, name, permissions`,
+      [roleName, JSON.stringify(perms)]
+    );
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e && e.code === "23505") return res.status(400).json({ error: "role name already exists" });
+    throw e;
+  }
+});
+
+app.put("/api/admin/roles/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const { name, permissions } = req.body || {};
+  const roleName = name ? String(name).trim() : null;
+  const perms = (permissions && typeof permissions === "object") ? permissions : null;
+
+  await q(
+    `UPDATE roles
+     SET name = COALESCE($1, name),
+         permissions = COALESCE($2::jsonb, permissions)
+     WHERE id=$3`,
+    [roleName, perms ? JSON.stringify(perms) : null, id]
+  );
+
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/roles/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const used = await q(`SELECT 1 FROM users WHERE role_id=$1 LIMIT 1`, [id]);
+  if (used.rowCount > 0) return res.status(400).json({ error: "role is assigned to users" });
+
+  await q(`DELETE FROM roles WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+// ---------- USERS (Admin) ----------
+app.get("/api/admin/users", authRequired, async (req, res) => {
+  if (req.user.role === "admin") {
+    const rows = (await q(
+      `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id
+       FROM users
+       ORDER BY username`
+    )).rows;
+    return res.json(rows);
+  }
+
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.users?.view_department) return res.status(403).json({ error: "No Permissions" });
+
+  const fixedDepartmentId = req.user.fixed_department_id;
+  if (!fixedDepartmentId) return res.status(400).json({ error: "Kein fixe Abteilung gesetzt" });
+
+  const rows = (await q(
+    `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id
+     FROM users
+     WHERE fixed_department_id=$1
+     ORDER BY username`,
+    [fixedDepartmentId]
+  )).rows;
+  return res.json(rows);
+});
+
+app.post("/api/admin/users", authRequired, adminRequired, async (req, res) => {
+  const {
+    username,
+    password,
+    location_id = null,
+    role_id = null,
+    email,
+    fixed_department_id = null
+  } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: "username + password required" });
+
+  const name = String(username).trim();
+  if (name.length < 3) return res.status(400).json({ error: "username too short" });
+
+  const hash = await bcrypt.hash(String(password), 10);
+  const emailCheck = normalizeEmail(email);
+  if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+  const roleId = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
+  if (!roleId) return res.status(400).json({ error: "business role required" });
+  const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1`, [roleId]);
+  if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
+
+  const fixedDepartmentId = (fixed_department_id === null || fixed_department_id === undefined || fixed_department_id === "")
+    ? null
+    : Number(fixed_department_id);
+  if (fixedDepartmentId) {
+    const depExists = await q(`SELECT 1 FROM departments WHERE id=$1`, [fixedDepartmentId]);
+    if (depExists.rowCount === 0) return res.status(400).json({ error: "Abteilung nicht gefunden" });
+  }
+
+  try {
+    const r = await q(
+      `INSERT INTO users (username, password_hash, role, location_id, role_id, is_active, email, fixed_department_id)
+       VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7)
+       RETURNING id, username, role, location_id, role_id, is_active, email, fixed_department_id`,
+      [
+        name,
+        hash,
+        "disponent",
+        (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id),
+        roleId,
+        emailCheck?.email || null,
+        fixedDepartmentId
+      ]
+    );
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e && e.code === "23505") return res.status(400).json({ error: "username already exists" });
+    throw e;
+  }
+});
+
+app.put("/api/admin/users/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const { location_id, is_active, role_id, email, fixed_department_id } = req.body || {};
+
+  const updates = [];
+  const values = [];
+  let idx = 1;
+
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "location_id")) {
+    const locValue = (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id);
+    updates.push(`location_id=$${idx++}`);
+    values.push(locValue);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "is_active")) {
+    if (typeof is_active !== "boolean") return res.status(400).json({ error: "invalid is_active" });
+    updates.push(`is_active=$${idx++}`);
+    values.push(is_active);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "role_id")) {
+    const roleValue = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
+    if (!roleValue) return res.status(400).json({ error: "business role required" });
+    const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1`, [roleValue]);
+    if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
+    updates.push(`role_id=$${idx++}`);
+    values.push(roleValue);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "email")) {
+    const emailCheck = normalizeEmail(email);
+    if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+    updates.push(`email=$${idx++}`);
+    values.push(emailCheck?.email || null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "fixed_department_id")) {
+    const fixedDepartmentId = (fixed_department_id === null || fixed_department_id === undefined || fixed_department_id === "")
+      ? null
+      : Number(fixed_department_id);
+    if (fixedDepartmentId) {
+      const depExists = await q(`SELECT 1 FROM departments WHERE id=$1`, [fixedDepartmentId]);
+      if (depExists.rowCount === 0) return res.status(400).json({ error: "Abteilung nicht gefunden" });
+    }
+    updates.push(`fixed_department_id=$${idx++}`);
+    values.push(fixedDepartmentId);
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: "no changes" });
+
+  values.push(id);
+  await q(
+    `UPDATE users SET ${updates.join(", ")} WHERE id=$${idx}`,
+    values
+  );
+
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/users/:id", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+  if (id === req.user.id) return res.status(400).json({ error: "cannot delete yourself" });
+
+  await q(`DELETE FROM users WHERE id=$1`, [id]);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/users/:id/reset-password", authRequired, adminRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  const { password } = req.body || {};
+  if (!id) return res.status(400).json({ error: "invalid id" });
+  if (!password) return res.status(400).json({ error: "password required" });
+
+  const hash = await bcrypt.hash(String(password), 10);
+  await q(`UPDATE users SET password_hash=$1 WHERE id=$2`, [hash, id]);
+  res.json({ ok: true });
+});
+
+// ---------- WORKFLOW CASES (Status 1-4) ----------
+app.get("/api/cases", authRequired, async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const status = req.query.status ? Number(req.query.status) : null;
+  const translogicaRaw = req.query.translogica_transferred;
+  const translogicaFilter = translogicaRaw === "1" ? true : translogicaRaw === "0" ? false : null;
+  const search = (req.query.search || "").trim();
+
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const where = ["1=1"];
+  const params = [];
+  let idx = 1;
+  if (!isAllLocations) {
+    where.push(`c.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+
+  if (status) { where.push(`c.status=$${idx}`); params.push(status); idx++; }
+  if (translogicaFilter !== null) { where.push(`c.translogica_transferred=$${idx}`); params.push(translogicaFilter); idx++; }
+
+  if (search) {
+    const like = `%${search}%`;
+    const isNum = /^\d+$/.test(search);
+    if (isNum) {
+      where.push(`(
+        c.id=$${idx}
+        OR c.license_plate ILIKE $${idx + 1}
+        OR COALESCE(c.entrepreneur,'') ILIKE $${idx + 1}
+        OR COALESCE(c.note,'') ILIKE $${idx + 1}
+        OR EXISTS (SELECT 1 FROM departments d1 WHERE d1.id=c.department_id AND d1.name ILIKE $${idx + 1})
+        OR EXISTS (SELECT 1 FROM locations l1 WHERE l1.id=c.location_id AND l1.name ILIKE $${idx + 1})
+      )`);
+      params.push(Number(search));
+      params.push(like);
+      idx += 2;
+    } else {
+      where.push(`(
+        c.license_plate ILIKE $${idx}
+        OR COALESCE(c.entrepreneur,'') ILIKE $${idx}
+        OR COALESCE(c.note,'') ILIKE $${idx}
+        OR EXISTS (SELECT 1 FROM departments d1 WHERE d1.id=c.department_id AND d1.name ILIKE $${idx})
+        OR EXISTS (SELECT 1 FROM locations l1 WHERE l1.id=c.location_id AND l1.name ILIKE $${idx})
+      )`);
+      params.push(like);
+      idx += 1;
+    }
+  }
+
+  const rows = (await q(
+    `
+    SELECT
+      c.*,
+      COALESCE(d.name, '(gelöschte Abteilung)') AS department,
+      l.name AS location,
+      COALESCE(u.username, '(gelöscht)') AS created_by_name,
+      COALESCE(cu.username, '(gelöscht)') AS claimed_by_name,
+      COALESCE(su.username, '(gelöscht)') AS submitted_by_name,
+      COALESCE(au.username, '(gelöscht)') AS approved_by_name
+    FROM booking_cases c
+    LEFT JOIN departments d ON d.id=c.department_id
+    JOIN locations l ON l.id=c.location_id
+    LEFT JOIN users u ON u.id=c.created_by
+    LEFT JOIN users cu ON cu.id=c.claimed_by
+    LEFT JOIN users su ON su.id=c.submitted_by
+    LEFT JOIN users au ON au.id=c.approved_by
+    WHERE ${where.join(" AND ")}
+    ORDER BY c.id DESC
+    LIMIT 500
+    `,
+    params
+  )).rows;
+
+  res.json(rows);
+});
+
+app.get("/api/cases/:id", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const result = await q(
+    `
+    SELECT
+      c.*,
+      COALESCE(d.name, '(gelöschte Abteilung)') AS department,
+      l.name AS location,
+      COALESCE(u.username, '(gelöscht)') AS created_by_name,
+      COALESCE(cu.username, '(gelöscht)') AS claimed_by_name,
+      COALESCE(su.username, '(gelöscht)') AS submitted_by_name,
+      COALESCE(au.username, '(gelöscht)') AS approved_by_name
+    FROM booking_cases c
+    LEFT JOIN departments d ON d.id=c.department_id
+    JOIN locations l ON l.id=c.location_id
+    LEFT JOIN users u ON u.id=c.created_by
+    LEFT JOIN users cu ON cu.id=c.claimed_by
+    LEFT JOIN users su ON su.id=c.submitted_by
+    LEFT JOIN users au ON au.id=c.approved_by
+    WHERE c.id=$1
+    LIMIT 1
+    `,
+    [id]
+  );
+
+  if (result.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const row = result.rows[0];
+
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(row.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  res.json(row);
+});
+
+app.post("/api/cases", authRequired, async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.cases?.create) return res.status(403).json({ error: "Keine Berechtigung" });
+
+  const { location_id, department_id, license_plate, entrepreneur, note, qty_in, qty_out, employee_code, product_type } = req.body || {};
+  const locId = Number(location_id);
+  const depId = Number(department_id);
+
+  if (!locId || !depId) return res.status(400).json({ error: "location_id + department_id required" });
+
+  const plateCheck = normalizePlate(license_plate);
+  if (!plateCheck.ok) return res.status(400).json({ error: plateCheck.msg });
+
+  const inQty = Number(qty_in ?? 0);
+  const outQty = Number(qty_out ?? 0);
+  if (!Number.isInteger(inQty) || inQty < 0) return res.status(400).json({ error: "qty_in invalid" });
+  if (!Number.isInteger(outQty) || outQty < 0) return res.status(400).json({ error: "qty_out invalid" });
+  if (inQty === 0 && outQty === 0) return res.status(400).json({ error: "qty_in oder qty_out muss > 0 sein" });
+
+  const productTypeCheck = normalizeProductType(product_type);
+  if (!productTypeCheck.ok) return res.status(400).json({ error: productTypeCheck.msg });
+
+  const employeeCodeCheck = normalizeEmployeeCode(employee_code);
+  if (employeeCodeCheck && employeeCodeCheck.ok === false) {
+    return res.status(400).json({ error: employeeCodeCheck.msg });
+  }
+
+  if (req.user.role !== "admin" && req.user.location_id && locId !== Number(req.user.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const r = await q(
+    `
+    INSERT INTO booking_cases (location_id, department_id, created_by, status, license_plate, entrepreneur, note, qty_in, qty_out, employee_code, product_type)
+    VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING id
+    `,
+    [locId, depId, req.user.id, plateCheck.plate, safeTrim(entrepreneur), safeTrim(note), inQty, outQty, employeeCodeCheck?.code || null, productTypeCheck.productType]
+  );
+
+  if (safeTrim(entrepreneur)) {
+    await q(
+      `
+      INSERT INTO entrepreneur_history (location_id, department_id, created_by, entrepreneur, license_plate, qty_in, qty_out, product_type)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `,
+      [locId, depId, req.user.id, safeTrim(entrepreneur), plateCheck.plate, inQty, outQty, productTypeCheck.productType]
+    );
+  }
+
+  const caseId = Number(r.rows[0].id);
+  await logCaseHistory({
+    caseId,
+    locationId: locId,
+    departmentId: depId,
+    changedBy: req.user.id,
+    action: "create",
+    changes: [
+      { field: "status", from: null, to: 1 },
+      { field: "license_plate", from: null, to: plateCheck.plate || null },
+      { field: "entrepreneur", from: null, to: safeTrim(entrepreneur) },
+      { field: "note", from: null, to: safeTrim(note) },
+      { field: "qty_in", from: null, to: inQty },
+      { field: "qty_out", from: null, to: outQty },
+      { field: "product_type", from: null, to: productTypeCheck.productType },
+      { field: "employee_code", from: null, to: employeeCodeCheck?.code || null }
+    ]
+  });
+
+  io.to(`loc:${locId}`).emit("casesUpdated", { location_id: locId });
+  void createLocationStatus1Notifications({
+    id: caseId,
+    location_id: locId,
+    created_by: req.user.id
+  });
+  res.json({ id: caseId });
+});
+
+app.post("/api/internal-transfers", authRequired, async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.cases?.internal_transfer) return res.status(403).json({ error: "Keine Berechtigung" });
+
+  const fromLocationIdRaw = req.body?.from_location_id;
+  const fromLocationId = fromLocationIdRaw !== null && fromLocationIdRaw !== undefined && String(fromLocationIdRaw) !== ""
+    ? Number(fromLocationIdRaw)
+    : null;
+  const toLocationId = Number(req.body?.to_location_id || 0);
+  const qty = Number(req.body?.qty || 0);
+  const note = safeTrim(req.body?.note);
+
+  if (!toLocationId) return res.status(400).json({ error: "to_location_id required" });
+  if (!Number.isInteger(qty) || qty <= 0) return res.status(400).json({ error: "qty invalid" });
+  if (!note) return res.status(400).json({ error: "Notiz ist Pflicht" });
+  if (fromLocationId && fromLocationId === toLocationId) return res.status(400).json({ error: "from_location_id und to_location_id dürfen nicht identisch sein" });
+
+  const productTypeCheck = normalizeProductType(req.body?.product_type || "euro");
+  if (!productTypeCheck.ok) return res.status(400).json({ error: productTypeCheck.msg });
+
+  const userLocationLock = (req.user.role !== "admin" && req.user.location_id) ? Number(req.user.location_id) : null;
+  if (userLocationLock) {
+    if (toLocationId !== userLocationLock) return res.status(403).json({ error: "Forbidden" });
+    if (fromLocationId && fromLocationId !== userLocationLock) return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const groupId = crypto.randomUUID();
+  let line = 1;
+
+  if (fromLocationId) {
+    await q(
+      `
+      INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
+      VALUES ($1,NULL,$2,'OUT',$3,$4,NULL,NULL,NULL,$5,$6,$7)
+      `,
+      [fromLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType]
+    );
+    line += 1;
+  }
+
+  await q(
+    `
+    INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
+    VALUES ($1,NULL,$2,'IN',$3,$4,NULL,NULL,NULL,$5,$6,$7)
+    `,
+    [toLocationId, req.user.id, qty, note, groupId, line, productTypeCheck.productType]
+  );
+
+  if (fromLocationId) {
+    io.to(`loc:${fromLocationId}`).emit("stockUpdated", { from_location_id: fromLocationId, to_location_id: toLocationId });
+    io.to(`loc:${fromLocationId}`).emit("bookingsUpdated", { location_id: fromLocationId });
+  }
+  io.to(`loc:${toLocationId}`).emit("stockUpdated", { from_location_id: fromLocationId, to_location_id: toLocationId });
+  io.to(`loc:${toLocationId}`).emit("bookingsUpdated", { location_id: toLocationId });
+
+  res.json({ ok: true, mode: fromLocationId ? "transfer" : "in_only" });
+});
+
+app.put("/api/cases/:id", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1`, [id]);
+  if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const c = existing.rows[0];
+
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(c.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const perms = await getMyPermissions(req.user);
+  const { action, department_id, license_plate, entrepreneur, note, qty_in, qty_out, non_exchangeable_qty, employee_code, product_type, translogica_transferred } = req.body || {};
+
+  const inQty = qty_in !== undefined ? Number(qty_in) : null;
+  const outQty = qty_out !== undefined ? Number(qty_out) : null;
+  const nonExchangeableQty = non_exchangeable_qty !== undefined ? Number(non_exchangeable_qty) : null;
+
+  if (action === "edit") {
+    if (!perms?.cases?.edit) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (![1, 2].includes(Number(c.status))) return res.status(400).json({ error: "Nur in Status 1/2 editierbar" });
+
+    let plate = null;
+    if (license_plate !== undefined) {
+      const check = normalizePlate(license_plate);
+      if (!check.ok) return res.status(400).json({ error: check.msg });
+      plate = check.plate;
+    }
+
+    if (inQty !== null && (!Number.isInteger(inQty) || inQty < 0)) return res.status(400).json({ error: "qty_in invalid" });
+    if (outQty !== null && (!Number.isInteger(outQty) || outQty < 0)) return res.status(400).json({ error: "qty_out invalid" });
+    if (nonExchangeableQty !== null && (!Number.isInteger(nonExchangeableQty) || nonExchangeableQty < 0)) {
+      return res.status(400).json({ error: "non_exchangeable_qty invalid" });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "department_id")) {
+      const depId = Number(department_id || 0);
+      if (!depId) return res.status(400).json({ error: "department_id invalid" });
+    }
+
+    const nextInQty = inQty !== null ? inQty : Number(c.qty_in || 0);
+    const nextOutQty = outQty !== null ? outQty : Number(c.qty_out || 0);
+    const positiveSoll = Math.max(nextInQty - nextOutQty, 0);
+
+    if (Number(c.status) !== 2 && nonExchangeableQty !== null) {
+      return res.status(400).json({ error: "non_exchangeable_qty nur in Status 2 editierbar" });
+    }
+    if (Number(c.status) === 2 && nonExchangeableQty !== null && nonExchangeableQty > positiveSoll) {
+      return res.status(400).json({ error: "non_exchangeable_qty darf positives Soll nicht übersteigen" });
+    }
+
+    const productTypeCheck = product_type !== undefined ? normalizeProductType(product_type) : null;
+    if (productTypeCheck && !productTypeCheck.ok) return res.status(400).json({ error: productTypeCheck.msg });
+
+    let employeeCode = undefined;
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "employee_code")) {
+      if (Number(c.status) !== 2) {
+        return res.status(400).json({ error: "employee_code nur in Status 2 editierbar" });
+      }
+      const employeeCodeCheck = normalizeEmployeeCode(employee_code);
+      if (employeeCodeCheck && !employeeCodeCheck.ok) return res.status(400).json({ error: employeeCodeCheck.msg });
+      employeeCode = employeeCodeCheck?.code || null;
+      if (perms?.cases?.require_employee_code && !employeeCode) {
+        return res.status(400).json({ error: "Lagermitarbeiter (2-stellig) ist bei Status 2 Pflicht" });
+      }
+    }
+
+    const hasDepartmentId = Object.prototype.hasOwnProperty.call(req.body || {}, "department_id");
+    const hasLicensePlate = Object.prototype.hasOwnProperty.call(req.body || {}, "license_plate");
+    const hasEntrepreneur = Object.prototype.hasOwnProperty.call(req.body || {}, "entrepreneur");
+    const hasNote = Object.prototype.hasOwnProperty.call(req.body || {}, "note");
+    const hasQtyIn = Object.prototype.hasOwnProperty.call(req.body || {}, "qty_in");
+    const hasQtyOut = Object.prototype.hasOwnProperty.call(req.body || {}, "qty_out");
+    const hasProductType = Object.prototype.hasOwnProperty.call(req.body || {}, "product_type");
+
+    await q(
+      `
+      UPDATE booking_cases
+      SET department_id = CASE WHEN $1::boolean THEN $2 ELSE department_id END,
+          license_plate = CASE WHEN $3::boolean THEN $4 ELSE license_plate END,
+          entrepreneur = CASE WHEN $5::boolean THEN $6 ELSE entrepreneur END,
+          note = CASE WHEN $7::boolean THEN $8 ELSE note END,
+          qty_in = CASE WHEN $9::boolean THEN $10 ELSE qty_in END,
+          qty_out = CASE WHEN $11::boolean THEN $12 ELSE qty_out END,
+          product_type = CASE WHEN $13::boolean THEN $14 ELSE product_type END,
+          non_exchangeable_qty = CASE WHEN status = 2 THEN COALESCE($15, non_exchangeable_qty) ELSE non_exchangeable_qty END,
+          employee_code = CASE
+            WHEN status = 2 AND $16::boolean THEN $17
+            ELSE employee_code
+          END,
+          updated_at = now()
+      WHERE id=$18
+      `,
+      [
+        hasDepartmentId,
+        department_id ? Number(department_id) : null,
+        hasLicensePlate,
+        plate,
+        hasEntrepreneur,
+        safeTrim(entrepreneur),
+        hasNote,
+        safeTrim(note),
+        hasQtyIn,
+        inQty,
+        hasQtyOut,
+        outQty,
+        hasProductType,
+        productTypeCheck?.productType || null,
+        nonExchangeableQty,
+        employeeCode !== undefined,
+        employeeCode ?? null,
+        id
+      ]
+    );
+
+    const editChanges = [];
+    if (department_id !== undefined && Number(department_id) !== Number(c.department_id)) editChanges.push({ field: "department_id", from: Number(c.department_id), to: Number(department_id) });
+    if (license_plate !== undefined && plate !== c.license_plate) editChanges.push({ field: "license_plate", from: c.license_plate || null, to: plate || null });
+    if (entrepreneur !== undefined && safeTrim(entrepreneur) !== (c.entrepreneur || null)) editChanges.push({ field: "entrepreneur", from: c.entrepreneur || null, to: safeTrim(entrepreneur) });
+    if (note !== undefined && safeTrim(note) !== (c.note || null)) editChanges.push({ field: "note", from: c.note || null, to: safeTrim(note) });
+    if (inQty !== null && Number(inQty) !== Number(c.qty_in)) editChanges.push({ field: "qty_in", from: Number(c.qty_in), to: Number(inQty) });
+    if (outQty !== null && Number(outQty) !== Number(c.qty_out)) editChanges.push({ field: "qty_out", from: Number(c.qty_out), to: Number(outQty) });
+    if (productTypeCheck?.productType && productTypeCheck.productType !== (c.product_type || "euro")) editChanges.push({ field: "product_type", from: c.product_type || "euro", to: productTypeCheck.productType });
+    if (nonExchangeableQty !== null && Number(nonExchangeableQty) !== Number(c.non_exchangeable_qty)) editChanges.push({ field: "non_exchangeable_qty", from: Number(c.non_exchangeable_qty || 0), to: Number(nonExchangeableQty) });
+    if (employeeCode !== undefined && (employeeCode || null) !== (c.employee_code || null)) editChanges.push({ field: "employee_code", from: c.employee_code || null, to: employeeCode || null });
+
+    if (editChanges.length > 0) {
+      await logCaseHistory({
+        caseId: id,
+        locationId: c.location_id,
+        departmentId: Number(department_id) || Number(c.department_id),
+        receiptNo: c.receipt_no || null,
+        changedBy: req.user.id,
+        action: "edit",
+        changes: editChanges
+      });
+    }
+
+    io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+    return res.json({ ok: true });
+  }
+
+  if (action === "claim") {
+    if (!perms?.cases?.claim) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (Number(c.status) !== 1) return res.status(400).json({ error: "Nur aus Status 1 möglich" });
+
+    await q(
+      `UPDATE booking_cases SET status=2, claimed_by=$1, claimed_at=now(), updated_at=now() WHERE id=$2`,
+      [req.user.id, id]
+    );
+
+    await logCaseHistory({
+      caseId: id,
+      locationId: c.location_id,
+      departmentId: c.department_id,
+      receiptNo: c.receipt_no || null,
+      changedBy: req.user.id,
+      action: "claim",
+      changes: [{ field: "status", from: Number(c.status), to: 2 }]
+    });
+
+    io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+    return res.json({ ok: true });
+  }
+
+  if (action === "submit") {
+    if (!perms?.cases?.submit) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (Number(c.status) !== 2) return res.status(400).json({ error: "Nur aus Status 2 möglich" });
+
+    if (nonExchangeableQty !== null) {
+      if (!Number.isInteger(nonExchangeableQty) || nonExchangeableQty < 0) {
+        return res.status(400).json({ error: "non_exchangeable_qty invalid" });
+      }
+      const positiveSoll = Math.max(Number(c.qty_in || 0) - Number(c.qty_out || 0), 0);
+      if (nonExchangeableQty > positiveSoll) {
+        return res.status(400).json({ error: "non_exchangeable_qty darf positives Soll nicht übersteigen" });
+      }
+    }
+
+    let employeeCode = c.employee_code || null;
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "employee_code")) {
+      const employeeCodeCheck = normalizeEmployeeCode(employee_code);
+      if (employeeCodeCheck && !employeeCodeCheck.ok) return res.status(400).json({ error: employeeCodeCheck.msg });
+      employeeCode = employeeCodeCheck?.code || null;
+    }
+
+    if (perms?.cases?.require_employee_code && !employeeCode) {
+      return res.status(400).json({ error: "Lagermitarbeiter (2-stellig) ist bei Status 2 Pflicht" });
+    }
+
+    await q(
+      `UPDATE booking_cases
+       SET status=3,
+           submitted_by=$1,
+           submitted_at=now(),
+           non_exchangeable_qty=COALESCE($2, non_exchangeable_qty),
+           employee_code=$3,
+           updated_at=now()
+       WHERE id=$4`,
+      [req.user.id, nonExchangeableQty, employeeCode, id]
+    );
+
+    const submitChanges = [{ field: "status", from: Number(c.status), to: 3 }];
+    if (nonExchangeableQty !== null && Number(nonExchangeableQty) !== Number(c.non_exchangeable_qty || 0)) {
+      submitChanges.push({ field: "non_exchangeable_qty", from: Number(c.non_exchangeable_qty || 0), to: Number(nonExchangeableQty) });
+    }
+    if ((employeeCode || null) !== (c.employee_code || null)) {
+      submitChanges.push({ field: "employee_code", from: c.employee_code || null, to: employeeCode || null });
+    }
+    await logCaseHistory({
+      caseId: id,
+      locationId: c.location_id,
+      departmentId: c.department_id,
+      receiptNo: c.receipt_no || null,
+      changedBy: req.user.id,
+      action: "submit",
+      changes: submitChanges
+    });
+
+    await deleteNotificationsForCaseByTitle(id, "Aviso Standort (Status 1)");
+    void createDepartmentStatus3Notifications({
+      id,
+      department_id: c.department_id,
+      submitted_by: req.user.id
+    });
+    io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+    return res.json({ ok: true });
+  }
+
+  if (action === "approve") {
+    if (!perms?.cases?.approve) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (Number(c.status) !== 3) return res.status(400).json({ error: "Nur aus Status 3 möglich" });
+
+    const receipt_no = await nextReceiptNo(c.location_id);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `UPDATE booking_cases
+         SET status=4, approved_by=$1, approved_at=now(), receipt_no=$2, updated_at=now()
+         WHERE id=$3`,
+        [req.user.id, receipt_no, id]
+      );
+
+      await client.query(
+        `
+        INSERT INTO booking_case_history (case_id, location_id, department_id, receipt_no, changed_by, action, changes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
+        `,
+        [id, c.location_id, c.department_id, receipt_no, req.user.id, "approve", JSON.stringify([
+          { field: "status", from: Number(c.status), to: 4 },
+          { field: "receipt_no", from: c.receipt_no || null, to: receipt_no }
+        ])]
+      );
+
+      const groupId = crypto.randomUUID();
+      let line = 1;
+
+      const nonExchangeableQty = Number(c.non_exchangeable_qty || 0);
+      const bookedInQty = Math.max(Number(c.qty_in || 0) - nonExchangeableQty, 0);
+
+      if (bookedInQty > 0) {
+        await client.query(
+          `
+          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
+          VALUES ($1,$2,$3,'IN',$4,$5,$6,$7,$8,$9,$10,$11)
+          `,
+          [c.location_id, c.department_id, req.user.id, bookedInQty, c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro"]
+        );
+        line++;
+      }
+
+      if (Number(c.qty_out) > 0) {
+        await client.query(
+          `
+          INSERT INTO bookings (location_id, department_id, user_id, type, quantity, note, receipt_no, license_plate, entrepreneur, booking_group_id, line_no, product_type)
+          VALUES ($1,$2,$3,'OUT',$4,$5,$6,$7,$8,$9,$10,$11)
+          `,
+          [c.location_id, c.department_id, req.user.id, Number(c.qty_out), c.note, receipt_no, c.license_plate, c.entrepreneur, groupId, line, c.product_type || "euro"]
+        );
+      }
+
+      await client.query("COMMIT");
+
+      io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+      io.to(`loc:${c.location_id}`).emit("stockUpdated", { location_id: c.location_id });
+
+      // ✅ NEU: Historie/Bookings live aktualisieren
+      io.to(`loc:${c.location_id}`).emit("bookingsUpdated", {
+        location_id: c.location_id,
+        department_id: c.department_id,
+        receipt_no
+      });
+
+      await deleteNotificationsForCaseByTitle(id, "Aviso Abteilung (Status 3)");
+
+      return res.json({ ok: true, receipt_no });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  if (action === "set_translogica") {
+    if (!perms?.bookings?.translogica) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (Number(c.status) !== 4) return res.status(400).json({ error: "Nur für gebuchte Vorgänge möglich" });
+    if (typeof translogica_transferred !== "boolean") {
+      return res.status(400).json({ error: "translogica_transferred must be boolean" });
+    }
+
+    await q(
+      `UPDATE booking_cases SET translogica_transferred=$1, updated_at=now() WHERE id=$2`,
+      [translogica_transferred, id]
+    );
+
+    await logCaseHistory({
+      caseId: id,
+      locationId: c.location_id,
+      departmentId: c.department_id,
+      receiptNo: c.receipt_no || null,
+      changedBy: req.user.id,
+      action: "set_translogica",
+      changes: [{ field: "translogica_transferred", from: !!c.translogica_transferred, to: !!translogica_transferred }]
+    });
+
+    io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+    return res.json({ ok: true });
+  }
+
+  if (action === "cancel") {
+    if (!perms?.cases?.cancel) return res.status(403).json({ error: "Keine Berechtigung" });
+    if (Number(c.status) === 4) return res.status(400).json({ error: "Gebuchte Vorgänge können nicht storniert werden" });
+    if (Number(c.status) === 0) return res.status(400).json({ error: "Vorgang ist bereits storniert" });
+
+    await q(
+      `UPDATE booking_cases SET status=0, updated_at=now() WHERE id=$1`,
+      [id]
+    );
+
+    await logCaseHistory({
+      caseId: id,
+      locationId: c.location_id,
+      departmentId: c.department_id,
+      receiptNo: c.receipt_no || null,
+      changedBy: req.user.id,
+      action: "cancel",
+      changes: [{ field: "status", from: Number(c.status), to: 0 }]
+    });
+
+    await deleteNotificationsForCase(id);
+
+    io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+    return res.json({ ok: true });
+  }
+
+  return res.status(400).json({ error: "unknown action" });
+});
+
+app.delete("/api/cases/:id", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const existing = await q(`SELECT * FROM booking_cases WHERE id=$1`, [id]);
+  if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const c = existing.rows[0];
+
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(c.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.cases?.delete) return res.status(403).json({ error: "Keine Berechtigung" });
+  await q(`DELETE FROM booking_cases WHERE id=$1`, [id]);
+  await deleteNotificationsForCase(id);
+
+  io.to(`loc:${c.location_id}`).emit("casesUpdated", { location_id: c.location_id });
+  res.json({ ok: true });
+});
+
+app.get("/api/cases/:id/receipt", authRequired, requirePermission("bookings.receipt"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const r = await q(
+    `
+    SELECT
+      c.id, c.created_at, c.license_plate, c.entrepreneur, c.note,
+      c.qty_in, c.qty_out, c.non_exchangeable_qty, c.employee_code, c.product_type, c.status, c.receipt_no,
+      l.id AS location_id, l.name AS location,
+      d.id AS department_id, COALESCE(d.name, '(gelöschte Abteilung)') AS department,
+      COALESCE(u.username, '(gelöscht)') AS aviso_created_by,
+      e.street AS entrepreneur_street,
+      e.postal_code AS entrepreneur_postal_code,
+      e.city AS entrepreneur_city
+    FROM booking_cases c
+    JOIN locations l ON l.id=c.location_id
+    LEFT JOIN departments d ON d.id=c.department_id
+    LEFT JOIN users u ON u.id=c.created_by
+    LEFT JOIN entrepreneurs e ON e.name=c.entrepreneur
+    WHERE c.id=$1
+    LIMIT 1
+    `,
+    [id]
+  );
+
+  if (r.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const row = r.rows[0];
+
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(row.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const qty_in = Number(row.qty_in ?? 0);
+  const qty_out = Number(row.qty_out ?? 0);
+  const nonExchangeableQty = Number(row.non_exchangeable_qty ?? 0);
+  const displayQtyIn = Math.max(qty_in - nonExchangeableQty, 0);
+  const isBooked = Number(row.status) === 4 && !!row.receipt_no;
+  const displayReceiptNo = isBooked ? row.receipt_no : await previewReceiptNo(row.location_id);
+  const lines = [];
+  if (displayQtyIn > 0) lines.push({ type: "IN", quantity: displayQtyIn });
+  if (qty_out > 0) lines.push({ type: "OUT", quantity: qty_out });
+
+  res.json({
+    receipt_no: displayReceiptNo,
+    provisional: !isBooked,
+    created_at: row.created_at,
+    location: row.location,
+    department: row.department,
+    username: row.aviso_created_by,
+    aviso_created_by: row.aviso_created_by,
+    employee_code: row.employee_code,
+    license_plate: row.license_plate,
+    entrepreneur: row.entrepreneur,
+    entrepreneur_street: row.entrepreneur_street,
+    entrepreneur_postal_code: row.entrepreneur_postal_code,
+    entrepreneur_city: row.entrepreneur_city,
+    note: row.note,
+    qty_in: displayQtyIn,
+    qty_out,
+    non_exchangeable_qty: nonExchangeableQty,
+    product_type: row.product_type || "euro",
+    lines
+  });
+});
+
+// ---------- STOCK ----------
+app.get("/api/stock", authRequired, requirePermission("stock.view"), async (req, res) => {
+  const mode = (req.query.mode || "location").toLowerCase();
+  const productTypeCheck = normalizeProductType(req.query.product_type || "euro");
+  if (!productTypeCheck.ok) return res.status(400).json({ error: productTypeCheck.msg });
+  const productType = productTypeCheck.productType;
+  const userLocationLock =
+    (req.user.role !== "admin" && req.user.location_id) ? Number(req.user.location_id) : null;
+
+  if (mode === "entrepreneur") {
+    const rows = (await q(
+      `
+      SELECT
+        COALESCE(b.entrepreneur, '') AS entrepreneur,
+        COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+        COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+        COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+        COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+      FROM bookings b
+      JOIN entrepreneurs e ON e.name=b.entrepreneur
+      WHERE b.entrepreneur IS NOT NULL AND b.entrepreneur <> '' AND COALESCE(b.product_type, 'euro')=$1
+      GROUP BY COALESCE(b.entrepreneur, '')
+      ORDER BY COALESCE(b.entrepreneur, '')
+      `,
+      [productType]
+    )).rows;
+
+    return res.json(rows);
+  }
+
+  if (mode === "overall") {
+    // Extra-Schalter: Komplett Bestand nur wenn erlaubt
+    const perms = await getMyPermissions(req.user);
+    if (!perms?.stock?.overall) return res.status(403).json({ error: "Keine Berechtigung" });
+    const sql = userLocationLock
+      ? `
+        SELECT d.id AS department_id, d.name AS department,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+        FROM departments d
+        LEFT JOIN bookings b ON b.department_id=d.id AND b.location_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+        GROUP BY d.id
+        ORDER BY d.name
+      `
+      : `
+        SELECT d.id AS department_id, d.name AS department,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+        FROM departments d
+        LEFT JOIN bookings b ON b.department_id=d.id AND COALESCE(b.product_type, 'euro')=$1
+        GROUP BY d.id
+        ORDER BY d.name
+      `;
+
+    return res.json((await q(sql, userLocationLock ? [userLocationLock, productType] : [productType])).rows);
+  }
+
+  if (mode === "location_total") {
+    const sql = userLocationLock
+      ? `
+        SELECT l.id AS location_id, l.name AS location,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+        FROM locations l
+        LEFT JOIN bookings b ON b.location_id=l.id AND COALESCE(b.product_type, 'euro')=$2
+        WHERE l.id=$1
+        GROUP BY l.id
+        ORDER BY l.name
+      `
+      : `
+        SELECT l.id AS location_id, l.name AS location,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+               COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+               COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+        FROM locations l
+        LEFT JOIN bookings b ON b.location_id=l.id AND COALESCE(b.product_type, 'euro')=$1
+        GROUP BY l.id
+        ORDER BY l.name
+      `;
+
+    return res.json((await q(sql, userLocationLock ? [userLocationLock, productType] : [productType])).rows);
+  }
+
+  const location_id = Number(req.query.location_id || 0);
+  if (!location_id) return res.status(400).json({ error: "location_id required for mode=location" });
+  if (userLocationLock && location_id !== userLocationLock) return res.status(403).json({ error: "Forbidden" });
+
+  const rows = (await q(
+    `
+    SELECT d.id AS department_id, d.name AS department,
+           COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS ins,
+           COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS outs,
+           COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0) -
+           COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS saldo
+    FROM departments d
+    LEFT JOIN bookings b ON b.department_id=d.id AND b.location_id=$1 AND COALESCE(b.product_type, 'euro')=$2
+    GROUP BY d.id
+    ORDER BY d.name
+    `,
+    [location_id, productType]
+  )).rows;
+
+  res.json(rows);
+});
+
+// ---------- BOOKINGS LIST (Historie aggregiert pro Beleg) ----------
+app.get("/api/bookings", authRequired, requirePermission("bookings.view"), async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const department_id = Number(req.query.department_id || 0);
+  const date_from = (req.query.date_from || "").trim();
+  const date_to = (req.query.date_to || "").trim();
+  const entrepreneur = (req.query.entrepreneur || "").trim();
+  const license_plate = (req.query.license_plate || "").trim();
+  const receipt_no = (req.query.receipt_no || "").trim();
+  const limitRaw = Number(req.query.limit || 20);
+  const offsetRaw = Number(req.query.offset || 0);
+  const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20;
+  const offset = Number.isInteger(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const where = ["1=1"];
+  const params = [];
+  let idx = 1;
+
+  if (department_id > 0) {
+    where.push(`b.department_id=$${idx}`);
+    params.push(department_id);
+    idx += 1;
+  }
+
+  if (!isAllLocations) {
+    where.push(`b.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+
+  if (date_from) { where.push(`b.created_at >= $${idx}::date`); params.push(date_from); idx++; }
+  if (date_to) { where.push(`b.created_at < ($${idx}::date + interval '1 day')`); params.push(date_to); idx++; }
+  if (entrepreneur) { where.push(`COALESCE(b.entrepreneur,'') ILIKE $${idx}`); params.push(`%${entrepreneur}%`); idx++; }
+  if (license_plate) { where.push(`COALESCE(b.license_plate,'') ILIKE $${idx}`); params.push(`%${license_plate}%`); idx++; }
+  if (receipt_no) { where.push(`b.receipt_no ILIKE $${idx}`); params.push(`%${receipt_no}%`); idx++; }
+
+  params.push(limit + 1, offset);
+
+  const rows = (await q(
+    `
+    SELECT
+      MIN(b.id) AS id,
+      MAX(bc.id) AS case_id,
+      MIN(b.created_at) AS created_at,
+      b.receipt_no,
+      MAX(b.license_plate) AS license_plate,
+      MAX(b.entrepreneur) AS entrepreneur,
+      MAX(b.note) AS note,
+      MAX(COALESCE(u.username, '(gelöscht)')) AS "user",
+      MAX(COALESCE(uc.username, '(gelöscht)')) AS aviso_created_by,
+      MAX(COALESCE(ua.username, '(gelöscht)')) AS aviso_approved_by,
+      MAX(bc.employee_code) AS employee_code,
+      MAX(COALESCE(b.product_type, 'euro')) AS product_type,
+      COALESCE(SUM(CASE WHEN b.type='IN'  THEN b.quantity END),0)  AS qty_in,
+      COALESCE(SUM(CASE WHEN b.type='OUT' THEN b.quantity END),0) AS qty_out
+    FROM bookings b
+    LEFT JOIN users u ON u.id=b.user_id
+    LEFT JOIN booking_cases bc ON bc.receipt_no=b.receipt_no
+    LEFT JOIN users uc ON uc.id=bc.created_by
+    LEFT JOIN users ua ON ua.id=bc.approved_by
+    WHERE ${where.join(" AND ")}
+    GROUP BY b.receipt_no
+    ORDER BY MIN(b.id) DESC
+    LIMIT $${idx}
+    OFFSET $${idx + 1}
+    `,
+    params
+  )).rows;
+
+  const has_more = rows.length > limit;
+  res.json({
+    items: has_more ? rows.slice(0, limit) : rows,
+    has_more,
+    limit,
+    offset
+  });
+});
+
+// ---------- ENTREPRENEUR HISTORY ----------
+app.get("/api/entrepreneur-history", authRequired, requirePermission("bookings.view"), async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const department_id = Number(req.query.department_id || 0);
+  const entrepreneur = (req.query.entrepreneur || "").trim();
+  const license_plate = (req.query.license_plate || "").trim();
+
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const where = [`c.status <> 0`];
+  const params = [];
+  let idx = 1;
+  if (!isAllLocations) {
+    where.push(`c.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+
+  if (department_id) { where.push(`c.department_id=$${idx}`); params.push(department_id); idx++; }
+  if (entrepreneur) { where.push(`c.entrepreneur ILIKE $${idx}`); params.push(`%${entrepreneur}%`); idx++; }
+  if (license_plate) { where.push(`c.license_plate ILIKE $${idx}`); params.push(`%${license_plate}%`); idx++; }
+
+  const rows = (await q(
+    `
+    SELECT
+      MAX(c.created_at) AS last_seen,
+      c.entrepreneur,
+      c.license_plate,
+      COALESCE(c.product_type, 'euro') AS product_type,
+      COALESCE(d.name, '(gelöschte Abteilung)') AS department,
+      COALESCE(SUM(c.qty_in), 0) AS qty_in,
+      COALESCE(SUM(c.qty_out), 0) AS qty_out,
+      COALESCE(SUM(c.qty_in), 0) - COALESCE(SUM(c.qty_out), 0)
+        - COALESCE(SUM(CASE WHEN (c.qty_in - c.qty_out) > 0 THEN c.non_exchangeable_qty ELSE 0 END), 0) AS soll
+    FROM booking_cases c
+    LEFT JOIN departments d ON d.id=c.department_id
+    WHERE ${where.join(" AND ")}
+      AND COALESCE(c.entrepreneur, '') <> ''
+    GROUP BY c.entrepreneur, c.license_plate, COALESCE(c.product_type, 'euro'), COALESCE(d.name, '(gelöschte Abteilung)')
+    ORDER BY MAX(c.created_at) DESC
+    LIMIT 500
+    `,
+    params
+  )).rows;
+
+  res.json(rows);
+});
+
+app.get("/api/entrepreneur-history/plates", authRequired, requirePermission("bookings.view"), async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const department_id = Number(req.query.department_id || 0);
+
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const where = ["1=1"];
+  const params = [];
+  let idx = 1;
+  if (!isAllLocations) {
+    where.push(`eh.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+  if (department_id) { where.push(`eh.department_id=$${idx}`); params.push(department_id); idx++; }
+
+  const rows = (await q(
+    `
+    SELECT DISTINCT eh.license_plate
+    FROM entrepreneur_history eh
+    WHERE ${where.join(" AND ")} AND eh.license_plate IS NOT NULL AND eh.license_plate <> ''
+    ORDER BY eh.license_plate
+    `,
+    params
+  )).rows;
+
+  res.json(rows);
+});
+
+app.get("/api/cases/:id/history", authRequired, requirePermission("bookings.view"), async (req, res) => {
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const base = await q(`SELECT id, location_id FROM booking_cases WHERE id=$1`, [id]);
+  if (base.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const caseRow = base.rows[0];
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(caseRow.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const rows = (await q(
+    `
+    SELECT
+      h.id,
+      h.case_id,
+      h.receipt_no,
+      h.action,
+      h.changes,
+      h.created_at,
+      COALESCE(u.username, '(gelöscht)') AS changed_by
+    FROM booking_case_history h
+    LEFT JOIN users u ON u.id=h.changed_by
+    WHERE h.case_id=$1
+    ORDER BY h.created_at DESC, h.id DESC
+    `,
+    [id]
+  )).rows;
+
+  res.json(rows);
+});
+
+// ---------- BOOKINGS EDIT (Ledger) ----------
+app.put("/api/bookings/:id", authRequired, requirePermission("bookings.edit"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const { quantity, note, entrepreneur, license_plate } = req.body || {};
+
+  let qty = null;
+  if (quantity !== undefined && quantity !== null && quantity !== "") {
+    qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty <= 0) return res.status(400).json({ error: "quantity must be positive integer" });
+  }
+
+  let plate = null;
+  if (license_plate !== undefined && license_plate !== null && String(license_plate).trim() !== "") {
+    const check = normalizePlate(license_plate);
+    if (!check.ok) return res.status(400).json({ error: check.msg });
+    plate = check.plate;
+  }
+
+  const existing = await q(`SELECT id, location_id, department_id, receipt_no FROM bookings WHERE id=$1`, [id]);
+  if (existing.rowCount === 0) return res.status(404).json({ error: "Not found" });
+
+  const row = existing.rows[0];
+  if (req.user.role !== "admin" && req.user.location_id && Number(req.user.location_id) !== Number(row.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await q(
+    `
+    UPDATE bookings
+    SET quantity = COALESCE($1, quantity),
+        note = COALESCE($2, note),
+        entrepreneur = COALESCE($3, entrepreneur),
+        license_plate = COALESCE($4, license_plate)
+    WHERE id=$5
+    `,
+    [
+      qty,
+      (note !== undefined ? safeTrim(note) : null),
+      (entrepreneur !== undefined ? safeTrim(entrepreneur) : null),
+      plate,
+      id
+    ]
+  );
+
+  io.to(`loc:${row.location_id}`).emit("stockUpdated", { location_id: row.location_id });
+
+  // ✅ NEU: Historie/Bookings live aktualisieren
+  io.to(`loc:${row.location_id}`).emit("bookingsUpdated", {
+    location_id: row.location_id,
+    department_id: row.department_id,
+    receipt_no: row.receipt_no
+  });
+
+  res.json({ ok: true });
+});
+
+// ---------- RECEIPT ----------
+app.get("/api/receipt/:bookingId", authRequired, requirePermission("bookings.receipt"), async (req, res) => {
+  const id = Number(req.params.bookingId);
+
+  const base = await q(`SELECT receipt_no FROM bookings WHERE id=$1`, [id]);
+  if (base.rowCount === 0) return res.status(404).json({ error: "Not found" });
+  const receiptNo = base.rows[0].receipt_no;
+
+  const r = await q(
+    `
+    SELECT
+      b.id, b.receipt_no, b.license_plate, b.entrepreneur, b.type, b.quantity, b.note, b.created_at,
+      COALESCE(b.product_type, 'euro') AS product_type,
+      b.booking_group_id, b.line_no,
+      COALESCE(u.username, '(gelöscht)') AS username,
+      l.id AS location_id, l.name AS location,
+      d.id AS department_id, COALESCE(d.name, '(gelöschte Abteilung)') AS department,
+      e.street AS entrepreneur_street,
+      e.postal_code AS entrepreneur_postal_code,
+      e.city AS entrepreneur_city,
+      COALESCE(uc.username, '(gelöscht)') AS aviso_created_by,
+      bc.employee_code,
+      bc.non_exchangeable_qty
+    FROM bookings b
+    LEFT JOIN users u ON u.id=b.user_id
+    JOIN locations l ON l.id=b.location_id
+    LEFT JOIN departments d ON d.id=b.department_id
+    LEFT JOIN entrepreneurs e ON e.name=b.entrepreneur
+    LEFT JOIN booking_cases bc ON bc.receipt_no=b.receipt_no
+    LEFT JOIN users uc ON uc.id=bc.created_by
+    WHERE b.receipt_no = $1
+    ORDER BY COALESCE(b.line_no, 999999) ASC, b.id ASC
+    `,
+    [receiptNo]
+  );
+
+  const rows = r.rows;
+  if (rows.length === 0) return res.status(404).json({ error: "Not found" });
+
+  const locationId = Number(rows[0].location_id);
+  if (req.user.role !== "admin" && req.user.location_id && locationId !== Number(req.user.location_id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const first = rows[0];
+  const lines = rows.map(x => ({ type: x.type, quantity: Number(x.quantity) }));
+
+  const qty_in = lines.reduce((s, x) => s + (x.type === "IN" ? x.quantity : 0), 0);
+  const qty_out = lines.reduce((s, x) => s + (x.type === "OUT" ? x.quantity : 0), 0);
+
+  res.json({
+    receipt_no: first.receipt_no,
+    created_at: first.created_at,
+    location: first.location,
+    department: first.department,
+    username: first.username,
+    license_plate: first.license_plate,
+    entrepreneur: first.entrepreneur,
+    entrepreneur_street: first.entrepreneur_street,
+    entrepreneur_postal_code: first.entrepreneur_postal_code,
+    entrepreneur_city: first.entrepreneur_city,
+    aviso_created_by: first.aviso_created_by,
+    employee_code: first.employee_code,
+    note: first.note,
+    qty_in,
+    qty_out,
+    non_exchangeable_qty: Number(first.non_exchangeable_qty || 0),
+    product_type: first.product_type || "euro",
+    lines
+  });
+});
+
+// ---------- EXPORTS ----------
+app.get("/api/export/csv", authRequired, requirePermission("bookings.export"), async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const department_id = Number(req.query.department_id || 0);
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  let locLabel = "Alle Standorte";
+  if (!isAllLocations) {
+    const loc = await q(`SELECT name FROM locations WHERE id=$1`, [location_id]);
+    if (loc.rowCount === 0) return res.status(404).json({ error: "location not found" });
+    locLabel = loc.rows[0].name;
+  }
+
+  let depLabel = "Alle Abteilungen";
+  if (department_id > 0) {
+    const dep = await q(`SELECT name FROM departments WHERE id=$1`, [department_id]);
+    if (dep.rowCount === 0) return res.status(404).json({ error: "department not found" });
+    depLabel = dep.rows[0].name;
+  }
+
+  const where = ["1=1"];
+  const params = [];
+  let idx = 1;
+
+  if (!isAllLocations) {
+    where.push(`b.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+
+  if (department_id > 0) {
+    where.push(`b.department_id=$${idx}`);
+    params.push(department_id);
+    idx += 1;
+  }
+
+  const rows = (await q(
+    `
+    SELECT b.created_at, b.receipt_no, b.license_plate, b.entrepreneur, COALESCE(u.username, '(gelöscht)') AS username, b.type, b.quantity, b.note
+    FROM bookings b LEFT JOIN users u ON u.id=b.user_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY b.id ASC
+    `,
+    params
+  )).rows;
+
+  const parser = new Parser({ fields: ["created_at","receipt_no","license_plate","entrepreneur","username","type","quantity","note"] });
+  const csv = parser.parse(rows);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${locLabel}-${depLabel}-buchungen.csv"`);
+  res.send(csv);
+});
+
+app.get("/api/export/xlsx", authRequired, requirePermission("bookings.export"), async (req, res) => {
+  const location_id = Number(req.query.location_id || 0);
+  const department_id = Number(req.query.department_id || 0);
+  if (!location_id) return res.status(400).json({ error: "location_id required" });
+
+  const perms = await getMyPermissions(req.user);
+  const canUseAllLocations = !!perms?.filters?.all_locations;
+  const isAllLocations = location_id === -1;
+
+  if (isAllLocations) {
+    if (!canUseAllLocations) return res.status(403).json({ error: "Keine Berechtigung für Alle Standorte" });
+  } else if (req.user.role !== "admin" && req.user.location_id && location_id !== Number(req.user.location_id) && !canUseAllLocations) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  let locLabel = "Alle Standorte";
+  if (!isAllLocations) {
+    const loc = await q(`SELECT name FROM locations WHERE id=$1`, [location_id]);
+    if (loc.rowCount === 0) return res.status(404).json({ error: "location not found" });
+    locLabel = loc.rows[0].name;
+  }
+
+  let depLabel = "Alle Abteilungen";
+  if (department_id > 0) {
+    const dep = await q(`SELECT name FROM departments WHERE id=$1`, [department_id]);
+    if (dep.rowCount === 0) return res.status(404).json({ error: "department not found" });
+    depLabel = dep.rows[0].name;
+  }
+
+  const where = ["1=1"];
+  const params = [];
+  let idx = 1;
+
+  if (!isAllLocations) {
+    where.push(`b.location_id=$${idx}`);
+    params.push(location_id);
+    idx += 1;
+  }
+
+  if (department_id > 0) {
+    where.push(`b.department_id=$${idx}`);
+    params.push(department_id);
+    idx += 1;
+  }
+
+  const rows = (await q(
+    `
+    SELECT b.created_at, b.receipt_no, b.license_plate, b.entrepreneur, COALESCE(u.username, '(gelöscht)') AS username, b.type, b.quantity, b.note
+    FROM bookings b LEFT JOIN users u ON u.id=b.user_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY b.id ASC
+    `,
+    params
+  )).rows;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Buchungen");
+  ws.columns = [
+    { header: "Datum/Zeit", key: "created_at", width: 22 },
+    { header: "Belegnr.", key: "receipt_no", width: 20 },
+    { header: "Kennzeichen", key: "license_plate", width: 16 },
+    { header: "Unternehmer", key: "entrepreneur", width: 22 },
+    { header: "Benutzer", key: "username", width: 18 },
+    { header: "Typ", key: "type", width: 8 },
+    { header: "Menge", key: "quantity", width: 10 },
+    { header: "Notiz", key: "note", width: 30 }
+  ];
+  ws.addRows(rows);
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${locLabel}-${depLabel}-buchungen.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
+
+async function ensureRuntimeTables() {
+  await q(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      theme TEXT NOT NULL DEFAULT 'light' CHECK (theme IN ('light','dark')),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS user_notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      case_id INTEGER REFERENCES booking_cases(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await q(`CREATE INDEX IF NOT EXISTS idx_user_notifications_user_created ON user_notifications(user_id, created_at DESC);`);
+
+  await q(`ALTER TABLE booking_cases ADD COLUMN IF NOT EXISTS non_exchangeable_qty INTEGER NOT NULL DEFAULT 0;`);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS booking_case_history (
+      id SERIAL PRIMARY KEY,
+      case_id INTEGER NOT NULL REFERENCES booking_cases(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+      receipt_no TEXT,
+      changed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      action TEXT NOT NULL,
+      changes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await q(`CREATE INDEX IF NOT EXISTS idx_booking_case_history_case_created ON booking_case_history(case_id, created_at DESC);`);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS container_planning_bookings (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      container_no TEXT NOT NULL,
+      customer TEXT NOT NULL DEFAULT '-',
+      warehouse TEXT NOT NULL DEFAULT '-',
+      plate TEXT NOT NULL,
+      order_no TEXT NOT NULL,
+      booking_date DATE NOT NULL,
+      color TEXT NOT NULL DEFAULT '#0ea5e9',
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await q(`CREATE INDEX IF NOT EXISTS idx_container_planning_bookings_date ON container_planning_bookings(booking_date, created_at);`);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS container_registration_containers (
+      id INTEGER PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'slot_created',
+      plate TEXT NOT NULL DEFAULT '',
+      time TEXT NOT NULL DEFAULT '',
+      registered_at TIMESTAMPTZ,
+      booking_no BIGINT
+    );
+  `);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS container_registration_history (
+      id BIGSERIAL PRIMARY KEY,
+      at TIMESTAMPTZ NOT NULL,
+      type TEXT NOT NULL,
+      container_id INTEGER NOT NULL,
+      plate TEXT NOT NULL DEFAULT '',
+      details JSONB NOT NULL DEFAULT '{}'::jsonb
+    );
+  `);
+  await q(`CREATE INDEX IF NOT EXISTS idx_container_registration_history_booking ON container_registration_history ((details->>'bookingNo'));`);
+
+  await q(`
+    CREATE TABLE IF NOT EXISTS container_registration_booking_counter (
+      id INTEGER PRIMARY KEY,
+      value BIGINT NOT NULL
+    );
+  `);
+  await q(`
+    INSERT INTO container_registration_booking_counter (id, value)
+    VALUES (1, 0)
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  for (let i = 1; i <= 8; i += 1) {
+    await q(
+      `INSERT INTO container_registration_containers (id, status, plate, time, registered_at, booking_no)
+       VALUES ($1, $2, $3, $4, NULL, NULL)
+       ON CONFLICT (id) DO NOTHING`,
+      [i, CONTAINER_REGISTRATION_STATUS_SLOT_CREATED, "", ""]
+    );
+  }
+}
+
+const PORT = process.env.PORT || 3001;
+ensureRuntimeTables()
+  .then(() => loadContainerRegistrationState())
+  .then(() => {
+    httpServer.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+  })
+  .catch((err) => {
+    console.error("Startup failed:", err);
+    process.exit(1);
+  });

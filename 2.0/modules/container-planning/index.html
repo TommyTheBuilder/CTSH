@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Container und LKW Planung</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar__title-wrap">
+          <h1>Container und LKW Planung</h1>
+          <p class="topbar__subtitle">Logistik- und LKW-Planungsdashboard</p>
+        </div>
+
+        <div class="topbar__controls">
+          <div class="topbar__group topbar__group--views">
+            <div class="nav-buttons">
+              <button id="todayBtn" class="btn btn--ghost" type="button">Heute</button>
+              <button id="monthViewBtn" class="btn btn--primary is-active" type="button">Monat</button>
+              <button id="weekViewBtn" class="btn btn--ghost" type="button">Woche</button>
+            </div>
+          </div>
+
+          <div class="topbar__group topbar__group--range">
+            <div class="nav-arrows">
+              <button id="prevBtn" class="btn btn--icon" aria-label="Zurueck" type="button">&#8249;</button>
+              <h2 id="rangeLabel" aria-live="polite"></h2>
+              <button id="nextBtn" class="btn btn--icon" aria-label="Vor" type="button">&#8250;</button>
+            </div>
+          </div>
+
+          <div class="topbar__group topbar__group--utility">
+            <div class="language-menu" id="languageMenu">
+              <button class="btn" id="languageMenuToggle" type="button" aria-haspopup="true" aria-expanded="false">
+                Sprache
+              </button>
+              <div class="language-menu__dropdown" id="languageMenuDropdown">
+                <button class="language-menu__item" type="button" data-language="de">Deutsch</button>
+                <button class="language-menu__item" type="button" data-language="hr">Hrvatski</button>
+                <button class="language-menu__item" type="button" data-language="sr">Srpski</button>
+              </div>
+            </div>
+
+            <div class="gear-menu" id="gearMenu">
+              <button class="btn btn--icon" id="gearMenuToggle" aria-label="Einstellungen" type="button">&#9881;</button>
+              <div class="gear-menu__dropdown" id="gearMenuDropdown">
+                <button class="gear-menu__item" id="darkModeToggle">Dark Mode</button>
+                <button class="gear-menu__item" id="moduleDashboardBtn">Modul-Dashboard</button>
+                <button class="gear-menu__item gear-menu__item--danger" id="logoutBtn">Logout</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="calendar-panel">
+        <section class="weekdays" id="weekdayHeader"></section>
+        <section class="calendar-grid" id="calendarGrid"></section>
+      </main>
+    </div>
+
+    <script src="/public/shared-theme.js"></script>
+    <script type="module" src="./calendar.js"></script>
+  </body>
+</html>
