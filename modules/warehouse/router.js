@@ -29,6 +29,7 @@ const {
   listCustomers,
   listInventory,
   listPickingOrders,
+  listStorageLocationSlots,
   listStorageLocations,
   listTransactions,
   startPickingOrder,
@@ -58,6 +59,11 @@ function buildExportRows(rows) {
     kunden_nr: row.kunden_nr || "",
     customer_name: row.customer_name || "",
     artikel_nr: row.artikel_nr || "",
+    stellplatz_nr: row.stellplatz_nr ?? "",
+    stellplaetze: Array.isArray(row.stellplaetze) ? row.stellplaetze.join(", ") : "",
+    source_stellplaetze: Array.isArray(row.source_stellplaetze) ? row.source_stellplaetze.join(", ") : "",
+    target_stellplaetze: Array.isArray(row.target_stellplaetze) ? row.target_stellplaetze.join(", ") : "",
+    verpackungsart: row.verpackungsart || "",
     bezeichnung: row.bezeichnung || "",
     menge: row.menge,
     storage_location_from: row.storage_location_from_name || "",
@@ -193,6 +199,14 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
     })
   );
 
+  router.get(
+    "/storage-locations/:id/slots",
+    requirePermission("warehouse.storage_locations.view"),
+    handleRoute(async (req, res) => {
+      res.json(await listStorageLocationSlots(req.params.id, req.query || {}));
+    })
+  );
+
   router.post(
     "/storage-locations",
     requirePermission("warehouse.storage_locations.manage"),
@@ -272,6 +286,11 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
           "kunden_nr",
           "customer_name",
           "artikel_nr",
+          "stellplatz_nr",
+          "stellplaetze",
+          "source_stellplaetze",
+          "target_stellplaetze",
+          "verpackungsart",
           "bezeichnung",
           "menge",
           "storage_location_from",
@@ -304,6 +323,11 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
         { header: "Kundennr.", key: "kunden_nr", width: 16 },
         { header: "Kunde", key: "customer_name", width: 26 },
         { header: "Artikelnr.", key: "artikel_nr", width: 18 },
+        { header: "Stellplatz", key: "stellplatz_nr", width: 12 },
+        { header: "Stellplätze", key: "stellplaetze", width: 22 },
+        { header: "Quelle Stellplätze", key: "source_stellplaetze", width: 22 },
+        { header: "Ziel Stellplätze", key: "target_stellplaetze", width: 22 },
+        { header: "Verpackungsart", key: "verpackungsart", width: 18 },
         { header: "Artikel", key: "bezeichnung", width: 28 },
         { header: "Menge", key: "menge", width: 12 },
         { header: "Von Lagerplatz", key: "storage_location_from", width: 20 },
