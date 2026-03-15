@@ -1,6 +1,7 @@
 const { pool } = require("../../db_pg");
 
 const STORAGE_LOCATION_TYPES = ["Regal", "Bodenstellplatz"];
+const SLOT_STATUS_TYPES = ["FREE", "OCCUPIED"];
 const TRANSACTION_TYPES = ["IN", "OUT", "TRANSFER"];
 const PICKING_STATUSES = ["OFFEN", "IN_BEARBEITUNG", "ERLEDIGT"];
 const DEFAULT_LIST_LIMIT = 200;
@@ -13,6 +14,7 @@ const INVENTORY_SELECT = `
     sl.typ AS storage_location_type,
     sl.name AS storage_location_name,
     sl.kapazitaet AS storage_location_capacity,
+    i.stellplatz_nr,
     i.article_id,
     a.artikel_nr,
     a.bezeichnung,
@@ -38,6 +40,7 @@ const TRANSACTION_SELECT = `
     slf.name AS storage_location_from_name,
     t.storage_location_to_id,
     slt.name AS storage_location_to_name,
+    t.stellplatz_nr,
     t.customer_id,
     c.kunden_nr,
     c.name AS customer_name,
@@ -218,6 +221,61 @@ async function getOneOrNull(executor, sql, params = []) {
   return result.rowCount ? result.rows[0] : null;
 }
 
+async function getStorageLocationCore(executor, id) {
+  return getOneOrNull(
+    executor,
+    `
+    SELECT id, typ, name, kapazitaet, created_at
+    FROM storage_locations
+    WHERE id = $1
+    `,
+    [id]
+  );
+}
+
+async function ensureStorageLocationSlot(executor, locationId, stellplatzNr, field = "stellplatz_nr") {
+  const normalizedLocationId = normalizeInteger(locationId, "storage_location_id", { required: true, min: 1 });
+  const normalizedSlot = normalizeInteger(stellplatzNr, field, { required: true, min: 1 });
+  const location = await getStorageLocationCore(executor, normalizedLocationId);
+
+  if (!location) {
+    throw new WarehouseError(400, `Storage location ${normalizedLocationId} not found`);
+  }
+  if (normalizedSlot > Number(location.kapazitaet || 0)) {
+    throw new WarehouseError(
+      400,
+      `${field} must be between 1 and ${location.kapazitaet} for storage location ${location.name}`
+    );
+  }
+
+  return {
+    location,
+    stellplatz_nr: normalizedSlot
+  };
+}
+
+async function ensureStorageLocationCapacity(executor, locationId, kapazitaet) {
+  const normalizedLocationId = normalizeInteger(locationId, "id", { required: true, min: 1 });
+  const normalizedCapacity = normalizeInteger(kapazitaet, "kapazitaet", { required: true, min: 1 });
+  const maxUsedSlotRow = await getOneOrNull(
+    executor,
+    `
+    SELECT COALESCE(MAX(stellplatz_nr), 0)::int AS max_slot
+    FROM inventory
+    WHERE storage_location_id = $1
+    `,
+    [normalizedLocationId]
+  );
+  const maxUsedSlot = Number(maxUsedSlotRow?.max_slot || 0);
+  if (normalizedCapacity < maxUsedSlot) {
+    throw new WarehouseError(
+      409,
+      `Capacity cannot be reduced below occupied slot ${maxUsedSlot}`
+    );
+  }
+  return normalizedCapacity;
+}
+
 async function getInventoryById(executor, id) {
   return getOneOrNull(
     executor,
@@ -274,6 +332,11 @@ function normalizeMovementPayload(payload, options = {}) {
   const typ = normalizeEnum(payload.typ, TRANSACTION_TYPES, "typ", { required: requireAll });
   const articleId = normalizeInteger(payload.article_id, "article_id", { required: requireAll, min: 1 });
   const menge = normalizeInteger(payload.menge, "menge", { required: requireAll, min: 1 });
+  const stellplatzNr = normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", {
+    required: requireAll,
+    min: 1,
+    allowNull: !requireAll
+  });
   const storageLocationFromId = normalizeInteger(payload.storage_location_from_id, "storage_location_from_id", {
     required: false,
     min: 1,
@@ -301,10 +364,12 @@ function normalizeMovementPayload(payload, options = {}) {
   if (typ === "IN") {
     if (!storageLocationToId) throw new WarehouseError(400, "storage_location_to_id is required for IN");
     if (storageLocationFromId) throw new WarehouseError(400, "storage_location_from_id must be empty for IN");
+    if (!stellplatzNr) throw new WarehouseError(400, "stellplatz_nr is required for IN");
   }
   if (typ === "OUT") {
     if (!storageLocationFromId) throw new WarehouseError(400, "storage_location_from_id is required for OUT");
     if (storageLocationToId) throw new WarehouseError(400, "storage_location_to_id must be empty for OUT");
+    if (!stellplatzNr) throw new WarehouseError(400, "stellplatz_nr is required for OUT");
   }
   if (typ === "TRANSFER") {
     if (!storageLocationFromId || !storageLocationToId) {
@@ -313,12 +378,14 @@ function normalizeMovementPayload(payload, options = {}) {
     if (storageLocationFromId === storageLocationToId) {
       throw new WarehouseError(400, "TRANSFER requires different source and destination locations");
     }
+    if (!stellplatzNr) throw new WarehouseError(400, "stellplatz_nr is required for TRANSFER");
   }
 
   return {
     typ,
     article_id: articleId,
     menge,
+    stellplatz_nr: stellplatzNr || null,
     storage_location_from_id: storageLocationFromId || null,
     storage_location_to_id: storageLocationToId || null,
     customer_id: customerId || null,
@@ -332,69 +399,112 @@ function normalizeMovementPayload(payload, options = {}) {
 function buildInventoryEffects(movement, direction) {
   const qty = movement.menge * direction;
   if (movement.typ === "IN") {
-    return [{ locationId: movement.storage_location_to_id, delta: qty }];
+    return [{ locationId: movement.storage_location_to_id, stellplatzNr: movement.stellplatz_nr, delta: qty }];
   }
   if (movement.typ === "OUT") {
-    return [{ locationId: movement.storage_location_from_id, delta: qty * -1 }];
+    return [{ locationId: movement.storage_location_from_id, stellplatzNr: movement.stellplatz_nr, delta: qty * -1 }];
   }
   return [
-    { locationId: movement.storage_location_from_id, delta: qty * -1 },
-    { locationId: movement.storage_location_to_id, delta: qty }
+    { locationId: movement.storage_location_from_id, stellplatzNr: movement.stellplatz_nr, delta: qty * -1 },
+    { locationId: movement.storage_location_to_id, stellplatzNr: movement.stellplatz_nr, delta: qty }
   ];
 }
 
-async function applyInventoryDelta(client, articleId, locationId, delta) {
+async function applyInventoryDelta(client, articleId, locationId, stellplatzNr, delta) {
   if (!delta) return;
+  await ensureStorageLocationSlot(client, locationId, stellplatzNr);
 
   if (delta > 0) {
+    const existing = await getOneOrNull(
+      client,
+      `
+      SELECT id, article_id, menge
+      FROM inventory
+      WHERE storage_location_id = $1 AND stellplatz_nr = $2
+      FOR UPDATE
+      `,
+      [locationId, stellplatzNr]
+    );
+
+    if (!existing) {
+      await client.query(
+        `
+        INSERT INTO inventory (storage_location_id, stellplatz_nr, article_id, menge, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, now(), now())
+        `,
+        [locationId, stellplatzNr, articleId, delta]
+      );
+      return;
+    }
+
+    if (Number(existing.article_id) !== Number(articleId)) {
+      throw new WarehouseError(
+        409,
+        `Slot ${stellplatzNr} at storage location ${locationId} is already occupied by another article`
+      );
+    }
+
     await client.query(
       `
-      INSERT INTO inventory (storage_location_id, article_id, menge, created_at, updated_at)
-      VALUES ($1, $2, $3, now(), now())
-      ON CONFLICT (storage_location_id, article_id)
-      DO UPDATE SET menge = inventory.menge + EXCLUDED.menge, updated_at = now()
+      UPDATE inventory
+      SET menge = menge + $2,
+          updated_at = now()
+      WHERE id = $1
       `,
-      [locationId, articleId, delta]
+      [existing.id, delta]
     );
     return;
   }
 
   const amount = Math.abs(delta);
+  const existing = await getOneOrNull(
+    client,
+    `
+    SELECT id, menge
+    FROM inventory
+    WHERE storage_location_id = $1
+      AND stellplatz_nr = $2
+      AND article_id = $3
+    FOR UPDATE
+    `,
+    [locationId, stellplatzNr, articleId]
+  );
+
+  if (!existing || Number(existing.menge) < amount) {
+    throw new WarehouseError(
+      409,
+      `Insufficient inventory for article ${articleId} at storage location ${locationId}, slot ${stellplatzNr}`
+    );
+  }
+
   const updated = await client.query(
     `
     UPDATE inventory
-    SET menge = menge - $3,
+    SET menge = menge - $2,
         updated_at = now()
-    WHERE storage_location_id = $1
-      AND article_id = $2
-      AND menge >= $3
+    WHERE id = $1
     RETURNING id, menge
     `,
-    [locationId, articleId, amount]
+    [existing.id, amount]
   );
-
-  if (updated.rowCount === 0) {
-    throw new WarehouseError(
-      409,
-      `Insufficient inventory for article ${articleId} at storage location ${locationId}`
-    );
-  }
 
   await client.query(
     `
     DELETE FROM inventory
-    WHERE storage_location_id = $1
-      AND article_id = $2
+    WHERE id = $1
       AND menge <= 0
     `,
-    [locationId, articleId]
+    [updated.rows[0].id]
   );
 }
 
 async function applyMovement(client, movement, direction) {
+  if (!movement?.stellplatz_nr) {
+    throw new WarehouseError(409, "Transaction without stellplatz_nr cannot be reversed or applied");
+  }
   const effects = buildInventoryEffects(movement, direction);
   for (const effect of effects) {
-    await applyInventoryDelta(client, movement.article_id, effect.locationId, effect.delta);
+    await applyInventoryDelta(client, movement.article_id, effect.locationId, effect.stellplatzNr, effect.delta);
   }
 }
 
@@ -432,6 +542,7 @@ function buildTransactionFilters(filters = {}, options = {}) {
         OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
         OR LOWER(COALESCE(a.artikel_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(a.bezeichnung, '')) LIKE $${idx}
+        OR CAST(COALESCE(t.stellplatz_nr, 0) AS TEXT) LIKE $${idx}
       )`
     );
   }
@@ -472,6 +583,16 @@ function buildTransactionFilters(filters = {}, options = {}) {
   if (toId) {
     values.push(toId);
     where.push(`t.storage_location_to_id = $${values.length}`);
+  }
+
+  const stellplatzNr = normalizeInteger(filters.stellplatz_nr, "stellplatz_nr", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+  if (stellplatzNr) {
+    values.push(stellplatzNr);
+    where.push(`t.stellplatz_nr = $${values.length}`);
   }
 
   const dateFrom = normalizeDateTimeFilter(filters.date_from, "start");
@@ -852,7 +973,9 @@ async function listStorageLocations(filters = {}) {
           sl.kapazitaet,
           sl.created_at,
           COUNT(i.id)::int AS belegte_positionen,
-          COALESCE(SUM(i.menge), 0)::int AS belegte_menge
+          COALESCE(SUM(i.menge), 0)::int AS belegte_menge,
+          GREATEST(sl.kapazitaet - COUNT(i.id)::int, 0)::int AS freie_stellplaetze,
+          COALESCE(MAX(i.stellplatz_nr), 0)::int AS max_belegter_stellplatz
         FROM storage_locations sl
         LEFT JOIN inventory i ON i.storage_location_id = sl.id
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -880,7 +1003,9 @@ async function getStorageLocation(id) {
       sl.kapazitaet,
       sl.created_at,
       COUNT(i.id)::int AS belegte_positionen,
-      COALESCE(SUM(i.menge), 0)::int AS belegte_menge
+      COALESCE(SUM(i.menge), 0)::int AS belegte_menge,
+      GREATEST(sl.kapazitaet - COUNT(i.id)::int, 0)::int AS freie_stellplaetze,
+      COALESCE(MAX(i.stellplatz_nr), 0)::int AS max_belegter_stellplatz
     FROM storage_locations sl
     LEFT JOIN inventory i ON i.storage_location_id = sl.id
     WHERE sl.id = $1
@@ -890,6 +1015,93 @@ async function getStorageLocation(id) {
   );
   if (!row) throw new WarehouseError(404, "Storage location not found");
   return row;
+}
+
+async function listStorageLocationSlots(id, filters = {}) {
+  const locationId = normalizeInteger(id, "id", { required: true, min: 1 });
+  const location = await getStorageLocationCore(pool, locationId);
+  if (!location) throw new WarehouseError(404, "Storage location not found");
+
+  const status = filters.status
+    ? normalizeEnum(String(filters.status).toUpperCase(), SLOT_STATUS_TYPES, "status", { required: false })
+    : null;
+  const articleId = normalizeInteger(filters.article_id, "article_id", { required: false, min: 1, allowNull: true });
+
+  try {
+    return (
+      await pool.query(
+        `
+        WITH slot_base AS (
+          SELECT
+            sl.id AS storage_location_id,
+            sl.name AS storage_location_name,
+            sl.typ AS storage_location_type,
+            sl.kapazitaet AS storage_location_capacity,
+            gs.slot_no::int AS stellplatz_nr,
+            i.id AS inventory_id,
+            i.article_id,
+            a.artikel_nr,
+            a.bezeichnung,
+            i.menge,
+            i.created_at,
+            i.updated_at
+          FROM storage_locations sl
+          CROSS JOIN LATERAL generate_series(1, sl.kapazitaet) AS gs(slot_no)
+          LEFT JOIN inventory i
+            ON i.storage_location_id = sl.id
+           AND i.stellplatz_nr = gs.slot_no
+          LEFT JOIN articles a ON a.id = i.article_id
+          WHERE sl.id = $1
+        )
+        SELECT
+          sb.storage_location_id,
+          sb.storage_location_name,
+          sb.storage_location_type,
+          sb.storage_location_capacity,
+          sb.stellplatz_nr,
+          CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END AS status,
+          sb.inventory_id,
+          sb.article_id,
+          sb.artikel_nr,
+          sb.bezeichnung,
+          sb.menge,
+          sb.created_at,
+          sb.updated_at,
+          tx.id AS last_transaction_id,
+          tx.typ AS last_transaction_type,
+          tx.datum AS last_transaction_datum,
+          tx.user_id AS stored_by_user_id,
+          u.username AS stored_by_username,
+          tx.beleg_nr AS last_transaction_beleg_nr,
+          c.id AS customer_id,
+          c.kunden_nr,
+          c.name AS customer_name
+        FROM slot_base sb
+        LEFT JOIN LATERAL (
+          SELECT t.id, t.typ, t.datum, t.user_id, t.beleg_nr, t.customer_id
+          FROM transactions t
+          WHERE t.stellplatz_nr = sb.stellplatz_nr
+            AND (
+              (t.typ = 'IN' AND t.storage_location_to_id = sb.storage_location_id)
+              OR (t.typ = 'TRANSFER' AND t.storage_location_to_id = sb.storage_location_id)
+            )
+          ORDER BY t.datum DESC, t.id DESC
+          LIMIT 1
+        ) tx ON sb.inventory_id IS NOT NULL
+        LEFT JOIN users u ON u.id = tx.user_id
+        LEFT JOIN customers c ON c.id = tx.customer_id
+        WHERE ($2::text IS NULL OR CASE WHEN sb.inventory_id IS NULL THEN 'FREE' ELSE 'OCCUPIED' END = $2)
+          AND ($3::int IS NULL OR sb.article_id = $3)
+        ORDER BY sb.stellplatz_nr ASC
+        `,
+        [locationId, status, articleId]
+      )
+    ).rows;
+  } catch (error) {
+    throw translateDbError(error, {
+      fkMessage: "Referenced article or storage location not found"
+    });
+  }
 }
 
 async function createStorageLocation(payload) {
@@ -927,7 +1139,7 @@ async function updateStorageLocation(id, payload) {
     updates.push(`name = $${values.length}`);
   }
   if (hasOwn(payload, "kapazitaet")) {
-    values.push(normalizeInteger(payload.kapazitaet, "kapazitaet", { required: true, min: 1 }));
+    values.push(await ensureStorageLocationCapacity(pool, locationId, payload.kapazitaet));
     updates.push(`kapazitaet = $${values.length}`);
   }
 
@@ -984,6 +1196,7 @@ async function listInventory(filters = {}) {
         LOWER(sl.name) LIKE $${idx}
         OR LOWER(a.artikel_nr) LIKE $${idx}
         OR LOWER(a.bezeichnung) LIKE $${idx}
+        OR CAST(i.stellplatz_nr AS TEXT) LIKE $${idx}
       )`
     );
   }
@@ -1004,6 +1217,16 @@ async function listInventory(filters = {}) {
     where.push(`i.storage_location_id = $${values.length}`);
   }
 
+  const stellplatzNr = normalizeInteger(filters.stellplatz_nr, "stellplatz_nr", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+  if (stellplatzNr) {
+    values.push(stellplatzNr);
+    where.push(`i.stellplatz_nr = $${values.length}`);
+  }
+
   values.push(normalizeLimit(filters.limit));
 
   try {
@@ -1012,7 +1235,7 @@ async function listInventory(filters = {}) {
         `
         ${INVENTORY_SELECT}
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY sl.name ASC, a.bezeichnung ASC
+        ORDER BY sl.name ASC, i.stellplatz_nr ASC, a.bezeichnung ASC
         LIMIT $${values.length}
         `,
         values
@@ -1033,21 +1256,25 @@ async function getInventoryRecord(id) {
 async function createInventoryRecord(payload) {
   const storageLocationId = normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 });
   const articleId = normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 });
+  const stellplatzNr = normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 });
   const menge = normalizeInteger(payload.menge, "menge", { required: true, min: 1 });
 
   try {
-    const result = await pool.query(
-      `
-      INSERT INTO inventory (storage_location_id, article_id, menge, created_at, updated_at)
-      VALUES ($1, $2, $3, now(), now())
-      RETURNING id
-      `,
-      [storageLocationId, articleId, menge]
-    );
-    return getInventoryRecord(result.rows[0].id);
+    return await withTransaction(async (client) => {
+      await ensureStorageLocationSlot(client, storageLocationId, stellplatzNr);
+      const result = await client.query(
+        `
+        INSERT INTO inventory (storage_location_id, stellplatz_nr, article_id, menge, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, now(), now())
+        RETURNING id
+        `,
+        [storageLocationId, stellplatzNr, articleId, menge]
+      );
+      return getInventoryById(client, result.rows[0].id);
+    });
   } catch (error) {
     throw translateDbError(error, {
-      uniqueMessage: "Inventory record for this article and storage location already exists",
+      uniqueMessage: "Inventory record for this storage location and slot already exists",
       fkMessage: "Article or storage location not found"
     });
   }
@@ -1055,42 +1282,66 @@ async function createInventoryRecord(payload) {
 
 async function updateInventoryRecord(id, payload) {
   const inventoryId = normalizeInteger(id, "id", { required: true, min: 1 });
-  const updates = [];
-  const values = [];
-
-  if (hasOwn(payload, "storage_location_id")) {
-    values.push(normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 }));
-    updates.push(`storage_location_id = $${values.length}`);
-  }
-  if (hasOwn(payload, "article_id")) {
-    values.push(normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 }));
-    updates.push(`article_id = $${values.length}`);
-  }
-  if (hasOwn(payload, "menge")) {
-    values.push(normalizeInteger(payload.menge, "menge", { required: true, min: 1 }));
-    updates.push(`menge = $${values.length}`);
-  }
-
-  if (!updates.length) throw new WarehouseError(400, "No inventory changes provided");
-
-  updates.push(`updated_at = now()`);
-  values.push(inventoryId);
 
   try {
-    const result = await pool.query(
-      `
-      UPDATE inventory
-      SET ${updates.join(", ")}
-      WHERE id = $${values.length}
-      RETURNING id
-      `,
-      values
-    );
-    if (!result.rowCount) throw new WarehouseError(404, "Inventory record not found");
-    return getInventoryRecord(result.rows[0].id);
+    return await withTransaction(async (client) => {
+      const current = await getOneOrNull(
+        client,
+        `
+        SELECT id, storage_location_id, stellplatz_nr, article_id, menge
+        FROM inventory
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [inventoryId]
+      );
+
+      if (!current) throw new WarehouseError(404, "Inventory record not found");
+
+      const nextStorageLocationId = hasOwn(payload, "storage_location_id")
+        ? normalizeInteger(payload.storage_location_id, "storage_location_id", { required: true, min: 1 })
+        : current.storage_location_id;
+      const nextStellplatzNr = hasOwn(payload, "stellplatz_nr")
+        ? normalizeInteger(payload.stellplatz_nr, "stellplatz_nr", { required: true, min: 1 })
+        : current.stellplatz_nr;
+      const nextArticleId = hasOwn(payload, "article_id")
+        ? normalizeInteger(payload.article_id, "article_id", { required: true, min: 1 })
+        : current.article_id;
+      const nextMenge = hasOwn(payload, "menge")
+        ? normalizeInteger(payload.menge, "menge", { required: true, min: 1 })
+        : current.menge;
+
+      if (
+        Number(nextStorageLocationId) === Number(current.storage_location_id)
+        && Number(nextStellplatzNr) === Number(current.stellplatz_nr)
+        && Number(nextArticleId) === Number(current.article_id)
+        && Number(nextMenge) === Number(current.menge)
+      ) {
+        throw new WarehouseError(400, "No inventory changes provided");
+      }
+
+      await ensureStorageLocationSlot(client, nextStorageLocationId, nextStellplatzNr);
+
+      const result = await client.query(
+        `
+        UPDATE inventory
+        SET
+          storage_location_id = $1,
+          stellplatz_nr = $2,
+          article_id = $3,
+          menge = $4,
+          updated_at = now()
+        WHERE id = $5
+        RETURNING id
+        `,
+        [nextStorageLocationId, nextStellplatzNr, nextArticleId, nextMenge, inventoryId]
+      );
+
+      return getInventoryById(client, result.rows[0].id);
+    });
   } catch (error) {
     throw translateDbError(error, {
-      uniqueMessage: "Inventory record for this article and storage location already exists",
+      uniqueMessage: "Inventory record for this storage location and slot already exists",
       fkMessage: "Article or storage location not found"
     });
   }
@@ -1171,6 +1422,7 @@ async function createTransactionRecord(payload, userId) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1178,7 +1430,7 @@ async function createTransactionRecord(payload, userId) {
           datum,
           notiz
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         `,
         [
@@ -1187,6 +1439,7 @@ async function createTransactionRecord(payload, userId) {
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
+          movement.stellplatz_nr,
           movement.customer_id,
           movement.beleg_nr,
           movement.positions_nr,
@@ -1222,6 +1475,7 @@ async function updateTransactionRecord(id, payload) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1249,12 +1503,13 @@ async function updateTransactionRecord(id, payload) {
           menge = $3,
           storage_location_from_id = $4,
           storage_location_to_id = $5,
-          customer_id = $6,
-          beleg_nr = $7,
-          positions_nr = $8,
-          datum = $9,
-          notiz = $10
-        WHERE id = $11
+          stellplatz_nr = $6,
+          customer_id = $7,
+          beleg_nr = $8,
+          positions_nr = $9,
+          datum = $10,
+          notiz = $11
+        WHERE id = $12
         `,
         [
           movement.typ,
@@ -1262,6 +1517,7 @@ async function updateTransactionRecord(id, payload) {
           movement.menge,
           movement.storage_location_from_id,
           movement.storage_location_to_id,
+          movement.stellplatz_nr,
           movement.customer_id,
           movement.beleg_nr,
           movement.positions_nr,
@@ -1296,6 +1552,7 @@ async function deleteTransactionRecord(id) {
           menge,
           storage_location_from_id,
           storage_location_to_id,
+          stellplatz_nr,
           customer_id,
           beleg_nr,
           positions_nr,
@@ -1669,6 +1926,7 @@ module.exports = {
   listCustomers,
   listInventory,
   listPickingOrders,
+  listStorageLocationSlots,
   listStorageLocations,
   listTransactions,
   startPickingOrder,
