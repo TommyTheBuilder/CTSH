@@ -484,227 +484,200 @@ const USER_FILTERS = {
   locationId: ""
 };
 
-const ADMIN_PERMISSION_SECTION_ORDER = ["portal", "admin", "modules"];
-const ADMIN_PERMISSION_SECTION_META = {
-  portal: {
+const ADMIN_PERMISSION_GROUPS = [
+  {
+    key: "operations",
     eyebrow: "Portal",
     title: "Operative Bereiche",
-    description: "Grundfunktionen fuer Buchungen, Bestaende, Vorgaenge und Filter."
+    description: "Buchungen, Bestände, Vorgänge und Sichtbarkeit kompakt steuern.",
+    sections: [
+      {
+        key: "bookings",
+        title: "Buchungen",
+        description: "Erfassung, Einsicht und Bearbeitung.",
+        permissions: [
+          { id: "p_bookings_create", path: "bookings.create", label: "Anlegen" },
+          { id: "p_bookings_view", path: "bookings.view", label: "Anzeigen" },
+          { id: "p_bookings_export", path: "bookings.export", label: "Exportieren" },
+          { id: "p_bookings_receipt", path: "bookings.receipt", label: "Beleg" },
+          { id: "p_bookings_edit", path: "bookings.edit", label: "Bearbeiten (manuell ändern)" },
+          { id: "p_bookings_delete", path: "bookings.delete", label: "Löschen" },
+          { id: "p_bookings_translogica", path: "bookings.translogica", label: "Translogica-Kästchen bearbeiten" }
+        ]
+      },
+      {
+        key: "stock",
+        title: "Bestände",
+        description: "Sichtbarkeit und Komplett-Bestand.",
+        permissions: [
+          { id: "p_stock_view", path: "stock.view", label: "Anzeigen" },
+          { id: "p_stock_overall", path: "stock.overall", label: "Gesamtbestand (Komplett-Bestand)" }
+        ]
+      },
+      {
+        key: "cases",
+        title: "Vorgänge",
+        description: "Kompletter Ablauf von Aviso bis Abschluss.",
+        permissions: [
+          { id: "p_cases_create", path: "cases.create", label: "Aviso anlegen" },
+          { id: "p_cases_internal_transfer", path: "cases.internal_transfer", label: "Interne Lagerumbuchung" },
+          { id: "p_cases_employee_code", path: "cases.require_employee_code", label: "Lagermitarbeiter bei Status 2 Pflicht" },
+          { id: "p_cases_claim", path: "cases.claim", label: "Übernehmen" },
+          { id: "p_cases_edit", path: "cases.edit", label: "Ändern" },
+          { id: "p_cases_submit", path: "cases.submit", label: "Zur Prüfung senden" },
+          { id: "p_cases_approve", path: "cases.approve", label: "Buchen und abschliessen" },
+          { id: "p_cases_cancel", path: "cases.cancel", label: "Stornieren" },
+          { id: "p_cases_delete", path: "cases.delete", label: "Löschen" }
+        ]
+      },
+      {
+        key: "filters",
+        title: "Filter und Sichtbarkeit",
+        description: "Globale Sicht auf mehrere Standorte.",
+        permissions: [
+          { id: "p_filters_all_locations", path: "filters.all_locations", label: "Standortfilter Alle Standorte" }
+        ]
+      }
+    ]
   },
-  admin: {
+  {
+    key: "governance",
     eyebrow: "Administration",
     title: "Verwaltung und Governance",
-    description: "Stammdaten, Benutzer und Rollen zentral steuern."
+    description: "Stammdaten, Benutzer und Rollen in einer kompakten Struktur.",
+    sections: [
+      {
+        key: "masterdata",
+        title: "Stammdaten",
+        description: "Grunddaten und Frachtführer pflegen.",
+        permissions: [
+          { id: "p_master_manage", path: "masterdata.manage", label: "Stammdaten verwalten" },
+          { id: "p_master_entrepreneurs_manage", path: "masterdata.entrepreneurs_manage", label: "Frachtführer verwalten" }
+        ]
+      },
+      {
+        key: "users",
+        title: "Benutzer",
+        description: "Benutzerverwaltung und Abteilungssicht.",
+        permissions: [
+          { id: "p_users_manage", path: "users.manage", label: "Benutzer verwalten" },
+          { id: "p_users_view_department", path: "users.view_department", label: "Nur eigene Abteilung anzeigen" }
+        ]
+      },
+      {
+        key: "roles",
+        title: "Rollen und Vollzugriff",
+        description: "Rollenpflege und Vollzugriff zentral steuern.",
+        permissions: [
+          { id: "p_roles_manage", path: "roles.manage", label: "Rollen verwalten" },
+          { id: "p_admin_full_access", path: "admin.full_access", label: "Admin-Zugriff und Vollzugriff" }
+        ]
+      }
+    ]
   },
-  modules: {
+  {
+    key: "modules",
     eyebrow: "Module",
     title: "Angebundene Module",
-    description: "Container- und Warehouse-Module mit feiner Rechteverteilung."
-  }
-};
-
-const ADMIN_PERMISSION_CARDS = [
-  {
-    key: "bookings",
-    group: "portal",
-    eyebrow: "Operativ",
-    title: "Buchungen",
-    description: "Rechte fuer Erfassung, Einsicht und Belegbearbeitung.",
-    permissions: [
-      { id: "p_bookings_create", path: "bookings.create", label: "Anlegen" },
-      { id: "p_bookings_view", path: "bookings.view", label: "Anzeigen" },
-      { id: "p_bookings_export", path: "bookings.export", label: "Exportieren" },
-      { id: "p_bookings_receipt", path: "bookings.receipt", label: "Beleg" },
-      { id: "p_bookings_edit", path: "bookings.edit", label: "Bearbeiten (manuell aendern)" },
-      { id: "p_bookings_delete", path: "bookings.delete", label: "Loeschen" },
-      { id: "p_bookings_translogica", path: "bookings.translogica", label: "Translogica-Kaestchen bearbeiten" }
-    ]
-  },
-  {
-    key: "stock",
-    group: "portal",
-    eyebrow: "Reporting",
-    title: "Bestaende",
-    description: "Sichtbarkeit und Tiefe der Bestandsauswertung steuern.",
-    note: "Gesamtbestand erweitert die Auswertung um den Komplett-Bestand je Abteilung.",
-    permissions: [
-      { id: "p_stock_view", path: "stock.view", label: "Anzeigen" },
-      { id: "p_stock_overall", path: "stock.overall", label: "Gesamtbestand (Komplett-Bestand)" }
-    ]
-  },
-  {
-    key: "cases",
-    group: "portal",
-    eyebrow: "Workflow",
-    title: "Vorgaenge",
-    description: "Kompletten Lebenszyklus von Faellen getrennt steuern.",
-    permissions: [
-      { id: "p_cases_create", path: "cases.create", label: "Aviso anlegen" },
-      { id: "p_cases_internal_transfer", path: "cases.internal_transfer", label: "Interne Lagerumbuchung" },
-      { id: "p_cases_employee_code", path: "cases.require_employee_code", label: "Lagermitarbeiter bei Status 2 Pflicht" },
-      { id: "p_cases_claim", path: "cases.claim", label: "Uebernehmen" },
-      { id: "p_cases_edit", path: "cases.edit", label: "Aendern" },
-      { id: "p_cases_submit", path: "cases.submit", label: "Zur Pruefung senden" },
-      { id: "p_cases_approve", path: "cases.approve", label: "Buchen und abschliessen" },
-      { id: "p_cases_cancel", path: "cases.cancel", label: "Stornieren" },
-      { id: "p_cases_delete", path: "cases.delete", label: "Loeschen" }
-    ]
-  },
-  {
-    key: "filters",
-    group: "portal",
-    eyebrow: "Navigation",
-    title: "Filter und Sichtbarkeit",
-    description: "Globale Auswahl und Standortgrenzen steuern.",
-    note: "Alle Standorte erweitert Vorgangs- und Historienfilter ueber den eigenen Standort hinaus.",
-    permissions: [
-      { id: "p_filters_all_locations", path: "filters.all_locations", label: "Standortfilter Alle Standorte" }
-    ]
-  },
-  {
-    key: "masterdata",
-    group: "admin",
-    eyebrow: "Grunddaten",
-    title: "Stammdaten",
-    description: "Standorte, Abteilungen und Partner sauber pflegen.",
-    permissions: [
-      { id: "p_master_manage", path: "masterdata.manage", label: "Stammdaten verwalten" },
-      { id: "p_master_entrepreneurs_manage", path: "masterdata.entrepreneurs_manage", label: "Frachtfuehrer verwalten" }
-    ]
-  },
-  {
-    key: "users",
-    group: "admin",
-    eyebrow: "Zugriff",
-    title: "Benutzer",
-    description: "Benutzerpflege und eingeschraenkte Abteilungssicht steuern.",
-    permissions: [
-      { id: "p_users_manage", path: "users.manage", label: "Benutzer verwalten" },
-      { id: "p_users_view_department", path: "users.view_department", label: "Nur eigene Abteilung anzeigen" }
-    ]
-  },
-  {
-    key: "roles",
-    group: "admin",
-    eyebrow: "Governance",
-    title: "Rollen und Vollzugriff",
-    description: "Rollengovernance und Admin-Freigabe zentral steuern.",
-    permissions: [
-      { id: "p_roles_manage", path: "roles.manage", label: "Rollen verwalten" },
-      { id: "p_admin_full_access", path: "admin.full_access", label: "Admin-Zugriff und Vollzugriff" }
-    ]
-  },
-  {
-    key: "module_container_registration_access",
-    group: "modules",
-    eyebrow: "Container",
-    title: "Container Anmeldung Zugriff",
-    description: "Fahreransicht, Statusboard und Einstieg in das Modul trennen.",
-    permissions: [
-      { id: "p_module_container_registration_open", path: "modules.container_registration.open", label: "Fahrer-Modul oeffnen" },
-      { id: "p_module_container_registration_viewer", path: "modules.container_registration.viewer", label: "Statusboard oeffnen" }
-    ]
-  },
-  {
-    key: "module_container_registration_admin",
-    group: "modules",
-    eyebrow: "Container",
-    title: "Container Anmeldung Admin",
-    description: "Historie und operative Eingriffe getrennt freigeben.",
-    permissions: [
-      { id: "p_module_container_registration_history", path: "modules.container_registration.history", label: "Historie ansehen" },
-      { id: "p_module_container_registration_history_export", path: "modules.container_registration.history_export", label: "Historie exportieren" },
-      { id: "p_module_container_registration_history_clear", path: "modules.container_registration.history_clear", label: "Historie loeschen" },
-      { id: "p_module_container_registration_manage_time", path: "modules.container_registration.manage_time", label: "Zeitfenster aendern" },
-      { id: "p_module_container_registration_manage_status", path: "modules.container_registration.manage_status", label: "Status aendern" },
-      { id: "p_module_container_registration_reset_container", path: "modules.container_registration.reset_container", label: "Einzelnen Container zuruecksetzen" },
-      { id: "p_module_container_registration_reset_all", path: "modules.container_registration.reset_all", label: "Alle Container zuruecksetzen" }
-    ]
-  },
-  {
-    key: "module_container_planning",
-    group: "modules",
-    eyebrow: "Planung",
-    title: "Container und LKW Planung",
-    description: "Lesen und Aenderungen in der Planung getrennt freigeben.",
-    permissions: [
-      { id: "p_module_container_planning_open", path: "modules.container_planning.open", label: "Modul oeffnen" },
-      { id: "p_module_container_planning_create", path: "modules.container_planning.create", label: "Buchungen anlegen" },
-      { id: "p_module_container_planning_edit", path: "modules.container_planning.edit", label: "Buchungen verschieben" },
-      { id: "p_module_container_planning_delete", path: "modules.container_planning.delete", label: "Buchungen loeschen" }
-    ]
-  },
-  {
-    key: "warehouse_dashboard",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Dashboard",
-    description: "Uebersicht und Kennzahlen im Lager-Modul.",
-    permissions: [
-      { id: "p_warehouse_dashboard_view", path: "warehouse.dashboard.view", label: "Dashboard anzeigen" }
-    ]
-  },
-  {
-    key: "warehouse_customers",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Kunden",
-    description: "Kundenstamm getrennt lesen und pflegen.",
-    permissions: [
-      { id: "p_warehouse_customers_view", path: "warehouse.customers.view", label: "Kunden ansehen" },
-      { id: "p_warehouse_customers_manage", path: "warehouse.customers.manage", label: "Kunden verwalten" }
-    ]
-  },
-  {
-    key: "warehouse_storage",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Lagerplaetze",
-    description: "Lagerplaetze lesen und veraendern.",
-    permissions: [
-      { id: "p_warehouse_storage_locations_view", path: "warehouse.storage_locations.view", label: "Lagerplaetze ansehen" },
-      { id: "p_warehouse_storage_locations_manage", path: "warehouse.storage_locations.manage", label: "Lagerplaetze verwalten" }
-    ]
-  },
-  {
-    key: "warehouse_inventory",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Bestand",
-    description: "Bestandsdaten lesen und bearbeiten.",
-    permissions: [
-      { id: "p_warehouse_inventory_view", path: "warehouse.inventory.view", label: "Bestand ansehen" },
-      { id: "p_warehouse_inventory_manage", path: "warehouse.inventory.manage", label: "Bestand verwalten" }
-    ]
-  },
-  {
-    key: "warehouse_transactions",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Buchungen und Historie",
-    description: "Lagerbuchungen, Historie und Exporte getrennt steuern.",
-    permissions: [
-      { id: "p_warehouse_transactions_create", path: "warehouse.transactions.create", label: "Buchungen anlegen" },
-      { id: "p_warehouse_transactions_view", path: "warehouse.transactions.view", label: "Historie ansehen" },
-      { id: "p_warehouse_transactions_export", path: "warehouse.transactions.export", label: "Historie exportieren" },
-      { id: "p_warehouse_transactions_manage", path: "warehouse.transactions.manage", label: "Buchungen verwalten" }
-    ]
-  },
-  {
-    key: "warehouse_picking",
-    group: "modules",
-    eyebrow: "Warehouse",
-    title: "Warehouse Versandauftraege",
-    description: "Versandauftraege fuer Buero und Lager getrennt schalten.",
-    permissions: [
-      { id: "p_warehouse_picking_view", path: "warehouse.picking.view", label: "Versandauftraege ansehen" },
-      { id: "p_warehouse_picking_manage", path: "warehouse.picking.manage", label: "Versandauftraege verwalten" },
-      { id: "p_warehouse_picking_process", path: "warehouse.picking.process", label: "Versandauftraege im Lager bearbeiten" }
+    description: "Container- und Warehouse-Module fein und platzsparend steuern.",
+    sections: [
+      {
+        key: "module_container_registration_access",
+        title: "Container Anmeldung Zugriff",
+        description: "Einstieg und Statusboard getrennt freigeben.",
+        permissions: [
+          { id: "p_module_container_registration_open", path: "modules.container_registration.open", label: "Fahrer-Modul öffnen" },
+          { id: "p_module_container_registration_viewer", path: "modules.container_registration.viewer", label: "Statusboard öffnen" }
+        ]
+      },
+      {
+        key: "module_container_registration_admin",
+        title: "Container Anmeldung Admin",
+        description: "Historie und Eingriffe im Adminbereich.",
+        permissions: [
+          { id: "p_module_container_registration_history", path: "modules.container_registration.history", label: "Historie ansehen" },
+          { id: "p_module_container_registration_history_export", path: "modules.container_registration.history_export", label: "Historie exportieren" },
+          { id: "p_module_container_registration_history_clear", path: "modules.container_registration.history_clear", label: "Historie löschen" },
+          { id: "p_module_container_registration_manage_time", path: "modules.container_registration.manage_time", label: "Zeitfenster ändern" },
+          { id: "p_module_container_registration_manage_status", path: "modules.container_registration.manage_status", label: "Status ändern" },
+          { id: "p_module_container_registration_reset_container", path: "modules.container_registration.reset_container", label: "Einzelnen Container zurücksetzen" },
+          { id: "p_module_container_registration_reset_all", path: "modules.container_registration.reset_all", label: "Alle Container zurücksetzen" }
+        ]
+      },
+      {
+        key: "module_container_planning",
+        title: "Container und LKW Planung",
+        description: "Planung öffnen und Buchungen steuern.",
+        permissions: [
+          { id: "p_module_container_planning_open", path: "modules.container_planning.open", label: "Modul öffnen" },
+          { id: "p_module_container_planning_create", path: "modules.container_planning.create", label: "Buchungen anlegen" },
+          { id: "p_module_container_planning_edit", path: "modules.container_planning.edit", label: "Buchungen verschieben" },
+          { id: "p_module_container_planning_delete", path: "modules.container_planning.delete", label: "Buchungen löschen" }
+        ]
+      },
+      {
+        key: "warehouse_dashboard",
+        title: "Warehouse Dashboard",
+        description: "Dashboard und Kennzahlen.",
+        permissions: [
+          { id: "p_warehouse_dashboard_view", path: "warehouse.dashboard.view", label: "Dashboard anzeigen" }
+        ]
+      },
+      {
+        key: "warehouse_customers",
+        title: "Warehouse Kunden",
+        description: "Kunden ansehen und verwalten.",
+        permissions: [
+          { id: "p_warehouse_customers_view", path: "warehouse.customers.view", label: "Kunden ansehen" },
+          { id: "p_warehouse_customers_manage", path: "warehouse.customers.manage", label: "Kunden verwalten" }
+        ]
+      },
+      {
+        key: "warehouse_storage",
+        title: "Warehouse Lagerplätze",
+        description: "Lagerplätze ansehen und verwalten.",
+        permissions: [
+          { id: "p_warehouse_storage_locations_view", path: "warehouse.storage_locations.view", label: "Lagerplätze ansehen" },
+          { id: "p_warehouse_storage_locations_manage", path: "warehouse.storage_locations.manage", label: "Lagerplätze verwalten" }
+        ]
+      },
+      {
+        key: "warehouse_inventory",
+        title: "Warehouse Bestand",
+        description: "Bestände ansehen und verwalten.",
+        permissions: [
+          { id: "p_warehouse_inventory_view", path: "warehouse.inventory.view", label: "Bestand ansehen" },
+          { id: "p_warehouse_inventory_manage", path: "warehouse.inventory.manage", label: "Bestand verwalten" }
+        ]
+      },
+      {
+        key: "warehouse_transactions",
+        title: "Warehouse Buchungen und Historie",
+        description: "Buchungen, Historie und Export.",
+        permissions: [
+          { id: "p_warehouse_transactions_create", path: "warehouse.transactions.create", label: "Buchungen anlegen" },
+          { id: "p_warehouse_transactions_view", path: "warehouse.transactions.view", label: "Historie ansehen" },
+          { id: "p_warehouse_transactions_export", path: "warehouse.transactions.export", label: "Historie exportieren" },
+          { id: "p_warehouse_transactions_manage", path: "warehouse.transactions.manage", label: "Buchungen verwalten" }
+        ]
+      },
+      {
+        key: "warehouse_picking",
+        title: "Warehouse Versandaufträge",
+        description: "Versandaufträge für Büro und Lager.",
+        permissions: [
+          { id: "p_warehouse_picking_view", path: "warehouse.picking.view", label: "Versandaufträge ansehen" },
+          { id: "p_warehouse_picking_manage", path: "warehouse.picking.manage", label: "Versandaufträge verwalten" },
+          { id: "p_warehouse_picking_process", path: "warehouse.picking.process", label: "Versandaufträge im Lager bearbeiten" }
+        ]
+      }
     ]
   }
 ];
 
-const ADMIN_PERMISSION_ITEMS = ADMIN_PERMISSION_CARDS.flatMap((card) => card.permissions);
+const ADMIN_PERMISSION_ITEMS = ADMIN_PERMISSION_GROUPS.flatMap((group) => (
+  group.sections.flatMap((section) => section.permissions)
+));
 
 function buildAdminDefaultPermissions() {
   return {
@@ -785,60 +758,100 @@ function setAdminPermissionValue(obj, path, value) {
   });
 }
 
+function normalizePermissionSearchValue(value) {
+  return String(value || "")
+    .replace(/Ä/g, "Ae")
+    .replace(/Ö/g, "Oe")
+    .replace(/Ü/g, "Ue")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function buildPermissionSearchText(...parts) {
+  return normalizePermissionSearchValue(parts.filter(Boolean).join(" "));
+}
+
 function renderPermissionBoxes() {
   const container = document.querySelector(".permissions-grid");
   if (!container) return;
 
-  container.dataset.grouped = "false";
-  container.innerHTML = ADMIN_PERMISSION_CARDS.map((card) => `
-    <div class="permBox" data-perm-section="${card.group}" data-perm-eyebrow="${card.eyebrow}" data-perm-description="${card.description}">
-      <div class="permBox-head">
-        <div>
-          <span class="section-eyebrow">${card.eyebrow}</span>
-          <b>${card.title}</b>
-          <p>${card.description}</p>
+  container.dataset.grouped = "true";
+  container.innerHTML = ADMIN_PERMISSION_GROUPS.map((group) => `
+    <section
+      class="permission-section is-collapsed"
+      data-permission-group="${group.key}"
+      data-collapsed="true"
+      data-search-text="${buildPermissionSearchText(group.title, group.description, group.sections.map((section) => section.title).join(" "))}"
+    >
+      <div class="permission-section-head">
+        <button
+          type="button"
+          class="permission-section-toggle"
+          data-action="toggle-permission-section"
+          aria-expanded="false"
+        >
+          <span class="permission-section-toggle-icon" aria-hidden="true"></span>
+          <span class="permission-section-copy">
+            <span class="section-eyebrow">${group.eyebrow}</span>
+            <h4>${group.title}</h4>
+            <p>${group.description}</p>
+          </span>
+        </button>
+        <div class="permission-section-tools">
+          <span class="permission-section-count">0/0</span>
+          <div class="permission-section-actions">
+            <button type="button" class="secondary permission-bulk-btn" data-bulk-action="enable">Alle aktivieren</button>
+            <button type="button" class="secondary permission-bulk-btn" data-bulk-action="disable">Alle deaktivieren</button>
+          </div>
         </div>
-        <span class="permBox-count">0/0</span>
       </div>
-      ${card.permissions.map((permission) => `
-        <label>
-          <input type="checkbox" id="${permission.id}" data-permission-path="${permission.path}">
-          ${permission.label}
-        </label>
-      `).join("")}
-      ${card.note ? `<small class="muted">${card.note}</small>` : ""}
-    </div>
+      <div class="permission-section-body">
+        <div class="permission-section-grid">
+          ${group.sections.map((section) => `
+            <article
+              class="permBox"
+              data-section-key="${section.key}"
+              data-search-text="${buildPermissionSearchText(group.title, section.title, section.description, section.permissions.map((permission) => permission.label).join(" "))}"
+            >
+              <div class="permBox-head">
+                <div class="permBox-copy">
+                  <b>${section.title}</b>
+                  <p>${section.description}</p>
+                </div>
+                <span class="permBox-count">0/0</span>
+              </div>
+              <div class="permBox-list">
+                ${section.permissions.map((permission) => `
+                  <label
+                    class="permission-row"
+                    data-search-text="${buildPermissionSearchText(group.title, section.title, permission.label, permission.description || "")}"
+                  >
+                    <span class="permission-row-copy">
+                      <span class="permission-row-title">${permission.label}</span>
+                      ${permission.description ? `<small>${permission.description}</small>` : ""}
+                    </span>
+                    <span class="permission-toggle">
+                      <input type="checkbox" id="${permission.id}" data-permission-path="${permission.path}">
+                      <span class="permission-toggle-slider" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                `).join("")}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </div>
+    </section>
   `).join("");
 }
 
 function applyModuleNaming() {}
-
-function getPermissionMeta(box) {
-  return {
-    group: box.dataset.permSection || "portal",
-    eyebrow: box.dataset.permEyebrow || "Bereich",
-    description: box.dataset.permDescription || "Berechtigungen fuer diesen Bereich."
-  };
-}
-
-function buildPermissionSection(groupKey) {
-  const meta = ADMIN_PERMISSION_SECTION_META[groupKey] || ADMIN_PERMISSION_SECTION_META.portal;
-  const section = document.createElement("section");
-  section.className = "permission-section";
-  section.dataset.permissionGroup = groupKey;
-  section.innerHTML = `
-    <div class="permission-section-head">
-      <div>
-        <span class="section-eyebrow">${meta.eyebrow}</span>
-        <h4>${meta.title}</h4>
-        <p>${meta.description}</p>
-      </div>
-      <span class="permission-section-count">0/0 Rechte</span>
-    </div>
-    <div class="permission-section-grid"></div>
-  `;
-  return section;
-}
 
 function enhancePermissionCards() {
   renderPermissionBoxes();
@@ -846,42 +859,42 @@ function enhancePermissionCards() {
 
 function ensurePermissionSections() {
   const container = document.querySelector(".permissions-grid");
-  if (!container || container.dataset.grouped === "true") return;
-
-  const boxes = Array.from(container.querySelectorAll(".permBox"));
-  const sectionMap = new Map();
-  const fragment = document.createDocumentFragment();
-
-  ADMIN_PERMISSION_SECTION_ORDER.forEach((groupKey) => {
-    const section = buildPermissionSection(groupKey);
-    sectionMap.set(groupKey, section);
-    fragment.appendChild(section);
-  });
-
-  container.replaceChildren(fragment);
-  boxes.forEach((box) => {
-    const groupKey = box.dataset.permSection || "portal";
-    const section = sectionMap.get(groupKey) || sectionMap.get("portal");
-    section?.querySelector(".permission-section-grid")?.appendChild(box);
-  });
-
-  container.dataset.grouped = "true";
+  if (!container || container.querySelector(".permission-section")) return;
+  renderPermissionBoxes();
 }
 
 function getPermissionBoxes() {
   return Array.from(document.querySelectorAll(".permissions-grid .permBox"));
 }
 
+function getPermissionSections() {
+  return Array.from(document.querySelectorAll(".permissions-grid .permission-section"));
+}
+
+function setPermissionSectionState(section, collapsed) {
+  section.dataset.collapsed = collapsed ? "true" : "false";
+  section.classList.toggle("is-collapsed", collapsed);
+  const toggle = section.querySelector(".permission-section-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
 function updatePermissionSections() {
-  document.querySelectorAll(".permission-section").forEach((section) => {
+  const filterActive = !!normalizePermissionSearchValue($("permissionSearch")?.value) || !!$("permissionShowEnabledOnly")?.checked;
+
+  getPermissionSections().forEach((section) => {
     const boxes = Array.from(section.querySelectorAll(".permBox"));
     const visibleBoxes = boxes.filter((box) => !box.classList.contains("is-empty"));
     const checkboxes = boxes.flatMap((box) => Array.from(box.querySelectorAll('input[type="checkbox"]')));
     const checked = checkboxes.filter((input) => input.checked).length;
     const total = checkboxes.length;
     const countEl = section.querySelector(".permission-section-count");
-    if (countEl) countEl.textContent = `${checked}/${total} Rechte`;
+    if (countEl) countEl.textContent = `${checked}/${total}`;
     section.classList.toggle("is-hidden", visibleBoxes.length === 0);
+    const shouldExpand = visibleBoxes.length > 0 && (filterActive || section.dataset.collapsed !== "true");
+    setPermissionSectionState(section, !shouldExpand);
+    section.querySelectorAll(".permission-bulk-btn").forEach((button) => {
+      button.disabled = total === 0;
+    });
   });
 }
 
@@ -899,20 +912,20 @@ function updatePermissionOverview() {
   if ($("rightsSummaryRole")) $("rightsSummaryRole").textContent = selectedRole || "-";
   if ($("rightsSummaryRoleHint")) {
     $("rightsSummaryRoleHint").textContent = selectedRole
-      ? `${visibleBoxes} Rechtekarten stehen aktuell zur Bearbeitung bereit.`
-      : "Bitte zuerst eine Rolle auswaehlen.";
+      ? `${visibleBoxes} Unterbereiche aktuell sichtbar.`
+      : "Bitte zuerst eine Rolle auswählen.";
   }
   if ($("rightsSummaryEnabled")) $("rightsSummaryEnabled").textContent = String(enabled);
   if ($("rightsSummaryEnabledHint")) {
     $("rightsSummaryEnabledHint").textContent = total
-      ? `Von ${total} verfuegbaren Rechten aktiviert.`
-      : "Noch keine Rechte verfuegbar.";
+      ? `Von ${total} verfügbaren Rechten aktiviert.`
+      : "Noch keine Rechte verfügbar.";
   }
   if ($("rightsSummaryVisible")) $("rightsSummaryVisible").textContent = String(visibleSections);
   if ($("rightsSummaryVisibleHint")) {
     $("rightsSummaryVisibleHint").textContent = visibleSections
-      ? `Filter zeigt aktuell ${visibleSections} Bereiche mit ${visibleBoxes} Karten.`
-      : "Filter zeigt aktuell 0 Bereiche.";
+      ? `${visibleSections} Hauptgruppen mit ${visibleBoxes} Unterbereichen sichtbar.`
+      : "Aktuell keine Hauptgruppe sichtbar.";
   }
 }
 
@@ -928,28 +941,29 @@ function updatePermissionCardCounts() {
 }
 
 function applyPermissionFilters() {
-  const term = String($("permissionSearch")?.value || "").trim().toLowerCase();
+  const term = normalizePermissionSearchValue($("permissionSearch")?.value);
   const onlyActive = !!$("permissionShowEnabledOnly")?.checked;
 
-  getPermissionBoxes().forEach((box) => {
-    const labels = Array.from(box.querySelectorAll("label"));
-    const title = box.querySelector(".permBox-head b")?.textContent?.trim().toLowerCase() || "";
-    const description = box.querySelector(".permBox-head p")?.textContent?.trim().toLowerCase() || "";
-    const note = box.querySelector("small.muted")?.textContent?.trim().toLowerCase() || "";
-    const boxMatches = !term || title.includes(term) || description.includes(term) || note.includes(term);
+  getPermissionSections().forEach((section) => {
+    const groupMatches = !term || String(section.dataset.searchText || "").includes(term);
 
-    let visibleCount = 0;
-    labels.forEach((label) => {
-      const checkbox = label.querySelector('input[type="checkbox"]');
-      const text = label.textContent.trim().toLowerCase();
-      const matchesTerm = !term || boxMatches || text.includes(term);
-      const matchesActive = !onlyActive || !!checkbox?.checked;
-      const visible = matchesTerm && matchesActive;
-      label.classList.toggle("is-hidden", !visible);
-      if (visible) visibleCount += 1;
+    Array.from(section.querySelectorAll(".permBox")).forEach((box) => {
+      const rows = Array.from(box.querySelectorAll(".permission-row"));
+      const boxMatches = !term || groupMatches || String(box.dataset.searchText || "").includes(term);
+
+      let visibleCount = 0;
+      rows.forEach((row) => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const rowText = String(row.dataset.searchText || "");
+        const matchesTerm = !term || boxMatches || rowText.includes(term);
+        const matchesActive = !onlyActive || !!checkbox?.checked;
+        const visible = matchesTerm && matchesActive;
+        row.classList.toggle("is-hidden", !visible);
+        if (visible) visibleCount += 1;
+      });
+
+      box.classList.toggle("is-empty", visibleCount === 0);
     });
-
-    box.classList.toggle("is-empty", visibleCount === 0);
   });
 
   updatePermissionSections();
@@ -962,11 +976,38 @@ function refreshPermissionPanel() {
 }
 
 function bindPermissionPanel() {
-  getPermissionBoxes().forEach((box) => {
-    box.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-      input.addEventListener("change", refreshPermissionPanel);
+  const container = document.querySelector(".permissions-grid");
+  if (container && container.dataset.bound !== "true") {
+    container.dataset.bound = "true";
+
+    container.addEventListener("change", (event) => {
+      if (event.target.matches('.permBox input[type="checkbox"]')) {
+        refreshPermissionPanel();
+      }
     });
-  });
+
+    container.addEventListener("click", (event) => {
+      const toggleButton = event.target.closest('[data-action="toggle-permission-section"]');
+      if (toggleButton) {
+        const section = toggleButton.closest(".permission-section");
+        if (section) {
+          setPermissionSectionState(section, section.dataset.collapsed !== "true");
+          updatePermissionSections();
+        }
+        return;
+      }
+
+      const bulkButton = event.target.closest(".permission-bulk-btn");
+      if (bulkButton) {
+        const section = bulkButton.closest(".permission-section");
+        const shouldEnable = bulkButton.dataset.bulkAction === "enable";
+        Array.from(section?.querySelectorAll('.permBox input[type="checkbox"]') || []).forEach((input) => {
+          input.checked = shouldEnable;
+        });
+        refreshPermissionPanel();
+      }
+    });
+  }
 
   $("permissionSearch")?.addEventListener("input", applyPermissionFilters);
   $("permissionShowEnabledOnly")?.addEventListener("change", applyPermissionFilters);
