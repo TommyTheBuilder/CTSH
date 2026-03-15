@@ -24,11 +24,12 @@ const {
   filterPermissionsByEnabledModules,
   getCustomerById,
   getEnabledModuleKeysForCustomer,
+  getInstallationCustomer,
+  getInstallationCustomerId,
   getUserContext,
   getUserPermissions,
   isAppAdmin,
   listCustomers,
-  parseRequestedCustomerId,
   resolveManagedCustomerId
 } = require("./core/platform_access");
 const { getModuleByKey, listModules } = require("./core/module_registry");
@@ -337,18 +338,13 @@ function getUserCustomerId(user) {
 }
 
 async function getActiveModuleKeysForUser(user) {
-  return getEnabledModuleKeysForCustomer(getUserCustomerId(user));
+  const customerId = getUserCustomerId(user) || await getInstallationCustomerId(user);
+  return getEnabledModuleKeysForCustomer(customerId);
 }
 
-async function getActiveModuleKeysForModuleRequest(user, req, options = {}) {
-  if (options.allowRequestedCustomer && isAppAdmin(user)) {
-    const requestedCustomerId = parseRequestedCustomerId(
-      req.query?.customerId
-      || req.body?.customer_id
-      || req.body?.app_customer_id
-      || req.params?.customerId
-    );
-    const managedCustomerId = await resolveManagedCustomerId(user, requestedCustomerId);
+async function getActiveModuleKeysForModuleRequest(user, _req, _options = {}) {
+  const managedCustomerId = await resolveManagedCustomerId(user, null);
+  if (managedCustomerId) {
     return getEnabledModuleKeysForCustomer(managedCustomerId);
   }
   return getActiveModuleKeysForUser(user);
@@ -386,13 +382,23 @@ function requireModuleEnabled(moduleKey) {
 }
 
 async function resolveRequestedCustomer(req) {
-  const requestedCustomerId = parseRequestedCustomerId(
-    req.query?.customerId
-      || req.body?.customer_id
-      || req.body?.app_customer_id
-      || req.params?.customerId
-  );
-  return resolveManagedCustomerId(req.user, requestedCustomerId);
+  return resolveManagedCustomerId(req.user, null);
+}
+
+function serializeInstallationModules(enabledModuleKeys) {
+  const enabledSet = new Set(enabledModuleKeys || []);
+  return listModules().map((moduleDefinition) => ({
+    key: moduleDefinition.key,
+    name: moduleDefinition.name,
+    short_name: moduleDefinition.shortName,
+    description: moduleDefinition.dashboard?.description || "",
+    is_enabled: enabledSet.has(moduleDefinition.key),
+    is_base_module: Boolean(moduleDefinition.licensing?.includedInBaseProduct),
+    license_label: moduleDefinition.licensing?.label || "Zusatzmodul",
+    license_note: moduleDefinition.licensing?.salesDescription || "",
+    launch_path: moduleDefinition.launchPath,
+    admin_path: moduleDefinition.adminPath || null
+  }));
 }
 
 // ---------- Helpers ----------
@@ -990,11 +996,13 @@ function requireAppAdminArea(req, res, next) {
 app.get("/api/core/context", authRequired, async (req, res) => {
   const permissions = await getMyPermissions(req.user);
   const activeModuleKeys = await getActiveModuleKeysForUser(req.user);
-  const customer = await getCustomerById(req.user.app_customer_id);
+  const installation = await getInstallationCustomer(req.user);
 
   res.json({
     user: req.user,
-    customer,
+    customer: installation,
+    installation,
+    deployment_model: "single-tenant",
     active_modules: activeModuleKeys,
     dashboard_modules: buildDashboardModules({
       user: req.user,
@@ -1010,7 +1018,7 @@ app.get("/api/core/context", authRequired, async (req, res) => {
 });
 
 app.get("/api/admin/context", authRequired, requireCustomerAdminAccess, async (req, res) => {
-  const customer = await getCustomerById(req.managedCustomerId);
+  const installation = await getInstallationCustomer(req.user);
   const locations = (await q(
     `
     SELECT id, name
@@ -1032,8 +1040,10 @@ app.get("/api/admin/context", authRequired, requireCustomerAdminAccess, async (r
 
   res.json({
     user: req.user,
-    managed_customer: customer,
-    available_customers: isAppAdmin(req.user) ? await listCustomers() : [],
+    managed_customer: installation,
+    installation,
+    available_customers: [],
+    deployment_model: "single-tenant",
     active_modules: req.activeModuleKeys,
     locations,
     departments,
@@ -1045,150 +1055,10 @@ app.get("/api/admin/context", authRequired, requireCustomerAdminAccess, async (r
   });
 });
 
-app.get("/api/app-admin/customers", authRequired, requireAppAdminArea, async (_req, res) => {
-  res.json(await listCustomers());
-});
-
-app.post("/api/app-admin/customers", authRequired, requireAppAdminArea, async (req, res) => {
-  const name = String(req.body?.name || "").trim();
-  const slugInput = String(req.body?.slug || "").trim().toLowerCase();
-  const slug = (slugInput || name.toLowerCase())
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-
-  if (!name || !slug) {
-    return res.status(400).json({ error: "name and slug required" });
-  }
-
-  const created = await q(
-    `
-    INSERT INTO app_customers (name, slug, is_active)
-    VALUES ($1, $2, TRUE)
-    RETURNING id, name, slug, is_active, created_at
-    `,
-    [name, slug]
-  );
-
-  const customerId = created.rows[0].id;
-  for (const moduleDefinition of listModules()) {
-    await q(
-      `
-      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (app_customer_id, module_key)
-      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
-      `,
-      [customerId, moduleDefinition.key, Boolean(moduleDefinition.enabledByDefault)]
-    );
-  }
-
-  res.status(201).json(created.rows[0]);
-});
-
-app.put("/api/app-admin/customers/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
-  const customerId = toPositiveInt(req.params.customerId);
-  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
-
-  const updates = [];
-  const values = [];
-  const nextName = String(req.body?.name || "").trim();
-  const nextSlug = String(req.body?.slug || "").trim().toLowerCase();
-
-  if (nextName) {
-    values.push(nextName);
-    updates.push(`name = $${values.length}`);
-  }
-  if (nextSlug) {
-    values.push(nextSlug);
-    updates.push(`slug = $${values.length}`);
-  }
-  if (typeof req.body?.is_active === "boolean") {
-    values.push(Boolean(req.body.is_active));
-    updates.push(`is_active = $${values.length}`);
-  }
-
-  if (!updates.length) {
-    return res.status(400).json({ error: "no customer changes provided" });
-  }
-
-  values.push(customerId);
-  const updated = await q(
-    `
-    UPDATE app_customers
-    SET ${updates.join(", ")}
-    WHERE id = $${values.length}
-    RETURNING id, name, slug, is_active, created_at
-    `,
-    values
-  );
-
-  if (!updated.rowCount) return res.status(404).json({ error: "customer not found" });
-  res.json(updated.rows[0]);
-});
-
-app.get("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
-  const customerId = toPositiveInt(req.params.customerId);
-  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
-
-  const customer = await getCustomerById(customerId);
-  if (!customer) return res.status(404).json({ error: "customer not found" });
-
-  const enabledModuleKeys = await getEnabledModuleKeysForCustomer(customerId);
-  const enabledSet = new Set(enabledModuleKeys);
-  res.json({
-    customer,
-    modules: listModules().map((moduleDefinition) => ({
-      key: moduleDefinition.key,
-      name: moduleDefinition.name,
-      description: moduleDefinition.dashboard?.description || "",
-      is_enabled: enabledSet.has(moduleDefinition.key)
-    }))
-  });
-});
-
-app.put("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
-  const customerId = toPositiveInt(req.params.customerId);
-  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
-
-  const customer = await getCustomerById(customerId);
-  if (!customer) return res.status(404).json({ error: "customer not found" });
-
-  const modules = Array.isArray(req.body?.modules) ? req.body.modules : [];
-  for (const moduleEntry of modules) {
-    const moduleKey = String(moduleEntry?.key || "").trim();
-    if (!getModuleByKey(moduleKey)) continue;
-    await q(
-      `
-      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (app_customer_id, module_key)
-      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
-      `,
-      [customerId, moduleKey, Boolean(moduleEntry?.is_enabled)]
-    );
-  }
-
-  const enabledModuleKeys = await getEnabledModuleKeysForCustomer(customerId);
-  const enabledSet = new Set(enabledModuleKeys);
-  res.json({
-    customer,
-    modules: listModules().map((moduleDefinition) => ({
-      key: moduleDefinition.key,
-      name: moduleDefinition.name,
-      is_enabled: enabledSet.has(moduleDefinition.key)
-    }))
-  });
-});
-
-app.get("/api/app-admin/customer-options/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
-  const customerId = toPositiveInt(req.params.customerId);
-  if (!customerId) return res.status(400).json({ error: "invalid customer id" });
-
-  const customer = await getCustomerById(customerId);
-  if (!customer) return res.status(404).json({ error: "customer not found" });
-
-  const [rolesResult, locationsResult, departmentsResult] = await Promise.all([
+async function loadInstallationOptions(customerId) {
+  const [installation, activeModules, rolesResult, locationsResult, departmentsResult] = await Promise.all([
+    getCustomerById(customerId),
+    getEnabledModuleKeysForCustomer(customerId),
     q(
       `
       SELECT id, name
@@ -1218,16 +1088,180 @@ app.get("/api/app-admin/customer-options/:customerId", authRequired, requireAppA
     )
   ]);
 
-  res.json({
-    customer,
-    active_modules: await getEnabledModuleKeysForCustomer(customerId),
+  return {
+    installation,
+    active_modules: activeModules,
     roles: rolesResult.rows,
     locations: locationsResult.rows,
     departments: departmentsResult.rows
+  };
+}
+
+async function updateInstallationRecord(installationId, payload = {}) {
+  const updates = [];
+  const values = [];
+  const nextName = String(payload?.name || "").trim();
+  const nextSlug = String(payload?.slug || "").trim().toLowerCase();
+
+  if (nextName) {
+    values.push(nextName);
+    updates.push(`name = $${values.length}`);
+  }
+  if (nextSlug) {
+    values.push(nextSlug);
+    updates.push(`slug = $${values.length}`);
+  }
+  if (typeof payload?.is_active === "boolean") {
+    values.push(Boolean(payload.is_active));
+    updates.push(`is_active = $${values.length}`);
+  }
+
+  if (!updates.length) {
+    return null;
+  }
+
+  values.push(installationId);
+  const updated = await q(
+    `
+    UPDATE app_customers
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length}
+    RETURNING id, name, slug, is_active, created_at
+    `,
+    values
+  );
+  return updated.rowCount ? updated.rows[0] : null;
+}
+
+async function loadInstallationModules(customerId) {
+  const installation = await getCustomerById(customerId);
+  if (!installation) return null;
+
+  return {
+    installation,
+    modules: serializeInstallationModules(await getEnabledModuleKeysForCustomer(customerId))
+  };
+}
+
+async function requireInstallationCustomerId(req, res) {
+  const installation = await getInstallationCustomer(req.user);
+  if (req.params.customerId !== undefined && req.params.customerId !== null && req.params.customerId !== "") {
+    const requestedId = toPositiveInt(req.params.customerId);
+    if (!requestedId) {
+      res.status(400).json({ error: "Ungültige Installations-ID." });
+      return null;
+    }
+    if (requestedId !== Number(installation?.id)) {
+      res.status(404).json({ error: "Installation nicht gefunden." });
+      return null;
+    }
+  }
+  return installation;
+}
+
+app.get("/api/app-admin/customers", authRequired, requireAppAdminArea, async (req, res) => {
+  res.json(await listCustomers(req.user));
+});
+
+app.post("/api/app-admin/customers", authRequired, requireAppAdminArea, async (_req, res) => {
+  return res.status(409).json({ error: "Pro Server ist nur eine Installation zulässig." });
+});
+
+app.get("/api/app-admin/installation", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
+  res.json({
+    installation,
+    deployment_model: "single-tenant",
+    product_name: "CTSH Portal"
   });
 });
 
-app.get("/api/app-admin/users", authRequired, requireAppAdminArea, async (_req, res) => {
+app.put("/api/app-admin/installation", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
+  const updated = await updateInstallationRecord(installation.id, req.body || {});
+  if (!updated) return res.status(400).json({ error: "Keine Änderungen für die Installation übergeben." });
+  res.json(updated);
+});
+
+app.put("/api/app-admin/customers/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await requireInstallationCustomerId(req, res);
+  if (!installation) return;
+
+  const updated = await updateInstallationRecord(installation.id, req.body || {});
+  if (!updated) return res.status(400).json({ error: "Keine Änderungen für die Installation übergeben." });
+  res.json(updated);
+});
+
+app.get("/api/app-admin/product-modules", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
+  res.json(await loadInstallationModules(installation.id));
+});
+
+app.get("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await requireInstallationCustomerId(req, res);
+  if (!installation) return;
+  res.json(await loadInstallationModules(installation.id));
+});
+
+app.put("/api/app-admin/product-modules", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
+  const modules = Array.isArray(req.body?.modules) ? req.body.modules : [];
+  for (const moduleEntry of modules) {
+    const moduleKey = String(moduleEntry?.key || "").trim();
+    const moduleDefinition = getModuleByKey(moduleKey);
+    if (!moduleDefinition) continue;
+    const isEnabled = Boolean(moduleEntry?.is_enabled) || Boolean(moduleDefinition.licensing?.includedInBaseProduct);
+    await q(
+      `
+      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (app_customer_id, module_key)
+      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
+      `,
+      [installation.id, moduleKey, isEnabled]
+    );
+  }
+
+  res.json(await loadInstallationModules(installation.id));
+});
+
+app.put("/api/app-admin/customer-modules/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await requireInstallationCustomerId(req, res);
+  if (!installation) return;
+
+  const modules = Array.isArray(req.body?.modules) ? req.body.modules : [];
+  for (const moduleEntry of modules) {
+    const moduleKey = String(moduleEntry?.key || "").trim();
+    const moduleDefinition = getModuleByKey(moduleKey);
+    if (!moduleDefinition) continue;
+    const isEnabled = Boolean(moduleEntry?.is_enabled) || Boolean(moduleDefinition.licensing?.includedInBaseProduct);
+    await q(
+      `
+      INSERT INTO app_customer_modules (app_customer_id, module_key, is_enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (app_customer_id, module_key)
+      DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()
+      `,
+      [installation.id, moduleKey, isEnabled]
+    );
+  }
+
+  res.json(await loadInstallationModules(installation.id));
+});
+
+app.get("/api/app-admin/installation-options", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
+  res.json(await loadInstallationOptions(installation.id));
+});
+
+app.get("/api/app-admin/customer-options/:customerId", authRequired, requireAppAdminArea, async (req, res) => {
+  const installation = await requireInstallationCustomerId(req, res);
+  if (!installation) return;
+  res.json(await loadInstallationOptions(installation.id));
+});
+
+app.get("/api/app-admin/users", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
   const result = await q(
     `
     SELECT
@@ -1250,29 +1284,37 @@ app.get("/api/app-admin/users", authRequired, requireAppAdminArea, async (_req, 
     LEFT JOIN roles ro ON ro.id = u.role_id
     LEFT JOIN locations l ON l.id = u.location_id
     LEFT JOIN departments d ON d.id = u.fixed_department_id
+    WHERE u.app_customer_id = $1
     ORDER BY c.name, u.username
-    `
+    `,
+    [installationCustomerId]
   );
   res.json(result.rows);
 });
 
 app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (req, res) => {
   const userId = toPositiveInt(req.params.id);
-  if (!userId) return res.status(400).json({ error: "invalid user id" });
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
 
+  const installationCustomerId = await getInstallationCustomerId(req.user);
   const existingUser = await getUserContext(userId);
   if (!existingUser) return res.status(404).json({ error: "user not found" });
+  if (Number(existingUser.app_customer_id || 0) !== Number(installationCustomerId || 0)) {
+    return res.status(404).json({ error: "user not found" });
+  }
 
   const updates = [];
   const values = [];
-  let nextCustomerId = Number(existingUser.app_customer_id || 0) || null;
+  let nextCustomerId = Number(installationCustomerId || 0) || null;
   let effectiveRoleId = existingUser.role_id ? Number(existingUser.role_id) : null;
   let effectiveLocationId = existingUser.location_id ? Number(existingUser.location_id) : null;
   let effectiveFixedDepartmentId = existingUser.fixed_department_id ? Number(existingUser.fixed_department_id) : null;
 
   if (req.body?.app_customer_id !== undefined) {
     const customerId = toPositiveInt(req.body.app_customer_id);
-    if (!customerId) return res.status(400).json({ error: "invalid customer id" });
+    if (!customerId || customerId !== installationCustomerId) {
+      return res.status(400).json({ error: "Benutzer können keiner anderen Installation zugeordnet werden." });
+    }
     values.push(customerId);
     updates.push(`app_customer_id = $${values.length}`);
     nextCustomerId = customerId;
@@ -1282,7 +1324,7 @@ app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (re
     const roleId = req.body.role_id === null || req.body.role_id === "" ? null : toPositiveInt(req.body.role_id);
     if (roleId) {
       const roleExists = await q(`SELECT 1 FROM roles WHERE id = $1 AND app_customer_id = $2`, [roleId, nextCustomerId]);
-      if (!roleExists.rowCount) return res.status(400).json({ error: "invalid role for customer" });
+      if (!roleExists.rowCount) return res.status(400).json({ error: "Die gewählte Rolle ist in dieser Installation nicht verfügbar." });
     }
     values.push(roleId);
     updates.push(`role_id = $${values.length}`);
@@ -1293,7 +1335,7 @@ app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (re
     const locationId = req.body.location_id === null || req.body.location_id === "" ? null : toPositiveInt(req.body.location_id);
     if (locationId) {
       const locationExists = await q(`SELECT 1 FROM locations WHERE id = $1 AND app_customer_id = $2`, [locationId, nextCustomerId]);
-      if (!locationExists.rowCount) return res.status(400).json({ error: "invalid location for customer" });
+      if (!locationExists.rowCount) return res.status(400).json({ error: "Der gewählte Standort ist in dieser Installation nicht verfügbar." });
     }
     values.push(locationId);
     updates.push(`location_id = $${values.length}`);
@@ -1304,7 +1346,7 @@ app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (re
     const fixedDepartmentId = req.body.fixed_department_id === null || req.body.fixed_department_id === "" ? null : toPositiveInt(req.body.fixed_department_id);
     if (fixedDepartmentId) {
       const departmentExists = await q(`SELECT 1 FROM departments WHERE id = $1 AND app_customer_id = $2`, [fixedDepartmentId, nextCustomerId]);
-      if (!departmentExists.rowCount) return res.status(400).json({ error: "invalid department for customer" });
+      if (!departmentExists.rowCount) return res.status(400).json({ error: "Die gewählte Abteilung ist in dieser Installation nicht verfügbar." });
     }
     values.push(fixedDepartmentId);
     updates.push(`fixed_department_id = $${values.length}`);
@@ -1348,7 +1390,7 @@ app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (re
   }
 
   if (!updates.length) {
-    return res.status(400).json({ error: "no user changes provided" });
+    return res.status(400).json({ error: "Keine Änderungen für den Benutzer übergeben." });
   }
 
   values.push(userId);
@@ -2358,7 +2400,7 @@ async function requireCustomerAdminAccess(req, res, next) {
   req.portalPermissions = perms;
   req.managedCustomerId = await resolveRequestedCustomer(req);
   if (!req.managedCustomerId) {
-    return res.status(400).json({ error: "customer context missing" });
+    return res.status(400).json({ error: "installation context missing" });
   }
   req.activeModuleKeys = await getEnabledModuleKeysForCustomer(req.managedCustomerId);
   return next();
@@ -2366,11 +2408,9 @@ async function requireCustomerAdminAccess(req, res, next) {
 
 async function requirePalletModuleAdminAccess(req, res, next) {
   const perms = await getMyPermissions(req.user);
-  const targetCustomerId = isAppAdmin(req.user)
-    ? await resolveRequestedCustomer(req)
-    : req.user.app_customer_id;
+  const targetCustomerId = await resolveRequestedCustomer(req);
   if (!targetCustomerId) {
-    return res.status(400).json({ error: "customer context missing" });
+    return res.status(400).json({ error: "installation context missing" });
   }
   const activeModuleKeys = await getEnabledModuleKeysForCustomer(targetCustomerId);
   if (!canAccessModuleAdmin("pallets", req.user, perms, activeModuleKeys)) {
@@ -2394,10 +2434,13 @@ app.get("/api/locations", authRequired, requireModuleEnabled("pallets"), async (
 });
 
 app.get("/api/modules/pallets/admin/context", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const installation = await getInstallationCustomer(req.user);
   res.json({
     user: req.user,
-    managed_customer: await getCustomerById(req.moduleCustomerId),
-    available_customers: isAppAdmin(req.user) ? await listCustomers() : [],
+    managed_customer: installation,
+    installation,
+    available_customers: [],
+    deployment_model: "single-tenant",
     active_modules: req.activeModuleKeys,
     admin: {
       can_open_app_admin: isAppAdmin(req.user),

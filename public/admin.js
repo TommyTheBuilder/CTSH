@@ -1,6 +1,5 @@
 let token = localStorage.getItem("token");
 let context = null;
-let selectedCustomerId = "";
 let roles = [];
 let users = [];
 
@@ -9,7 +8,7 @@ const PERMISSION_SECTIONS = [
     key: "core_users_roles",
     moduleKey: null,
     title: "Core: Benutzer und Rollen",
-    description: "Rechte fuer die allgemeine Kunden-Administration im Dashboard.",
+    description: "Rechte für die allgemeine Organisations-Administration im Dashboard.",
     permissions: [
       { path: "users.manage", label: "Benutzer verwalten" },
       { path: "users.view_department", label: "Nur eigene Abteilung sehen" },
@@ -27,72 +26,72 @@ const PERMISSION_SECTIONS = [
       { path: "bookings.export", label: "Buchungen exportieren" },
       { path: "bookings.receipt", label: "Beleg drucken" },
       { path: "bookings.edit", label: "Buchungen bearbeiten" },
-      { path: "bookings.delete", label: "Buchungen loeschen" },
+      { path: "bookings.delete", label: "Buchungen löschen" },
       { path: "bookings.translogica", label: "Translogica setzen" }
     ]
   },
   {
     key: "pallets_stock",
     moduleKey: "pallets",
-    title: "Paletten: Bestaende und Faelle",
+    title: "Paletten: Bestände und Fälle",
     description: "Bestands- und Workflow-Rechte innerhalb des Paletten-Moduls.",
     permissions: [
-      { path: "stock.view", label: "Bestaende anzeigen" },
+      { path: "stock.view", label: "Bestände anzeigen" },
       { path: "stock.overall", label: "Komplett-Bestand anzeigen" },
       { path: "cases.create", label: "Aviso anlegen" },
       { path: "cases.internal_transfer", label: "Interne Lagerumbuchung" },
       { path: "cases.require_employee_code", label: "Mitarbeitercode in Status 2 verpflichtend" },
-      { path: "cases.claim", label: "Faelle uebernehmen" },
-      { path: "cases.edit", label: "Faelle bearbeiten" },
-      { path: "cases.submit", label: "Faelle zur Pruefung senden" },
-      { path: "cases.approve", label: "Faelle abschliessen" },
-      { path: "cases.cancel", label: "Faelle stornieren" },
-      { path: "cases.delete", label: "Faelle loeschen" },
+      { path: "cases.claim", label: "Fälle übernehmen" },
+      { path: "cases.edit", label: "Fälle bearbeiten" },
+      { path: "cases.submit", label: "Fälle zur Prüfung senden" },
+      { path: "cases.approve", label: "Fälle abschließen" },
+      { path: "cases.cancel", label: "Fälle stornieren" },
+      { path: "cases.delete", label: "Fälle löschen" },
       { path: "filters.all_locations", label: "Alle Standorte filtern" },
       { path: "masterdata.manage", label: "Modul-Stammdaten verwalten" },
-      { path: "masterdata.entrepreneurs_manage", label: "Frachtfuehrer-Stammdaten verwalten" }
+      { path: "masterdata.entrepreneurs_manage", label: "Frachtführer-Stammdaten verwalten" }
     ]
   },
   {
     key: "container_registration",
     moduleKey: "container_registration",
     title: "Container Anmeldung",
-    description: "Zugriff und Adminrechte fuer das Modul Container Anmeldung.",
+    description: "Zugriff und Adminrechte für das Modul Container Anmeldung.",
     permissions: [
-      { path: "modules.container_registration.open", label: "Modul oeffnen" },
-      { path: "modules.container_registration.viewer", label: "Viewer oeffnen" },
+      { path: "modules.container_registration.open", label: "Modul öffnen" },
+      { path: "modules.container_registration.viewer", label: "Viewer öffnen" },
       { path: "modules.container_registration.history", label: "Historie sehen" },
       { path: "modules.container_registration.history_export", label: "Historie exportieren" },
       { path: "modules.container_registration.history_clear", label: "Historie leeren" },
       { path: "modules.container_registration.manage_time", label: "Zeitfenster verwalten" },
       { path: "modules.container_registration.manage_status", label: "Status verwalten" },
-      { path: "modules.container_registration.reset_container", label: "Einzelnen Container zuruecksetzen" },
-      { path: "modules.container_registration.reset_all", label: "Alle Container zuruecksetzen" }
+      { path: "modules.container_registration.reset_container", label: "Einzelnen Container zurücksetzen" },
+      { path: "modules.container_registration.reset_all", label: "Alle Container zurücksetzen" }
     ]
   },
   {
     key: "container_planning",
     moduleKey: "container_planning",
     title: "Container und LKW Planung",
-    description: "Rechte fuer Planung, Anlage und Bearbeitung des Moduls.",
+    description: "Rechte für Planung, Anlage und Bearbeitung des Moduls.",
     permissions: [
-      { path: "modules.container_planning.open", label: "Modul oeffnen" },
+      { path: "modules.container_planning.open", label: "Modul öffnen" },
       { path: "modules.container_planning.create", label: "Planung anlegen" },
       { path: "modules.container_planning.edit", label: "Planung bearbeiten" },
-      { path: "modules.container_planning.delete", label: "Planung loeschen" }
+      { path: "modules.container_planning.delete", label: "Planung löschen" }
     ]
   },
   {
     key: "warehouse",
     moduleKey: "warehouse",
     title: "Warehouse Modul",
-    description: "Rechte fuer Lager, Bestand, Bewegungen und Picking.",
+    description: "Rechte für Lager, Bestand, Bewegungen und Picking.",
     permissions: [
       { path: "warehouse.dashboard.view", label: "Dashboard sehen" },
       { path: "warehouse.customers.view", label: "Kunden sehen" },
       { path: "warehouse.customers.manage", label: "Kunden verwalten" },
-      { path: "warehouse.storage_locations.view", label: "Lagerplaetze sehen" },
-      { path: "warehouse.storage_locations.manage", label: "Lagerplaetze verwalten" },
+      { path: "warehouse.storage_locations.view", label: "Lagerplätze sehen" },
+      { path: "warehouse.storage_locations.manage", label: "Lagerplätze verwalten" },
       { path: "warehouse.inventory.view", label: "Bestand sehen" },
       { path: "warehouse.inventory.manage", label: "Bestand verwalten" },
       { path: "warehouse.transactions.create", label: "Bewegungen anlegen" },
@@ -120,13 +119,6 @@ function api(path, opts = {}) {
       ...(opts.headers || {})
     }
   });
-}
-
-function withCustomerQuery(path) {
-  if (!selectedCustomerId) return path;
-  const url = new URL(path, window.location.origin);
-  url.searchParams.set("customerId", selectedCustomerId);
-  return `${url.pathname}${url.search}`;
 }
 
 function setMsg(id, text, ok = false) {
@@ -246,13 +238,6 @@ function optionMarkup(items, placeholder, allowEmpty = true) {
   return prefix + items.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("");
 }
 
-function syncCustomerInUrl() {
-  const url = new URL(window.location.href);
-  if (selectedCustomerId) url.searchParams.set("customerId", selectedCustomerId);
-  else url.searchParams.delete("customerId");
-  history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-}
-
 function closeSettingsMenu() {
   $("settingsMenu")?.classList.remove("open");
   $("settingsTriggerBtn")?.setAttribute("aria-expanded", "false");
@@ -310,8 +295,7 @@ function bindSettingsMenu() {
 
   $("openPalletAdminBtn")?.addEventListener("click", () => {
     closeSettingsMenu();
-    const target = selectedCustomerId ? `/modules/pallets/admin.html?customerId=${encodeURIComponent(selectedCustomerId)}` : "/modules/pallets/admin.html";
-    window.location.href = target;
+    window.location.href = "/modules/pallets/admin.html";
   });
 
   $("openAppAdminBtn")?.addEventListener("click", () => {
@@ -356,13 +340,13 @@ function bindPasswordModal() {
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      return setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
     }
     if (new_password.length < 8) {
       return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      return setMsg("passwordModalMsg", "Die Passwoerter stimmen nicht ueberein.");
+      return setMsg("passwordModalMsg", "Die Passwörter stimmen nicht überein.");
     }
 
     const response = await api("/api/change-password", {
@@ -391,22 +375,6 @@ function renderModulePills() {
   host.innerHTML = entries.length
     ? entries.map((key) => `<span class="pill">${escapeHtml(labelMap[key] || key)}</span>`).join("")
     : `<span class="muted">Keine Module freigeschaltet</span>`;
-}
-
-function populateCustomerSwitch() {
-  const wrap = $("customerSwitchWrap");
-  const select = $("customerSelect");
-  const available = Array.isArray(context?.available_customers) ? context.available_customers : [];
-  if (!wrap || !select) return;
-
-  if (!available.length) {
-    wrap.style.display = "none";
-    return;
-  }
-
-  wrap.style.display = "";
-  select.innerHTML = available.map((customer) => `<option value="${customer.id}">${escapeHtml(customer.name)}</option>`).join("");
-  if (selectedCustomerId) select.value = selectedCustomerId;
 }
 
 function populateCommonSelects() {
@@ -468,8 +436,8 @@ function collectPermissionsFromInputs() {
 function renderRoles() {
   const options = roles.map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`).join("");
   $("roleSelect").innerHTML = roles.length ? options : `<option value="">Keine Rollen vorhanden</option>`;
-  $("createRoleId").innerHTML = roles.length ? optionMarkup(roles, "Rolle waehlen", false) : `<option value="">Keine Rolle vorhanden</option>`;
-  $("editRoleId").innerHTML = roles.length ? optionMarkup(roles, "Rolle waehlen", false) : `<option value="">Keine Rolle vorhanden</option>`;
+  $("createRoleId").innerHTML = roles.length ? optionMarkup(roles, "Rolle wählen", false) : `<option value="">Keine Rolle vorhanden</option>`;
+  $("editRoleId").innerHTML = roles.length ? optionMarkup(roles, "Rolle wählen", false) : `<option value="">Keine Rolle vorhanden</option>`;
 
   if (roles.length) {
     if (!$("roleSelect").value) $("roleSelect").value = String(roles[0].id);
@@ -525,18 +493,15 @@ function syncSelectedUser() {
 
 function applyContextUi() {
   $("me").textContent = context?.user
-    ? `${context.user.username} • ${context.user.business_role_name || "-"}`
+    ? `${context.user.username} - ${context.user.business_role_name || "-"}`
     : "-";
-  $("managedCustomerName").textContent = context?.managed_customer?.name || "Kein Kunde";
-  $("adminLead").textContent = canManageRoles()
-    ? "Benutzer und Rechte innerhalb des aktuellen Kunden verwalten."
-    : "Benutzer im eigenen Kundenkontext einsehen.";
+  $("managedCustomerName").textContent = context?.installation?.name || context?.managed_customer?.name || "Keine Installation";
+  $("adminLead").textContent = "Benutzer und Rechte.";
 
   $("openPalletAdminBtn").style.display = context?.admin?.can_open_pallet_admin && (context?.active_modules || []).includes("pallets") ? "" : "none";
   $("openAppAdminBtn").style.display = context?.admin?.can_open_app_admin ? "" : "none";
 
   renderModulePills();
-  populateCustomerSwitch();
   populateCommonSelects();
   renderPermissionSections();
 
@@ -555,7 +520,7 @@ function applyContextUi() {
 }
 
 async function loadContext() {
-  const response = await api(withCustomerQuery("/api/admin/context"), { method: "GET", headers: {} });
+  const response = await api("/api/admin/context", { method: "GET", headers: {} });
   if (!response.ok) {
     if (response.status === 401) {
       localStorage.removeItem("token");
@@ -563,28 +528,24 @@ async function loadContext() {
       return false;
     }
     const data = await response.json().catch(() => ({}));
-    alert(data?.error || "Kunden-Administration konnte nicht geladen werden.");
+    alert(data?.error || "Organisations-Administration konnte nicht geladen werden.");
     window.location.href = "/dashboard.html";
     return false;
   }
 
   context = await response.json();
-  if (!selectedCustomerId && context?.managed_customer?.id) {
-    selectedCustomerId = String(context.managed_customer.id);
-  }
-  syncCustomerInUrl();
   applyContextUi();
   return true;
 }
 
 async function loadRoles() {
-  const response = await api(withCustomerQuery("/api/admin/roles"), { method: "GET", headers: {} });
+  const response = await api("/api/admin/roles", { method: "GET", headers: {} });
   roles = response.ok ? await response.json() : [];
   renderRoles();
 }
 
 async function loadUsers() {
-  const response = await api(withCustomerQuery("/api/admin/users"), { method: "GET", headers: {} });
+  const response = await api("/api/admin/users", { method: "GET", headers: {} });
   users = response.ok ? await response.json() : [];
   renderUsers();
 }
@@ -598,12 +559,6 @@ async function reloadAll() {
 }
 
 function bindEvents() {
-  $("customerSelect")?.addEventListener("change", async (event) => {
-    selectedCustomerId = String(event.target.value || "");
-    syncCustomerInUrl();
-    await reloadAll();
-  });
-
   $("roleSelect")?.addEventListener("change", () => {
     applyRoleToInputs($("roleSelect").value);
   });
@@ -614,7 +569,7 @@ function bindEvents() {
     const name = String($("newRoleName").value || "").trim();
     if (!name) return setMsg("createRoleMsg", "Bitte einen Rollennamen eingeben.");
 
-    const response = await api(withCustomerQuery("/api/admin/roles"), {
+    const response = await api("/api/admin/roles", {
       method: "POST",
       body: JSON.stringify({ name, permissions: buildEmptyPermissions() })
     });
@@ -629,8 +584,8 @@ function bindEvents() {
 
   $("saveRoleBtn")?.addEventListener("click", async () => {
     const roleId = $("roleSelect").value;
-    if (!roleId) return setMsg("editRoleMsg", "Bitte eine Rolle auswaehlen.");
-    const response = await api(withCustomerQuery(`/api/admin/roles/${encodeURIComponent(roleId)}`), {
+    if (!roleId) return setMsg("editRoleMsg", "Bitte eine Rolle auswählen.");
+    const response = await api(`/api/admin/roles/${encodeURIComponent(roleId)}`, {
       method: "PUT",
       body: JSON.stringify({ permissions: collectPermissionsFromInputs() })
     });
@@ -644,12 +599,12 @@ function bindEvents() {
 
   $("deleteRoleBtn")?.addEventListener("click", async () => {
     const roleId = $("roleSelect").value;
-    if (!roleId) return setMsg("editRoleMsg", "Bitte eine Rolle auswaehlen.");
-    if (!confirm("Rolle wirklich loeschen?")) return;
-    const response = await api(withCustomerQuery(`/api/admin/roles/${encodeURIComponent(roleId)}`), { method: "DELETE" });
+    if (!roleId) return setMsg("editRoleMsg", "Bitte eine Rolle auswählen.");
+    if (!confirm("Rolle wirklich löschen?")) return;
+    const response = await api(`/api/admin/roles/${encodeURIComponent(roleId)}`, { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("editRoleMsg", data?.error || "Rolle konnte nicht geloescht werden.");
-    setMsg("editRoleMsg", "Rolle geloescht.", true);
+    if (!response.ok) return setMsg("editRoleMsg", data?.error || "Rolle konnte nicht gelöscht werden.");
+    setMsg("editRoleMsg", "Rolle gelöscht.", true);
     await loadRoles();
   });
 
@@ -667,10 +622,10 @@ function bindEvents() {
       return setMsg("createUserMsg", "Benutzername und Passwort sind Pflicht.");
     }
     if (!payload.role_id) {
-      return setMsg("createUserMsg", "Bitte eine Rolle auswaehlen.");
+      return setMsg("createUserMsg", "Bitte eine Rolle auswählen.");
     }
 
-    const response = await api(withCustomerQuery("/api/admin/users"), {
+    const response = await api("/api/admin/users", {
       method: "POST",
       body: JSON.stringify(payload)
     });
@@ -688,7 +643,7 @@ function bindEvents() {
 
   $("saveUserBtn")?.addEventListener("click", async () => {
     const userId = $("editUserSelect").value;
-    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswaehlen.");
+    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswählen.");
 
     const payload = {
       email: String($("editEmail").value || "").trim() || null,
@@ -698,7 +653,7 @@ function bindEvents() {
       is_active: $("editIsActive").value === "true"
     };
 
-    const response = await api(withCustomerQuery(`/api/admin/users/${encodeURIComponent(userId)}`), {
+    const response = await api(`/api/admin/users/${encodeURIComponent(userId)}`, {
       method: "PUT",
       body: JSON.stringify(payload)
     });
@@ -712,32 +667,31 @@ function bindEvents() {
 
   $("resetPasswordBtn")?.addEventListener("click", async () => {
     const userId = $("editUserSelect").value;
-    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswaehlen.");
-    const password = prompt("Neues Passwort fuer den Benutzer eingeben:");
+    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswählen.");
+    const password = prompt("Neues Passwort für den Benutzer eingeben:");
     if (!password) return;
-    const response = await api(withCustomerQuery(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`), {
+    const response = await api(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, {
       method: "POST",
       body: JSON.stringify({ password })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("editUserMsg", data?.error || "Passwort konnte nicht zurueckgesetzt werden.");
-    setMsg("editUserMsg", "Passwort zurueckgesetzt.", true);
+    if (!response.ok) return setMsg("editUserMsg", data?.error || "Passwort konnte nicht zurückgesetzt werden.");
+    setMsg("editUserMsg", "Passwort zurückgesetzt.", true);
   });
 
   $("deleteUserBtn")?.addEventListener("click", async () => {
     const userId = $("editUserSelect").value;
-    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswaehlen.");
-    if (!confirm("Benutzer wirklich loeschen?")) return;
-    const response = await api(withCustomerQuery(`/api/admin/users/${encodeURIComponent(userId)}`), { method: "DELETE" });
+    if (!userId) return setMsg("editUserMsg", "Bitte einen Benutzer auswählen.");
+    if (!confirm("Benutzer wirklich löschen?")) return;
+    const response = await api(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) return setMsg("editUserMsg", data?.error || "Benutzer konnte nicht geloescht werden.");
-    setMsg("editUserMsg", "Benutzer geloescht.", true);
+    if (!response.ok) return setMsg("editUserMsg", data?.error || "Benutzer konnte nicht gelöscht werden.");
+    setMsg("editUserMsg", "Benutzer gelöscht.", true);
     await loadUsers();
   });
 }
 
 (async function init() {
-  selectedCustomerId = String(new URLSearchParams(window.location.search).get("customerId") || "").trim();
   bindTabs();
   bindSettingsMenu();
   bindPasswordModal();

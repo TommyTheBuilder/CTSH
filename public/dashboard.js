@@ -142,13 +142,13 @@ function bindPasswordModal() {
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      return setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
     }
     if (new_password.length < 8) {
       return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      return setMsg("passwordModalMsg", "Die Passwoerter stimmen nicht ueberein.");
+      return setMsg("passwordModalMsg", "Die Passwörter stimmen nicht überein.");
     }
 
     const response = await api("/api/change-password", {
@@ -217,7 +217,7 @@ function renderModules() {
     <article class="${moduleCardClass(module.key)}" data-module-launch="${escapeHtml(module.launchPath)}">
       <div class="module-button__top">
         <span class="module-button__icon ${module.key === "pallets" ? "module-button__icon--square" : "module-button__icon--wide"}">${moduleIcon(module.key)}</span>
-        <span class="module-button__tag">${escapeHtml(module.dashboard?.tag || "Modul")}</span>
+        <span class="module-button__tag">${escapeHtml(module.dashboard?.tag || module.licensing?.label || "Modul")}</span>
       </div>
       <div class="module-button__copy">
         <span class="module-button__eyebrow">${escapeHtml(module.dashboard?.eyebrow || "Bereich")}</span>
@@ -225,11 +225,11 @@ function renderModules() {
         <span class="module-button__description">${escapeHtml(module.dashboard?.description || "")}</span>
       </div>
       <div class="module-button__footer module-card-footer">
-        <button class="secondary module-card-open" type="button" data-module-launch="${escapeHtml(module.launchPath)}">Modul oeffnen</button>
+        <button class="secondary module-card-open" type="button" data-module-launch="${escapeHtml(module.launchPath)}">Modul öffnen</button>
         ${module.adminPath ? `<button class="secondary module-card-admin" type="button" data-module-admin="${escapeHtml(module.adminPath)}">Modul-Admin</button>` : ""}
       </div>
     </article>
-  `).join("") : '<div class="module-feed__empty">Fuer diesen Kunden sind aktuell keine Module freigeschaltet.</div>';
+  `).join("") : '<div class="module-feed__empty">Keine Module freigeschaltet.</div>';
 
   document.querySelectorAll("[data-module-launch]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -252,7 +252,7 @@ function renderLiveFeed(items, message = "") {
     return;
   }
   if (!items.length) {
-    host.innerHTML = '<div class="module-feed__empty">Keine Aktivitaeten vorhanden.</div>';
+    host.innerHTML = '<div class="module-feed__empty">Keine Aktivitäten.</div>';
     return;
   }
   host.innerHTML = items.map((item) => `
@@ -288,10 +288,10 @@ function startLiveFeed() {
 function applyContextUi() {
   updateGreeting();
   $("me").textContent = coreContext?.user
-    ? `${coreContext.user.username} • ${coreContext.user.business_role_name || "-"}`
+    ? `${coreContext.user.username} - ${coreContext.user.business_role_name || "-"}`
     : "-";
-  $("customerName").textContent = coreContext?.customer?.name || "Kein Kunde";
-  $("accessSummary").textContent = coreContext?.user?.is_app_admin ? "App Admin" : "Kundenkontext";
+  $("installationName").textContent = coreContext?.installation?.name || coreContext?.customer?.name || "Keine Installation";
+  $("accessSummary").textContent = coreContext?.user?.is_app_admin ? "App Admin" : "Organisationskontext";
 
   const canCustomerAdmin = Boolean(coreContext?.admin?.can_open_customer_admin);
   const canPalletAdmin = Boolean(coreContext?.admin?.can_open_pallet_admin);

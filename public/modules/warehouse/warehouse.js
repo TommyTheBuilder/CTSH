@@ -1,7 +1,7 @@
 ﻿const token = localStorage.getItem("token");
 if (!token) window.location.href = "/login.html";
 
-const PACKAGING_OPTIONS = ["Karton groÃŸ", "Karton klein"];
+const PACKAGING_OPTIONS = ["Karton groß", "Karton klein"];
 
 const state = {
   activeTab: "dashboard",
@@ -227,7 +227,7 @@ function renderPackagingOptions(selectId, selectedValue = "") {
   if (!select) return;
   const currentValue = selectedValue || select.value || "";
   select.innerHTML = `
-    <option value="">Verpackungsart wÃ¤hlen</option>
+    <option value="">Verpackungsart wählen</option>
     ${PACKAGING_OPTIONS.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}
   `;
   setSelectValue(select, currentValue);
@@ -257,14 +257,14 @@ function renderBookingLocationOptions() {
   const destinationRows = state.refs.locations.filter((location) => locationFreeSlotCount(location) > 0);
 
   sourceSelect.innerHTML = `
-    <option value="">Quell-Lagerplatz wÃ¤hlen</option>
+    <option value="">Quell-Lagerplatz wählen</option>
     ${sourceRows.map((location) => `
       <option value="${escapeHtml(location.id)}">${escapeHtml(bookingLocationOptionLabel(location))}</option>
     `).join("")}
   `;
 
   destinationSelect.innerHTML = `
-    <option value="">Ziel-Lagerplatz wÃ¤hlen</option>
+    <option value="">Ziel-Lagerplatz wählen</option>
     ${destinationRows.map((location) => `
       <option value="${escapeHtml(location.id)}">${escapeHtml(bookingLocationOptionLabel(location))}</option>
     `).join("")}
@@ -287,7 +287,7 @@ async function loadLocationSlots(locationId, options = {}) {
   const response = await api(`/api/warehouse/storage-locations/${locationId}/slots`, { method: "GET", headers: {} });
   const data = await readJsonSafe(response);
   if (!response.ok) {
-    throw new Error(data?.error || "StellplÃ¤tze konnten nicht geladen werden.");
+    throw new Error(data?.error || "Stellplätze konnten nicht geladen werden.");
   }
 
   state.locationSlotCache[cacheKey] = Array.isArray(data) ? data : [];
@@ -328,8 +328,8 @@ function renderBookingSlotOptions(selectId, rows, mode, helpId, emptyText) {
 
   if (help) {
     help.textContent = mode === "occupied"
-      ? "Nur belegte StellplÃ¤tze werden angezeigt. Kunde und Positionsnummer grenzen die Auswahl zusÃ¤tzlich ein."
-      : "Nur freie StellplÃ¤tze sind auswÃ¤hlbar. Volle LagerplÃ¤tze erscheinen nicht in der Zielliste.";
+      ? "Nur belegte Stellplätze werden angezeigt. Kunde und Positionsnummer grenzen die Auswahl zusätzlich ein."
+      : "Nur freie Stellplätze sind auswählbar. Volle Lagerplätze erscheinen nicht in der Zielliste.";
   }
 }
 
@@ -387,8 +387,8 @@ async function syncBookingSlotOptions() {
       "occupied",
       "bookingSourceSlotsHelp",
       source
-        ? "Keine belegten StellplÃ¤tze fÃ¼r die aktuelle Auswahl gefunden."
-        : "Belegte StellplÃ¤tze werden geladen, sobald ein Quell-Lagerplatz gewÃ¤hlt wurde."
+        ? "Keine belegten Stellplätze für die aktuelle Auswahl gefunden."
+        : "Belegte Stellplätze werden geladen, sobald ein Quell-Lagerplatz gewählt wurde."
     );
     renderBookingSlotOptions(
       "bookingDestinationSlots",
@@ -396,8 +396,8 @@ async function syncBookingSlotOptions() {
       "free",
       "bookingDestinationSlotsHelp",
       destination
-        ? "Keine freien StellplÃ¤tze verfÃ¼gbar."
-        : "Freie StellplÃ¤tze werden geladen, sobald ein Ziel-Lagerplatz gewÃ¤hlt wurde."
+        ? "Keine freien Stellplätze verfügbar."
+        : "Freie Stellplätze werden geladen, sobald ein Ziel-Lagerplatz gewählt wurde."
     );
 
     syncBookingPackagingFromSource();
@@ -405,7 +405,7 @@ async function syncBookingSlotOptions() {
     updateBookingSubmitState();
   } catch (error) {
     if (state.bookingSlotSyncId !== syncId) return;
-    setMessage("bookingMsg", error.message || "StellplÃ¤tze konnten nicht geladen werden.");
+    setMessage("bookingMsg", error.message || "Stellplätze konnten nicht geladen werden.");
     updateBookingSubmitState();
   }
 }
@@ -435,33 +435,33 @@ function validateBookingForm(options = {}) {
 
   let message = "";
 
-  if (!Number.isInteger(quantity) || quantity <= 0) message = "Bitte eine gÃ¼ltige Menge eingeben.";
-  else if (!packaging) message = "Bitte eine Verpackungsart auswÃ¤hlen.";
-  else if (type === "IN" && !destination) message = "Bitte einen Ziel-Lagerplatz auswÃ¤hlen.";
-  else if (type === "OUT" && !source) message = "Bitte einen Quell-Lagerplatz auswÃ¤hlen.";
-  else if (type === "TRANSFER" && (!source || !destination)) message = "Bitte Quelle und Ziel auswÃ¤hlen.";
+  if (!Number.isInteger(quantity) || quantity <= 0) message = "Bitte eine gültige Menge eingeben.";
+  else if (!packaging) message = "Bitte eine Verpackungsart wählen.";
+  else if (type === "IN" && !destination) message = "Bitte einen Ziel-Lagerplatz wählen.";
+  else if (type === "OUT" && !source) message = "Bitte einen Quell-Lagerplatz wählen.";
+  else if (type === "TRANSFER" && (!source || !destination)) message = "Bitte Quelle und Ziel wählen.";
   else if (type === "TRANSFER" && source && destination && Number(source.id) === Number(destination.id)) {
-    message = "Quelle und Ziel mÃ¼ssen bei einer Umlagerung unterschiedlich sein.";
+    message = "Quelle und Ziel müssen bei einer Umlagerung unterschiedlich sein.";
   } else if (type === "IN" && destinationSlots.length !== quantity) {
-    message = "FÃ¼r eine Einbuchung muss die Menge exakt der Anzahl ausgewÃ¤hlter Ziel-StellplÃ¤tze entsprechen.";
+    message = "Für eine Einbuchung muss die Menge exakt der Anzahl ausgewählter Ziel-Stellplätze entsprechen.";
   } else if (type === "OUT" && sourceSlots.length !== quantity) {
-    message = "FÃ¼r eine Ausbuchung muss die Menge exakt der Anzahl ausgewÃ¤hlter Quell-StellplÃ¤tze entsprechen.";
+    message = "Für eine Ausbuchung muss die Menge exakt der Anzahl ausgewählter Quell-Stellplätze entsprechen.";
   } else if (type === "TRANSFER" && (sourceSlots.length !== quantity || destinationSlots.length !== quantity)) {
-    message = "FÃ¼r eine Umlagerung mÃ¼ssen Quelle, Ziel und Menge exakt gleich viele StellplÃ¤tze enthalten.";
+    message = "Für eine Umlagerung müssen Quelle, Ziel und Menge exakt gleich viele Stellplätze enthalten.";
   } else if (type !== "IN" && source) {
     const selectedSourceRows = getSelectedSlotRows(source.id, sourceSlots);
     const packagingValues = [...new Set(selectedSourceRows.map((row) => row.verpackungsart).filter(Boolean))];
     if (packagingValues.length > 1) {
-      message = "Die ausgewÃ¤hlten Quell-StellplÃ¤tze verwenden unterschiedliche Verpackungsarten.";
+      message = "Die ausgewählten Quell-Stellplätze verwenden unterschiedliche Verpackungsarten.";
     } else if (packagingValues.length === 1 && packagingValues[0] !== packaging) {
-      message = "Die Verpackungsart muss zu den ausgewÃ¤hlten Quell-StellplÃ¤tzen passen.";
+      message = "Die Verpackungsart muss zu den ausgewählten Quell-Stellplätzen passen.";
     }
   }
 
   if (validationHint) {
     validationHint.textContent = message && (showMessage || bookingStarted)
       ? message
-      : "WÃ¤hlen Sie exakt so viele StellplÃ¤tze aus, wie unter Menge eingetragen ist.";
+      : "Wählen Sie exakt so viele Stellplätze aus, wie unter Menge eingetragen ist.";
     validationHint.style.color = message && (showMessage || bookingStarted) ? "#b00020" : "";
   }
 
@@ -508,7 +508,7 @@ function renderSlotModalDetail(row = null, location = null) {
   if (!host) return;
 
   if (!row) {
-    host.innerHTML = `<div class="warehouse-empty">WÃ¤hlen Sie einen Stellplatz aus oder fahren Sie mit der Maus Ã¼ber ein belegtes Feld.</div>`;
+    host.innerHTML = `<div class="warehouse-empty">Wählen Sie einen Stellplatz aus oder fahren Sie mit der Maus über ein belegtes Feld.</div>`;
     return;
   }
 
@@ -528,8 +528,8 @@ function renderSlotModalDetail(row = null, location = null) {
           <strong>Frei</strong>
         </div>
         <div class="warehouse-slot-detail-row">
-          <span>VerfÃ¼gbar</span>
-          <strong>Der Stellplatz kann direkt fÃ¼r eine Einlagerung verwendet werden.</strong>
+          <span>Verfügbar</span>
+          <strong>Der Stellplatz kann direkt für eine Einlagerung verwendet werden.</strong>
         </div>
       </div>
     `
@@ -600,8 +600,8 @@ async function openLocationSlotModal(locationId) {
   back.style.display = "flex";
   back.setAttribute("aria-hidden", "false");
   title.textContent = `${location.name} - Stellplatz-Raster`;
-  lead.textContent = "Freie und belegte StellplÃ¤tze werden als Raster angezeigt. Details Ã¶ffnen Sie per Hover oder Klick.";
-  grid.innerHTML = `<div class="warehouse-empty">StellplÃ¤tze werden geladen...</div>`;
+  lead.textContent = "Freie und belegte Stellplätze werden als Raster angezeigt. Details öffnen Sie per Hover oder Klick.";
+  grid.innerHTML = `<div class="warehouse-empty">Stellplätze werden geladen...</div>`;
   renderSlotModalDetail(null, location);
 
   try {
@@ -635,7 +635,7 @@ async function openLocationSlotModal(locationId) {
       button.addEventListener("click", () => renderSlotModalDetail(row, location));
     });
   } catch (error) {
-    grid.innerHTML = `<div class="warehouse-empty">${escapeHtml(error.message || "StellplÃ¤tze konnten nicht geladen werden.")}</div>`;
+    grid.innerHTML = `<div class="warehouse-empty">${escapeHtml(error.message || "Stellplätze konnten nicht geladen werden.")}</div>`;
   }
 }
 
@@ -646,15 +646,15 @@ function setSidebarNote() {
   const actions = [];
   if (permissionValue("warehouse.transactions.create")) actions.push("Buchungen");
   if (permissionValue("warehouse.inventory.view")) actions.push("Live-Bestand");
-  if (permissionValue("warehouse.storage_locations.manage")) actions.push("LagerplÃ¤tze");
+  if (permissionValue("warehouse.storage_locations.manage")) actions.push("Lagerplätze");
   if (permissionValue("warehouse.customers.manage")) actions.push("Kunden");
-  if (permissionValue("warehouse.picking.manage")) actions.push("VersandauftrÃ¤ge BÃ¼ro");
-  if (permissionValue("warehouse.picking.process")) actions.push("VersandauftrÃ¤ge Lager");
+  if (permissionValue("warehouse.picking.manage")) actions.push("Versandaufträge Büro");
+  if (permissionValue("warehouse.picking.process")) actions.push("Versandaufträge Lager");
   if (permissionValue("warehouse.transactions.view")) actions.push("Historie");
 
   note.textContent = actions.length
     ? `Freigeschaltet: ${actions.join(", ")}.`
-    : "FÃ¼r dieses Konto sind aktuell keine Warehouse-Bereiche freigeschaltet.";
+    : "Für dieses Konto sind aktuell keine Warehouse-Bereiche freigeschaltet.";
 }
 
 function updateQuickStats(summary = {}) {
@@ -885,7 +885,7 @@ function bindPasswordModal() {
     const confirmPassword = String($("confirmPassword").value || "").trim();
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setMessage("passwordModalMsg", "Bitte alle Felder ausfÃ¼llen.");
+      setMessage("passwordModalMsg", "Bitte alle Felder ausfüllen.");
       return;
     }
     if (newPassword.length < 8) {
@@ -893,7 +893,7 @@ function bindPasswordModal() {
       return;
     }
     if (newPassword !== confirmPassword) {
-      setMessage("passwordModalMsg", "Die neuen PasswÃ¶rter stimmen nicht Ã¼berein.");
+      setMessage("passwordModalMsg", "Die neuen Passwörter stimmen nicht überein.");
       return;
     }
 
@@ -910,10 +910,10 @@ function bindPasswordModal() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("passwordModalMsg", data?.error || "Passwort konnte nicht geÃ¤ndert werden.");
+        setMessage("passwordModalMsg", data?.error || "Passwort konnte nicht geändert werden.");
         return;
       }
-      setMessage("passwordModalMsg", "Passwort erfolgreich geÃ¤ndert.", true);
+      setMessage("passwordModalMsg", "Passwort erfolgreich geändert.", true);
       window.setTimeout(() => showPasswordModal(false), 700);
     } catch {
       setMessage("passwordModalMsg", "Netzwerkfehler. Bitte erneut versuchen.");
@@ -959,10 +959,10 @@ function getLocationCapacityMetrics(location) {
   const overflow = Math.max(occupied - capacity, 0);
 
   let tone = "ok";
-  let badge = occupied === 0 ? "Leer" : "VerfÃ¼gbar";
+  let badge = occupied === 0 ? "Leer" : "Verfügbar";
   if (rawPercent >= 100) {
     tone = "critical";
-    badge = overflow > 0 ? "ÃœberfÃ¼llt" : "Voll";
+    badge = overflow > 0 ? "Überfüllt" : "Voll";
   } else if (rawPercent >= 80) {
     tone = "warning";
     badge = "Knapp";
@@ -979,7 +979,7 @@ function getLocationCapacityMetrics(location) {
     tone,
     badge,
     detailText: overflow > 0
-      ? `${formatNumber(overflow)} Ã¼ber KapazitÃ¤t`
+      ? `${formatNumber(overflow)} über Kapazität`
       : `${formatNumber(free)} frei`
   };
 }
@@ -1023,13 +1023,13 @@ function renderLocationCapacityCards() {
               <span>${escapeHtml(metrics.detailText)}</span>
             </div>
             <div class="warehouse-capacity-card__foot">
-              <span>${escapeHtml(`${formatNumber(metrics.positions)} belegte StellplÃ¤tze`)}</span>
-              <span>${escapeHtml(`${formatNumber(Math.round(metrics.rawPercent))}% Auslastung â€¢ Raster Ã¶ffnen`)}</span>
+              <span>${escapeHtml(`${formatNumber(metrics.positions)} belegte Stellplätze`)}</span>
+              <span>${escapeHtml(`${formatNumber(Math.round(metrics.rawPercent))}% Auslastung | Raster öffnen`)}</span>
             </div>
           </button>
         `;
       }).join("")
-    : `<div class="warehouse-empty">Noch keine LagerplÃ¤tze vorhanden.</div>`;
+    : `<div class="warehouse-empty">Noch keine Lagerplätze vorhanden.</div>`;
 
   hosts.forEach((host) => {
     host.innerHTML = markup;
@@ -1084,7 +1084,7 @@ function renderBookingPreview() {
     <div class="warehouse-preview__row"><span>Kunde</span><strong>${escapeHtml(customer)}</strong></div>
     <div class="warehouse-preview__row"><span>Positionsnummer</span><strong>${escapeHtml(positionsNr)}</strong></div>
     <div class="warehouse-preview__row"><span>Lagerplatz</span><strong>${escapeHtml(locationText || "-")}</strong></div>
-    <div class="warehouse-preview__row"><span>StellplÃ¤tze</span><strong>${escapeHtml(slotText)}</strong></div>
+    <div class="warehouse-preview__row"><span>Stellplätze</span><strong>${escapeHtml(slotText)}</strong></div>
     <div class="warehouse-preview__row"><span>Verpackung</span><strong>${escapeHtml(packaging || "-")}</strong></div>
     <div class="warehouse-preview__row"><span>Menge</span><strong>${escapeHtml(quantity)}</strong></div>
   `;
@@ -1098,10 +1098,10 @@ function resetBookingForm() {
   if ($("bookingSourceSlots")) $("bookingSourceSlots").innerHTML = "";
   if ($("bookingDestinationSlots")) $("bookingDestinationSlots").innerHTML = "";
   if ($("bookingSourceSlotsHelp")) {
-    $("bookingSourceSlotsHelp").textContent = "Belegte StellplÃ¤tze werden geladen, sobald ein Quell-Lagerplatz gewÃ¤hlt wurde.";
+    $("bookingSourceSlotsHelp").textContent = "Belegte Stellplätze werden geladen, sobald ein Quell-Lagerplatz gewählt wurde.";
   }
   if ($("bookingDestinationSlotsHelp")) {
-    $("bookingDestinationSlotsHelp").textContent = "Freie StellplÃ¤tze werden geladen, sobald ein Ziel-Lagerplatz gewÃ¤hlt wurde.";
+    $("bookingDestinationSlotsHelp").textContent = "Freie Stellplätze werden geladen, sobald ein Ziel-Lagerplatz gewählt wurde.";
   }
   if ($("bookingQuantity")) $("bookingQuantity").value = 1;
   resetBookingDate();
@@ -1124,7 +1124,7 @@ function renderDashboard() {
   $("dashboardCustomersCount").textContent = String(summary.customers_count || 0);
   $("dashboardLocationsCount").textContent = String(summary.storage_locations_count || 0);
   $("dashboardInventoryPositionsCount").textContent = String(summary.inventory_positions_count || 0);
-  $("dashboardInventoryQuantityMeta").textContent = `${formatNumber(summary.inventory_quantity_total || 0)} StÃ¼ck insgesamt`;
+  $("dashboardInventoryQuantityMeta").textContent = `${formatNumber(summary.inventory_quantity_total || 0)} Stück insgesamt`;
   updateQuickStats(summary);
   renderLocationCapacityCards();
 
@@ -1145,7 +1145,7 @@ function renderDashboard() {
               Beleg: ${escapeHtml(row.beleg_nr || "-")} | Menge: ${escapeHtml(row.menge)} | Verpackung: ${escapeHtml(row.verpackungsart || "-")}
             </div>
             <div class="warehouse-list-item__foot">
-              ${escapeHtml(row.storage_location_from_name || "-")} -> ${escapeHtml(row.storage_location_to_name || "-")} | StellplÃ¤tze: ${escapeHtml(formatTransactionSlotSummary(row))}
+              ${escapeHtml(row.storage_location_from_name || "-")} -> ${escapeHtml(row.storage_location_to_name || "-")} | Stellplätze: ${escapeHtml(formatTransactionSlotSummary(row))}
             </div>
           </article>
         `).join("")
@@ -1170,7 +1170,7 @@ function renderDashboard() {
             </div>
           </article>
         `).join("")
-      : `<div class="warehouse-empty">Keine offenen VersandauftrÃ¤ge vorhanden.</div>`;
+      : `<div class="warehouse-empty">Keine offenen Versandaufträge vorhanden.</div>`;
   }
 }
 
@@ -1193,9 +1193,9 @@ function renderLocations() {
           <tr>
             <th>Name</th>
             <th>Typ</th>
-            <th>KapazitÃ¤t</th>
+            <th>Kapazität</th>
             <th>Belegte Positionen</th>
-            <th>Freie StellplÃ¤tze</th>
+            <th>Freie Stellplätze</th>
             <th>Aktionen</th>
           </tr>
         </thead>
@@ -1218,7 +1218,7 @@ function renderLocations() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine LagerplÃ¤tze gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Lagerplätze gefunden.</div>`;
 
   host.querySelectorAll("[data-location-open]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1373,7 +1373,7 @@ function renderHistory() {
             <th>Positionsnummer</th>
             <th>Verpackungsart</th>
             <th>Menge</th>
-            <th>StellplÃ¤tze</th>
+            <th>Stellplätze</th>
             <th>Von</th>
             <th>Zu</th>
             <th>Benutzer</th>
@@ -1398,7 +1398,7 @@ function renderHistory() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine Transaktionen fÃ¼r den aktuellen Filter gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Transaktionen für den aktuellen Filter gefunden.</div>`;
 }
 
 function createPickingDraftItem(item = {}) {
@@ -1467,7 +1467,7 @@ function renderPickingTable() {
             <th>Beleg</th>
             <th>Status</th>
             <th>Kunde</th>
-            <th>FÃ¤llig</th>
+            <th>Fällig</th>
             <th>Positionen</th>
             <th>Soll / Ist</th>
             <th>Aktionen</th>
@@ -1492,7 +1492,7 @@ function renderPickingTable() {
         </tbody>
       </table>
     `
-    : `<div class="warehouse-empty">Keine VersandauftrÃ¤ge gefunden.</div>`;
+    : `<div class="warehouse-empty">Keine Versandaufträge gefunden.</div>`;
 
   host.querySelectorAll("[data-picking-edit]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1513,7 +1513,7 @@ function renderPickingProcessBoard() {
             <div>
               <div class="warehouse-order-card__title">${escapeHtml(order.beleg_nr || "Ohne Beleg")}</div>
               <div class="warehouse-order-card__meta">
-              ${escapeHtml(order.customer_name || "-")} | FÃ¤llig: ${escapeHtml(order.faellig_am ? formatDate(order.faellig_am) : "ohne Termin")}
+              ${escapeHtml(order.customer_name || "-")} | Fällig: ${escapeHtml(order.faellig_am ? formatDate(order.faellig_am) : "ohne Termin")}
               </div>
             </div>
             <span class="warehouse-badge ${statusBadgeClass(order.status)}">${escapeHtml(order.status)}</span>
@@ -1544,7 +1544,7 @@ function renderPickingProcessBoard() {
           </div>
         </article>
       `).join("")
-    : `<div class="warehouse-empty">Keine offenen VersandauftrÃ¤ge vorhanden.</div>`;
+    : `<div class="warehouse-empty">Keine offenen Versandaufträge vorhanden.</div>`;
 
   host.querySelectorAll("[data-order-start]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1655,7 +1655,7 @@ async function loadLocations() {
   if (!(permissionValue("warehouse.storage_locations.view") || permissionValue("warehouse.storage_locations.manage"))) return;
   const response = await api("/api/warehouse/storage-locations?limit=1000", { method: "GET", headers: {} });
   const data = await readJsonSafe(response);
-  if (!response.ok) throw new Error(data?.error || "LagerplÃ¤tze konnten nicht geladen werden.");
+  if (!response.ok) throw new Error(data?.error || "Lagerplätze konnten nicht geladen werden.");
   state.refs.locations = Array.isArray(data) ? data : [];
   invalidateLocationSlotCache();
   updateLookupLists();
@@ -1721,7 +1721,7 @@ async function loadPickingOrders() {
 
   const response = await api(`/api/warehouse/picking-orders?${params.toString()}`, { method: "GET", headers: {} });
   const data = await readJsonSafe(response);
-  if (!response.ok) throw new Error(data?.error || "VersandauftrÃ¤ge konnten nicht geladen werden.");
+  if (!response.ok) throw new Error(data?.error || "Versandaufträge konnten nicht geladen werden.");
 
   state.pickingOrders = Array.isArray(data) ? data : [];
 
@@ -1921,10 +1921,10 @@ function bindInventoryForm() {
   $("inventoryResetBtn")?.addEventListener("click", resetInventoryForm);
   $("inventoryDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.inventoryId) {
-      setMessage("inventoryMsg", "Bitte zuerst einen Bestandsdatensatz auswÃ¤hlen.");
+      setMessage("inventoryMsg", "Bitte zuerst einen Bestandsdatensatz auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Bestandsdatensatz wirklich lÃ¶schen?")) return;
+    if (!window.confirm("Diesen Bestandsdatensatz wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/inventory/${state.selected.inventoryId}`, {
         method: "DELETE",
@@ -1932,14 +1932,14 @@ function bindInventoryForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("inventoryMsg", data?.error || "Bestandsdatensatz konnte nicht gelÃ¶scht werden.");
+        setMessage("inventoryMsg", data?.error || "Bestandsdatensatz konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("inventoryMsg", "Bestandsdatensatz wurde gelÃ¶scht.", true);
+      setMessage("inventoryMsg", "Bestandsdatensatz wurde gelöscht.", true);
       resetInventoryForm();
       await Promise.all([loadInventory(), loadLocations(), loadDashboard()]);
     } catch (error) {
-      setMessage("inventoryMsg", error.message || "Bestandsdatensatz konnte nicht gelÃ¶scht werden.");
+      setMessage("inventoryMsg", error.message || "Bestandsdatensatz konnte nicht gelöscht werden.");
     }
   });
 
@@ -1995,10 +1995,10 @@ function bindLocationForm() {
   $("locationReloadBtn")?.addEventListener("click", () => void loadLocations().catch((error) => setMessage("locationMsg", error.message)));
   $("locationDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.locationId) {
-      setMessage("locationMsg", "Bitte zuerst einen Lagerplatz auswÃ¤hlen.");
+      setMessage("locationMsg", "Bitte zuerst einen Lagerplatz auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Lagerplatz wirklich lÃ¶schen?")) return;
+    if (!window.confirm("Diesen Lagerplatz wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/storage-locations/${state.selected.locationId}`, {
         method: "DELETE",
@@ -2006,14 +2006,14 @@ function bindLocationForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("locationMsg", data?.error || "Lagerplatz konnte nicht gelÃ¶scht werden.");
+        setMessage("locationMsg", data?.error || "Lagerplatz konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("locationMsg", "Lagerplatz wurde gelÃ¶scht.", true);
+      setMessage("locationMsg", "Lagerplatz wurde gelöscht.", true);
       resetLocationForm();
       await Promise.all([loadLocations(), loadInventory(), loadDashboard()]);
     } catch (error) {
-      setMessage("locationMsg", error.message || "Lagerplatz konnte nicht gelÃ¶scht werden.");
+      setMessage("locationMsg", error.message || "Lagerplatz konnte nicht gelöscht werden.");
     }
   });
 
@@ -2028,7 +2028,7 @@ function bindLocationForm() {
     };
 
     if (!payload.name || !Number.isInteger(payload.kapazitaet) || payload.kapazitaet <= 0) {
-      setMessage("locationMsg", "Bitte Typ, Name und KapazitÃ¤t korrekt eingeben.");
+      setMessage("locationMsg", "Bitte Typ, Name und Kapazität korrekt eingeben.");
       return;
     }
 
@@ -2060,10 +2060,10 @@ function bindCustomerForm() {
   $("customerResetBtn")?.addEventListener("click", resetCustomerForm);
   $("customerDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.customerId) {
-      setMessage("customerMsg", "Bitte zuerst einen Kunden auswÃ¤hlen.");
+      setMessage("customerMsg", "Bitte zuerst einen Kunden auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Kunden wirklich lÃ¶schen?")) return;
+    if (!window.confirm("Diesen Kunden wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/customers/${state.selected.customerId}`, {
         method: "DELETE",
@@ -2071,14 +2071,14 @@ function bindCustomerForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("customerMsg", data?.error || "Kunde konnte nicht gelÃ¶scht werden.");
+        setMessage("customerMsg", data?.error || "Kunde konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("customerMsg", "Kunde wurde gelÃ¶scht.", true);
+      setMessage("customerMsg", "Kunde wurde gelöscht.", true);
       resetCustomerForm();
       await Promise.all([loadCustomers(), loadPickingOrders(), loadDashboard()]);
     } catch (error) {
-      setMessage("customerMsg", error.message || "Kunde konnte nicht gelÃ¶scht werden.");
+      setMessage("customerMsg", error.message || "Kunde konnte nicht gelöscht werden.");
     }
   });
 
@@ -2130,10 +2130,10 @@ function bindPickingForm() {
   $("pickingResetBtn")?.addEventListener("click", resetPickingForm);
   $("pickingDeleteBtn")?.addEventListener("click", async () => {
     if (!state.selected.pickingId) {
-      setMessage("pickingMsg", "Bitte zuerst einen Versandauftrag auswÃ¤hlen.");
+      setMessage("pickingMsg", "Bitte zuerst einen Versandauftrag auswählen.");
       return;
     }
-    if (!window.confirm("Diesen Versandauftrag wirklich lÃ¶schen?")) return;
+    if (!window.confirm("Diesen Versandauftrag wirklich löschen?")) return;
     try {
       const response = await api(`/api/warehouse/picking-orders/${state.selected.pickingId}`, {
         method: "DELETE",
@@ -2141,14 +2141,14 @@ function bindPickingForm() {
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setMessage("pickingMsg", data?.error || "Versandauftrag konnte nicht gelÃ¶scht werden.");
+        setMessage("pickingMsg", data?.error || "Versandauftrag konnte nicht gelöscht werden.");
         return;
       }
-      setMessage("pickingMsg", "Versandauftrag wurde gelÃ¶scht.", true);
+      setMessage("pickingMsg", "Versandauftrag wurde gelöscht.", true);
       resetPickingForm();
       await Promise.all([loadPickingOrders(), loadDashboard()]);
     } catch (error) {
-      setMessage("pickingMsg", error.message || "Versandauftrag konnte nicht gelÃ¶scht werden.");
+      setMessage("pickingMsg", error.message || "Versandauftrag konnte nicht gelöscht werden.");
     }
   });
 
@@ -2164,11 +2164,11 @@ function bindPickingForm() {
     }));
 
     if (!customer) {
-      setMessage("pickingMsg", "Bitte einen gÃ¼ltigen Kunden auswÃ¤hlen.");
+      setMessage("pickingMsg", "Bitte einen gültigen Kunden auswählen.");
       return;
     }
     if (!items.length || items.some((item) => !item.positions_nr || item.menge_soll <= 0 || item.menge_ist < 0)) {
-      setMessage("pickingMsg", "Bitte alle Positionen vollstÃ¤ndig ausfÃ¼llen.");
+      setMessage("pickingMsg", "Bitte alle Positionen vollständig ausfüllen.");
       return;
     }
 

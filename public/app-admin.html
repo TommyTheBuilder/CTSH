@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>App Admin</title>
+  <title>Produkt-Admin</title>
   <link rel="stylesheet" href="/public/styles.css">
 </head>
 <body>
@@ -11,12 +11,12 @@
   <a href="/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">CTSH Dashboard</a>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="settings-menu-wrap" id="settingsMenuWrap">
-      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen oeffnen">&#9881;</button>
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">&#9881;</button>
       <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
         <button class="secondary" id="openDashboardBtn" role="menuitem">Dashboard</button>
-        <button class="secondary" id="openCustomerAdminBtn" role="menuitem">Kunden-Admin</button>
-        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort aendern</button>
-        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+        <button class="secondary" id="openCustomerAdminBtn" role="menuitem">Organisations-Admin</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Dunkelmodus</button>
         <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
       </div>
     </div>
@@ -27,21 +27,25 @@
 <main class="dashboard-main module-dashboard-main">
   <section class="dashboard-header admin-header module-hero">
     <div class="module-hero__copy">
-      <span class="module-hero__eyebrow">Systemweite Steuerung</span>
+      <span class="module-hero__eyebrow">Produkt</span>
       <div class="dashboard-title-row">
-        <b>App Admin</b>
+        <b>Produkt-Admin</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead">Kunden, Modulfreischaltungen und globale Benutzerzuordnung zentral steuern.</p>
+      <p class="module-hero__lead">Installation und Module.</p>
     </div>
     <div class="module-hero__panel">
       <div class="module-hero__panel-item">
-        <label for="appAdminCustomerSelect">Kunde auswaehlen</label>
-        <select id="appAdminCustomerSelect"></select>
+        <span class="module-section-kicker">Installation</span>
+        <strong id="activeInstallationLabel">-</strong>
       </div>
       <div class="module-hero__panel-item">
-        <span class="module-section-kicker">Aktiver Kunde</span>
-        <strong id="activeCustomerLabel">-</strong>
+        <span class="module-section-kicker">Betriebsmodell</span>
+        <strong>Eine Installation</strong>
+      </div>
+      <div class="module-hero__panel-item">
+        <span class="module-section-kicker">Aktive Module</span>
+        <strong id="licensedModuleCount">0</strong>
       </div>
     </div>
   </section>
@@ -50,97 +54,69 @@
     <article class="card admin-card">
       <div class="admin-card-head compact">
         <div>
-          <span class="section-eyebrow">Neuer Kunde</span>
-          <h3>Kunde anlegen</h3>
-          <p>Neue Mandanten fuer die App registrieren.</p>
+          <span class="section-eyebrow">Installation</span>
+          <h3>Installationsprofil</h3>
+          <p>Name und Status.</p>
         </div>
       </div>
       <div class="row">
         <div>
-          <label for="newCustomerName">Name</label>
-          <input id="newCustomerName" placeholder="z.B. CTSH Austria">
+          <label for="editInstallationName">Name</label>
+          <input id="editInstallationName" placeholder="z.B. CTSH Austria">
         </div>
         <div>
-          <label for="newCustomerSlug">Slug</label>
-          <input id="newCustomerSlug" placeholder="z.B. ctsh-austria">
-        </div>
-        <div class="module-admin-action">
-          <button class="primary" id="createCustomerBtn" type="button">Kunde anlegen</button>
-        </div>
-      </div>
-      <p id="createCustomerMsg"></p>
-    </article>
-
-    <article class="card admin-card">
-      <div class="admin-card-head compact">
-        <div>
-          <span class="section-eyebrow">Kunde bearbeiten</span>
-          <h3>Stammdaten und Status</h3>
-          <p>Aktivitaet und Basisdaten des ausgewaehlten Kunden pflegen.</p>
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="editCustomerName">Name</label>
-          <input id="editCustomerName">
+          <label for="editInstallationSlug">Slug</label>
+          <input id="editInstallationSlug" placeholder="z.B. ctsh-austria">
         </div>
         <div>
-          <label for="editCustomerSlug">Slug</label>
-          <input id="editCustomerSlug">
-        </div>
-        <div>
-          <label for="editCustomerActive">Status</label>
-          <select id="editCustomerActive">
+          <label for="editInstallationActive">Status</label>
+          <select id="editInstallationActive">
             <option value="true">Aktiv</option>
             <option value="false">Inaktiv</option>
           </select>
         </div>
         <div class="module-admin-action">
-          <button class="primary" id="saveCustomerBtn" type="button">Kunde speichern</button>
+          <button class="primary" id="saveInstallationBtn" type="button">Speichern</button>
         </div>
       </div>
       <div class="row">
         <div class="module-admin-inline-actions">
-          <button class="secondary" id="openSelectedCustomerAdminBtn" type="button">Kunden-Admin oeffnen</button>
+          <button class="secondary" id="openOrganizationAdminBtn" type="button">Organisations-Admin</button>
         </div>
       </div>
-      <p id="saveCustomerMsg"></p>
+      <p id="saveInstallationMsg"></p>
+    </article>
+
+    <article class="card admin-card">
+      <div class="admin-card-head compact">
+        <div>
+          <span class="section-eyebrow">Module</span>
+          <h3>Produktumfang</h3>
+          <p>Freigaben.</p>
+        </div>
+      </div>
+      <div id="productModuleList" class="module-checklist"></div>
+      <div class="row">
+        <div class="module-admin-inline-actions">
+          <button class="primary" id="saveProductModulesBtn" type="button">Speichern</button>
+        </div>
+      </div>
+      <p id="productModulesMsg"></p>
     </article>
   </section>
 
   <section class="card admin-card">
     <div class="admin-card-head">
       <div>
-        <span class="section-eyebrow">Module pro Kunde</span>
-        <h3>Modulfreischaltung</h3>
-        <p>Nur der App Admin kann Module pro Kunde aktivieren oder deaktivieren.</p>
-      </div>
-    </div>
-    <div id="customerModuleList" class="module-checklist"></div>
-    <div class="row">
-      <div class="module-admin-inline-actions">
-        <button class="primary" id="saveCustomerModulesBtn" type="button">Freischaltungen speichern</button>
-      </div>
-    </div>
-    <p id="customerModulesMsg"></p>
-  </section>
-
-  <section class="card admin-card">
-    <div class="admin-card-head">
-      <div>
-        <span class="section-eyebrow">Globale Benutzer</span>
-        <h3>Benutzerzuordnung und App Admins</h3>
-        <p>Globale Uebersicht ueber Benutzer, Kundenzuordnung und App-Admin-Rechte.</p>
+        <span class="section-eyebrow">Benutzer</span>
+        <h3>App-Admins</h3>
+        <p>Rollen, Status und Rechte.</p>
       </div>
     </div>
     <div class="row">
       <div>
         <label for="appAdminUserSelect">Benutzer</label>
         <select id="appAdminUserSelect"></select>
-      </div>
-      <div>
-        <label for="userCustomerSelect">Kunde</label>
-        <select id="userCustomerSelect"></select>
       </div>
       <div>
         <label for="userRoleSelect">Rolle</label>
@@ -171,7 +147,7 @@
     </div>
     <div class="row">
       <div class="module-admin-inline-actions">
-        <button class="primary" id="saveUserBtn" type="button">Benutzer speichern</button>
+        <button class="primary" id="saveUserBtn" type="button">Speichern</button>
       </div>
     </div>
     <p id="saveUserMsg"></p>
@@ -180,7 +156,6 @@
         <thead>
           <tr>
             <th>Benutzer</th>
-            <th>Kunde</th>
             <th>Rolle</th>
             <th>Standort</th>
             <th>Abteilung</th>
@@ -197,8 +172,8 @@
 <div class="modalBack" id="passwordModalBack" aria-hidden="true">
   <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="password-modal-head">
-      <h3 id="passwordModalTitle">Passwort aendern</h3>
-      <button class="secondary" id="closePasswordModalBtn" type="button">Schliessen</button>
+      <h3 id="passwordModalTitle">Passwort ändern</h3>
+      <button class="secondary" id="closePasswordModalBtn" type="button">Schließen</button>
     </div>
     <div class="row" style="margin-top:8px;">
       <div>

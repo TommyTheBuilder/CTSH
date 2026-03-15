@@ -1032,7 +1032,7 @@ function renderAll(){
           <button class="btn ${normalizedStatus(c.status)==="customs_released" ? "greenActive" : ""}" id="btn-customs-ok-${i}" ${adminPermissions.manageStatus ? "" : "disabled"}>5 · Zollfreigabe erteilt</button>
         </div>
 
-        <button class="smallBtn" id="reset-${i}" style="width:100%;${adminPermissions.resetContainer ? "" : "display:none;"}">Container zuruecksetzen</button>
+        <button class="smallBtn" id="reset-${i}" style="width:100%;${adminPermissions.resetContainer ? "" : "display:none;"}">Container zurücksetzen</button>
       </div>
     `;
     grid.appendChild(card);
@@ -1069,7 +1069,7 @@ function renderAll(){
     });
     document.getElementById("reset-"+i).addEventListener("click", () => {
       if (!adminPermissions.resetContainer) return;
-      if (confirm(`Container ${i} wirklich zuruecksetzen?`)) {
+      if (confirm(`Container ${i} wirklich zurücksetzen?`)) {
         socket.emit("adminResetContainer", { id: i });
       }
     });
@@ -1205,7 +1205,7 @@ socket.on("init", (state) => {
 });
 
 socket.on("adminAuthResult", ({ ok, user: authUser, permissions }) => {
-  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte pruefe die im Adminbereich gesetzten Rechte.", permissions);
+  setAdminAccessState(ok, "Kein Admin-Zugriff. Bitte prüfe die im Adminbereich gesetzten Rechte.", permissions);
 
   if (isAuthed){
     renderAll();

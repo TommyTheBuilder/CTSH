@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Paletten Modul-Admin</title>
+  <title>Paletten-Modul-Admin</title>
   <link rel="stylesheet" href="/public/styles.css">
 </head>
 <body>
@@ -11,11 +11,11 @@
   <a href="/dashboard.html" class="topbar-brand-link" aria-label="Zum Dashboard">CTSH Dashboard</a>
   <div class="row topbar-actions" style="align-items:center;">
     <div class="settings-menu-wrap" id="settingsMenuWrap">
-      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen oeffnen">&#9881;</button>
+      <button class="secondary settings-trigger" id="settingsTriggerBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Einstellungen öffnen">&#9881;</button>
       <div class="settings-menu" id="settingsMenu" role="menu" aria-label="Einstellungen">
-        <button class="secondary" id="openModuleBtn" role="menuitem">Paletten Modul</button>
-        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort aendern</button>
-        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Darkmode umschalten</button>
+        <button class="secondary" id="openModuleBtn" role="menuitem">Paletten-Modul</button>
+        <button class="secondary" id="openChangePasswordBtn" role="menuitem">Passwort ändern</button>
+        <button class="secondary" id="menuDarkmodeBtn" role="menuitem">Dunkelmodus</button>
         <button class="secondary" id="logoutBtn" role="menuitem">Logout</button>
       </div>
     </div>
@@ -26,21 +26,17 @@
 <main class="dashboard-main module-dashboard-main">
   <section class="dashboard-header admin-header module-hero">
     <div class="module-hero__copy">
-      <span class="module-hero__eyebrow">Paletten Modul</span>
+      <span class="module-hero__eyebrow">Paletten</span>
       <div class="dashboard-title-row">
         <b>Modul-Administration</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead" id="moduleAdminLead">Modulinterne Stammdaten und Konfigurationen fuer Paletten.</p>
+      <p class="module-hero__lead" id="moduleAdminLead">Paletten-Stammdaten.</p>
     </div>
     <div class="module-hero__panel">
       <div class="module-hero__panel-item">
-        <span class="module-section-kicker">Kunde</span>
+        <span class="module-section-kicker">Installation</span>
         <strong id="managedCustomerName">-</strong>
-      </div>
-      <div class="module-hero__panel-item" id="customerSwitchWrap" style="display:none;">
-        <label for="customerSelect">Mandant wechseln</label>
-        <select id="customerSelect"></select>
       </div>
     </div>
   </section>
@@ -51,7 +47,7 @@
         <div>
           <span class="section-eyebrow">Standorte</span>
           <h3>Standorte verwalten</h3>
-          <p>Nur Paletten-bezogene Stammdaten dieses Moduls.</p>
+          <p>Standorte.</p>
         </div>
       </div>
       <div class="row">
@@ -60,7 +56,7 @@
           <input id="locationName" placeholder="z.B. Lager Nord">
         </div>
         <div class="module-admin-action">
-          <button class="primary" id="saveLocationBtn" type="button">Standort anlegen</button>
+          <button class="primary" id="saveLocationBtn" type="button">Anlegen</button>
         </div>
       </div>
       <p id="locationMsg"></p>
@@ -77,7 +73,7 @@
         <div>
           <span class="section-eyebrow">Abteilungen</span>
           <h3>Abteilungen verwalten</h3>
-          <p>Die Abteilungen bleiben modulintern im Paletten-Kontext.</p>
+          <p>Abteilungen.</p>
         </div>
       </div>
       <div class="row">
@@ -86,7 +82,7 @@
           <input id="departmentName" placeholder="z.B. Wareneingang">
         </div>
         <div class="module-admin-action">
-          <button class="primary" id="saveDepartmentBtn" type="button">Abteilung anlegen</button>
+          <button class="primary" id="saveDepartmentBtn" type="button">Anlegen</button>
         </div>
       </div>
       <p id="departmentMsg"></p>
@@ -102,19 +98,19 @@
   <section class="card admin-card">
     <div class="admin-card-head">
       <div>
-        <span class="section-eyebrow">Frachtfuehrer</span>
-        <h3>Frachtfuehrer-Stammdaten</h3>
-        <p>Partnerdaten fuer das Paletten-Modul pflegen.</p>
+        <span class="section-eyebrow">Frachtführer</span>
+        <h3>Frachtführer-Stammdaten</h3>
+        <p>Partnerdaten.</p>
       </div>
     </div>
     <div class="row">
       <div>
         <label for="entrepreneurName">Name</label>
-        <input id="entrepreneurName" placeholder="z.B. Spedition Mueller">
+        <input id="entrepreneurName" placeholder="z.B. Spedition Müller">
       </div>
       <div>
-        <label for="entrepreneurStreet">Strasse</label>
-        <input id="entrepreneurStreet" placeholder="z.B. Musterstrasse 12">
+        <label for="entrepreneurStreet">Straße</label>
+        <input id="entrepreneurStreet" placeholder="z.B. Musterstraße 12">
       </div>
       <div>
         <label for="entrepreneurPostal">PLZ</label>
@@ -128,13 +124,13 @@
     <div class="row">
       <div class="module-admin-inline-actions">
         <button class="primary" id="saveEntrepreneurBtn" type="button">Speichern</button>
-        <button class="secondary" id="resetEntrepreneurBtn" type="button">Zuruecksetzen</button>
+        <button class="secondary" id="resetEntrepreneurBtn" type="button">Zurücksetzen</button>
       </div>
     </div>
     <p id="entrepreneurMsg"></p>
     <div class="admin-table-wrap">
       <table>
-        <thead><tr><th>Frachtfuehrer</th><th>Adresse</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Frachtführer</th><th>Adresse</th><th>Aktion</th></tr></thead>
         <tbody id="entrepreneursBody"></tbody>
       </table>
     </div>
@@ -144,8 +140,8 @@
 <div class="modalBack" id="passwordModalBack" aria-hidden="true">
   <div class="modal password-modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="password-modal-head">
-      <h3 id="passwordModalTitle">Passwort aendern</h3>
-      <button class="secondary" id="closePasswordModalBtn" type="button">Schliessen</button>
+      <h3 id="passwordModalTitle">Passwort ändern</h3>
+      <button class="secondary" id="closePasswordModalBtn" type="button">Schließen</button>
     </div>
     <div class="row" style="margin-top:8px;">
       <div>
