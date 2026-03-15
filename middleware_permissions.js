@@ -1,5 +1,9 @@
 // middleware_permissions.js
 const { pool } = require("./db_pg");
+const {
+  WAREHOUSE_PERMISSION_DEFAULTS,
+  WAREHOUSE_PERMISSION_FULL_ACCESS
+} = require("./modules/warehouse/permissions");
 
 // Defaults (wie in server.js), damit ältere Rollen nicht plötzlich alles verlieren
 const DEFAULTS = {
@@ -17,6 +21,7 @@ const DEFAULTS = {
     container_viewer: false,
     container_admin: false
   },
+  warehouse: { ...WAREHOUSE_PERMISSION_DEFAULTS },
   admin: { full_access: false }
 };
 
@@ -62,6 +67,7 @@ async function loadPermissionsForUser(user) {
         container_viewer: true,
         container_admin: true
       },
+      warehouse: { ...WAREHOUSE_PERMISSION_FULL_ACCESS },
       admin: { full_access: true }
     };
   }
