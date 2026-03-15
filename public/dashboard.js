@@ -45,7 +45,7 @@ function renderDashboardLiveFeed(items = [], message = "") {
   }
 
   if (!items.length) {
-    feedEl.innerHTML = '<div class="module-feed__empty">Keine Live-Vorgaenge vorhanden.</div>';
+    feedEl.innerHTML = '<div class="module-feed__empty">Keine Live-Vorgänge vorhanden.</div>';
     return;
   }
 
@@ -69,13 +69,13 @@ async function loadDashboardLiveFeed() {
     const response = await api("/api/dashboard/live-feed?limit=10", { method: "GET", headers: {} });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      renderDashboardLiveFeed([], data?.error || "Live-Feed konnte nicht geladen werden.");
+      renderDashboardLiveFeed([], data?.error || "Der Live-Feed konnte nicht geladen werden.");
       return;
     }
 
     renderDashboardLiveFeed(Array.isArray(data?.items) ? data.items : []);
   } catch {
-    renderDashboardLiveFeed([], "Live-Feed konnte nicht geladen werden.");
+    renderDashboardLiveFeed([], "Der Live-Feed konnte nicht geladen werden.");
   }
 }
 
@@ -103,8 +103,8 @@ function refreshModuleSummary() {
   const primaryEl = $("dashboardPrimaryModule");
   const msgEl = $("moduleMsg");
   const firstLink = visibleLinks[0];
-  const firstName = firstLink?.dataset?.moduleName || "Kein Modul verfuegbar";
-  const firstSummary = firstLink?.dataset?.moduleSummary || "Aktuell ist kein Bereich fuer dieses Konto freigeschaltet.";
+  const firstName = firstLink?.dataset?.moduleName || "Kein Modul verfügbar";
+  const firstSummary = firstLink?.dataset?.moduleSummary || "Aktuell ist kein Bereich für dieses Konto freigeschaltet.";
 
   if (countEl) countEl.textContent = String(count);
   if (stateEl) stateEl.textContent = count > 0 ? `${count} Bereich${count === 1 ? "" : "e"} aktiv` : "Keine Freigabe";
@@ -278,7 +278,7 @@ function bindPasswordModal() {
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      setMsg("passwordModalMsg", "Bitte alle Felder ausfuellen.");
+      setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
       return;
     }
     if (new_password.length < 8) {
@@ -286,7 +286,7 @@ function bindPasswordModal() {
       return;
     }
     if (new_password !== confirm_password) {
-      setMsg("passwordModalMsg", "Die neuen Passwoerter stimmen nicht ueberein.");
+      setMsg("passwordModalMsg", "Die neuen Passwörter stimmen nicht überein.");
       return;
     }
 
@@ -299,10 +299,10 @@ function bindPasswordModal() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht geaendert werden.");
+        setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht geändert werden.");
         return;
       }
-      setMsg("passwordModalMsg", "Passwort erfolgreich geaendert.", true);
+      setMsg("passwordModalMsg", "Passwort erfolgreich geändert.", true);
       setTimeout(() => showPasswordModal(false), 700);
     } catch {
       setMsg("passwordModalMsg", "Netzwerkfehler. Bitte erneut versuchen.");
@@ -405,13 +405,13 @@ $("logoutBtn")?.addEventListener("click", () => {
   await bindModuleLink(
     "containerAdminLink",
     "/api/container-registration-session",
-    "Container Anmeldung wird geoeffnet ...",
-    "Container Anmeldung ist aktuell nicht verfuegbar."
+    "Container Anmeldung wird geöffnet ...",
+    "Container Anmeldung ist aktuell nicht verfügbar."
   );
   await bindModuleLink(
     "containerPlanningLink",
     "/api/container-planning-session",
-    "Container und LKW Planung wird geoeffnet ...",
-    "Container und LKW Planung ist aktuell nicht verfuegbar."
+    "Container und LKW Planung wird geöffnet ...",
+    "Container und LKW Planung ist aktuell nicht verfügbar."
   );
 })();
