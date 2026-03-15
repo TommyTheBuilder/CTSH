@@ -247,15 +247,20 @@ async function loadMeAndPermissions() {
     || currentPermissions?.roles?.manage
     || currentPermissions?.users?.manage
   );
-  const canUseContainerRegistration = !!(
-    currentPermissions?.integrations?.container_login
-    || currentPermissions?.integrations?.container_registration
-    || currentPermissions?.integrations?.container_admin
-  );
-  const canUseContainerPlanning = !!(
-    currentPermissions?.integrations?.container_planning
-    || currentPermissions?.integrations?.container_admin
-  );
+    const canUseContainerRegistration = !!(
+      currentPermissions?.modules?.container_registration?.open
+      || currentPermissions?.modules?.container_registration?.history
+      || currentPermissions?.modules?.container_registration?.manage_time
+      || currentPermissions?.modules?.container_registration?.manage_status
+      || currentPermissions?.modules?.container_registration?.reset_container
+      || currentPermissions?.modules?.container_registration?.reset_all
+    );
+    const canUseContainerPlanning = !!(
+      currentPermissions?.modules?.container_planning?.open
+      || currentPermissions?.modules?.container_planning?.create
+      || currentPermissions?.modules?.container_planning?.edit
+      || currentPermissions?.modules?.container_planning?.delete
+    );
 
   if ($("openAdminBtn")) $("openAdminBtn").style.display = canOpenAdmin ? "" : "none";
   if ($("containerAdminLink")) $("containerAdminLink").style.display = canUseContainerRegistration ? "" : "none";
