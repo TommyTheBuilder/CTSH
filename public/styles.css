@@ -3240,11 +3240,12 @@ body.darkmode .auth-message {
   display: grid;
   gap: 12px;
   align-content: start;
-  max-height: 264px;
+  max-height: 212px;
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
   scrollbar-color: rgba(71, 85, 105, 0.45) transparent;
+  overscroll-behavior: contain;
 }
 
 .pallet-open-feed::-webkit-scrollbar {
