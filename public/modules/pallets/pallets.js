@@ -303,7 +303,13 @@ const OPEN_PALLET_STATUS_LABELS = {
   completed_waiting_document: "Erledigt - warten auf Beleg",
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
-const PALLET_ASSET_VERSION = "20260316-3";
+const OPEN_PALLET_URGENCY_LABELS = {
+  low: "Niedrig",
+  medium: "Mittel",
+  high: "Hoch",
+  critical: "Kritisch"
+};
+const PALLET_ASSET_VERSION = "20260316-4";
 
 const socket = io();
 function joinLocationRoom() {
@@ -605,6 +611,17 @@ function openPalletStatusLabel(status) {
   return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
 }
 
+function openPalletUrgencyLabel(level) {
+  return OPEN_PALLET_URGENCY_LABELS[level] || OPEN_PALLET_URGENCY_LABELS.medium;
+}
+
+function openPalletTruckInfo(item) {
+  const parts = [];
+  if (item?.truck_license_plate) parts.push(`Kennzeichen: ${item.truck_license_plate}`);
+  if (item?.truck_planned_for) parts.push(`Datum: ${formatDate(item.truck_planned_for)}`);
+  return parts.join(" | ");
+}
+
 async function loadOpenPalletsFeed() {
   const card = $("openPalletsHeroCard");
   const wrap = $("openPalletsFeedWrap");
@@ -618,7 +635,7 @@ async function loadOpenPalletsFeed() {
 
   card.style.display = "";
   const fixedDepartmentId = Number(ME?.fixed_department_id || 0) || null;
-  hint.textContent = "";
+  hint.textContent = "Status 1-3";
 
   if (!PERMS?.open_pallets?.view_all && !fixedDepartmentId) {
     wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Einträge</div>`;
@@ -642,12 +659,17 @@ async function loadOpenPalletsFeed() {
   }
 
   wrap.innerHTML = items.map((item) => `
-    <article class="pallet-open-feed__item">
+    <article class="pallet-open-feed__item pallet-open-feed__item--urgency-${escapeHtml(item.urgency_level || "medium")}">
       <div class="pallet-open-feed__item-top">
         <strong>${escapeHtml(item.title || "-")}</strong>
-        <span class="pallet-status-badge pallet-status-badge--${escapeHtml(item.status || "open")}">
-          ${escapeHtml(openPalletStatusLabel(item.status))}
-        </span>
+        <div class="pallet-open-feed__badges">
+          <span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(item.urgency_level || "medium")}">
+            ${escapeHtml(openPalletUrgencyLabel(item.urgency_level))}
+          </span>
+          <span class="pallet-status-badge pallet-status-badge--${escapeHtml(item.status || "open")}">
+            ${escapeHtml(openPalletStatusLabel(item.status))}
+          </span>
+        </div>
       </div>
       <div class="pallet-open-feed__meta">
         ${item.company ? `<span>Firma: ${escapeHtml(item.company)}</span>` : ""}
@@ -655,6 +677,7 @@ async function loadOpenPalletsFeed() {
         ${item.postal_code ? `<span>PLZ: ${escapeHtml(item.postal_code)}</span>` : ""}
         ${item.order_no ? `<span>Auftragsnummer: ${escapeHtml(item.order_no)}</span>` : ""}
         <span>Paletten: ${escapeHtml(item.pallet_count)}</span>
+        ${openPalletTruckInfo(item) ? `<span>${escapeHtml(openPalletTruckInfo(item))}</span>` : ""}
         ${PERMS?.open_pallets?.view_all && item.department_name ? `<span>Abteilung: ${escapeHtml(item.department_name)}</span>` : ""}
       </div>
     </article>

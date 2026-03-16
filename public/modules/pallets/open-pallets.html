@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Offene Paletten</title>
-  <link rel="stylesheet" href="/public/styles.css?v=20260316-3">
+  <link rel="stylesheet" href="/public/styles.css?v=20260316-4">
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
   <div class="system-logo-wrap pallet-topbar-logo">
     <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="/modules/pallets/index.html?v=20260316-3" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
+    <a href="/modules/pallets/index.html?v=20260316-4" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
   </div>
   <div></div>
   <div class="row topbar-actions" style="align-items:center;">
@@ -41,6 +41,14 @@
           <span class="module-section-kicker">Filter</span>
           <h2>Buchungen</h2>
         </div>
+      </div>
+
+      <div class="pallet-urgency-legend pallet-urgency-legend--page" aria-label="Dringlichkeit">
+        <span class="pallet-urgency-legend__label">Dringlichkeit</span>
+        <span class="pallet-urgency-badge pallet-urgency-badge--low">Niedrig</span>
+        <span class="pallet-urgency-badge pallet-urgency-badge--medium">Mittel</span>
+        <span class="pallet-urgency-badge pallet-urgency-badge--high">Hoch</span>
+        <span class="pallet-urgency-badge pallet-urgency-badge--critical">Kritisch</span>
       </div>
 
       <div class="row">
@@ -125,6 +133,15 @@
         <label for="openPalletCount">Anzahl der Paletten (Pflicht)</label>
         <input id="openPalletCount" type="number" min="1" value="1">
       </div>
+      <div>
+        <label for="openPalletUrgency">Dringlichkeit</label>
+        <select id="openPalletUrgency">
+          <option value="low">Niedrig</option>
+          <option value="medium" selected>Mittel</option>
+          <option value="high">Hoch</option>
+          <option value="critical">Kritisch</option>
+        </select>
+      </div>
       <div style="flex:1; min-width:280px;">
         <label for="openPalletNote">Notiz</label>
         <input id="openPalletNote" placeholder="z.B. Beleg folgt per Mail">
@@ -138,9 +155,34 @@
   </div>
 </div>
 
+<div class="modalBack" id="truckPlanningModalBack" aria-hidden="true">
+  <div class="modal password-modal pallet-booking-modal pallet-truck-modal" role="dialog" aria-modal="true" aria-labelledby="truckPlanningModalTitle" style="max-width:620px;">
+    <div class="password-modal-head">
+      <h3 id="truckPlanningModalTitle">LKW eingeplant</h3>
+      <button class="secondary" id="closeTruckPlanningModalBtn" type="button">Schlie&szlig;en</button>
+    </div>
+    <p class="pallet-status-note pallet-status-note--compact">Bitte Kennzeichen und Datum f&uuml;r die Einplanung erfassen.</p>
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label for="truckPlanningPlate">Kennzeichen</label>
+        <input id="truckPlanningPlate" placeholder="z.B. BGLP123">
+      </div>
+      <div>
+        <label for="truckPlanningDate">Datum</label>
+        <input id="truckPlanningDate" type="date">
+      </div>
+    </div>
+    <p id="truckPlanningModalMsg" class="pallet-message"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:8px;">
+      <button class="secondary" id="cancelTruckPlanningBtn" type="button">Abbrechen</button>
+      <button class="primary" id="saveTruckPlanningBtn" type="button">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/public/modules/pallets/open-pallets.js?v=20260316-3"></script>
+<script src="/public/modules/pallets/open-pallets.js?v=20260316-4"></script>
 </body>
 </html>

@@ -39,7 +39,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260316-2";
+const PALLET_ASSET_VERSION = "20260316-4";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -517,6 +517,13 @@ const OPEN_PALLET_STATUSES = {
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
 
+const OPEN_PALLET_URGENCY_LEVELS = {
+  low: "Niedrig",
+  medium: "Mittel",
+  high: "Hoch",
+  critical: "Kritisch"
+};
+
 function normalizeOpenPalletStatus(statusRaw, { allowEmpty = false } = {}) {
   const status = String(statusRaw || "").trim().toLowerCase();
   if (!status) {
@@ -527,6 +534,70 @@ function normalizeOpenPalletStatus(statusRaw, { allowEmpty = false } = {}) {
     return { ok: false, msg: "Ungueltiger Status" };
   }
   return { ok: true, status };
+}
+
+function normalizeOpenPalletUrgency(urgencyRaw, { allowEmpty = false } = {}) {
+  const urgency = String(urgencyRaw || "").trim().toLowerCase();
+  if (!urgency) {
+    if (allowEmpty) return { ok: true, urgency: null };
+    return { ok: false, msg: "Dringlichkeit ist Pflicht" };
+  }
+  if (!Object.prototype.hasOwnProperty.call(OPEN_PALLET_URGENCY_LEVELS, urgency)) {
+    return { ok: false, msg: "Ung\u00fcltige Dringlichkeit" };
+  }
+  return { ok: true, urgency };
+}
+
+function normalizeOpenPalletTruckLicensePlate(plateRaw, { allowEmpty = false } = {}) {
+  const plate = safeTrim(plateRaw);
+  if (!plate) {
+    if (allowEmpty) return { ok: true, plate: null };
+    return { ok: false, msg: "Kennzeichen ist Pflicht" };
+  }
+
+  const normalized = plate.toUpperCase().replace(/\s+/g, " ").trim();
+  if (normalized.length < 3 || normalized.length > 20) {
+    return { ok: false, msg: "Kennzeichen ist ung\u00fcltig" };
+  }
+  if (!/^[A-Z0-9ÄÖÜ\-\s]+$/u.test(normalized)) {
+    return { ok: false, msg: "Kennzeichen ist ung\u00fcltig" };
+  }
+
+  return { ok: true, plate: normalized };
+}
+
+function normalizeOpenPalletTruckDate(dateRaw, { allowEmpty = false } = {}) {
+  const dateValue = safeTrim(dateRaw);
+  if (!dateValue) {
+    if (allowEmpty) return { ok: true, date: null };
+    return { ok: false, msg: "Datum ist Pflicht" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    return { ok: false, msg: "Datum ist ung\u00fcltig" };
+  }
+
+  const [year, month, day] = dateValue.split("-").map((part) => Number(part));
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getUTCFullYear() !== year
+    || (parsed.getUTCMonth() + 1) !== month
+    || parsed.getUTCDate() !== day
+  ) {
+    return { ok: false, msg: "Datum ist ung\u00fcltig" };
+  }
+
+  return { ok: true, date: dateValue };
+}
+
+function openPalletStatusSortSql(columnName = "op.status") {
+  return `CASE ${columnName}
+    WHEN 'open' THEN 1
+    WHEN 'truck_planned' THEN 2
+    WHEN 'completed_waiting_document' THEN 3
+    WHEN 'document_booked_scanned' THEN 4
+    ELSE 0
+  END`;
 }
 
 function canViewAllOpenPallets(perms) {
@@ -2710,7 +2781,7 @@ app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEna
 
   const where = [
     "op.app_customer_id = $1",
-    "op.status <> 'document_booked_scanned'"
+    "op.status IN ('open', 'truck_planned', 'completed_waiting_document')"
   ];
   const params = [req.user.app_customer_id];
   let idx = 2;
@@ -2721,7 +2792,7 @@ app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEna
     idx += 1;
   }
 
-  params.push(6);
+  params.push(12);
   const rows = (await q(
     `
     SELECT
@@ -2733,14 +2804,17 @@ app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEna
       op.order_no,
       op.pallet_count,
       op.status,
-      op.updated_at,
+      op.urgency_level,
+      op.truck_license_plate,
+      op.truck_planned_for,
+      op.created_at,
       COALESCE(d.name, 'Abteilung') AS department_name
     FROM open_pallet_bookings op
     LEFT JOIN departments d
       ON d.id = op.department_id
      AND d.app_customer_id = op.app_customer_id
     WHERE ${where.join(" AND ")}
-    ORDER BY op.updated_at DESC, op.id DESC
+    ORDER BY ${openPalletStatusSortSql("op.status")} DESC, op.created_at DESC, op.id DESC
     LIMIT $${idx}
     `,
     params
@@ -2826,6 +2900,10 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
       op.pallet_count,
       op.note,
       op.status,
+      op.urgency_level,
+      op.truck_license_plate,
+      op.truck_planned_for,
+      op.created_by,
       op.department_id,
       op.created_at,
       op.updated_at,
@@ -2839,7 +2917,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
     LEFT JOIN users uc ON uc.id = op.created_by
     LEFT JOIN users uu ON uu.id = op.updated_by
     WHERE ${where.join(" AND ")}
-    ORDER BY op.updated_at DESC, op.id DESC
+    ORDER BY ${openPalletStatusSortSql("op.status")} DESC, op.created_at DESC, op.id DESC
     LIMIT $${idx}
     OFFSET $${idx + 1}
     `,
@@ -2879,8 +2957,10 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const postalCode = safeTrim(req.body?.postal_code);
   const orderNo = safeTrim(req.body?.order_no);
   const note = safeTrim(req.body?.note);
+  const urgencyCheck = normalizeOpenPalletUrgency(req.body?.urgency_level);
   const palletCount = Number(req.body?.pallet_count || 0);
   if (!title) return res.status(400).json({ error: "Titel ist Pflicht" });
+  if (!urgencyCheck.ok) return res.status(400).json({ error: urgencyCheck.msg });
   if (!Number.isInteger(palletCount) || palletCount <= 0) {
     return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
   }
@@ -2899,9 +2979,10 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       order_no,
       pallet_count,
       note,
+      urgency_level,
       status
     )
-    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,'open')
+    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,'open')
     RETURNING id
     `,
     [
@@ -2914,7 +2995,8 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       postalCode,
       orderNo,
       palletCount,
-      note
+      note,
+      urgencyCheck.urgency
     ]
   );
 
@@ -2930,16 +3012,20 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
 
 app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const perms = await getMyPermissions(req.user);
-  if (!perms?.open_pallets?.edit) {
-    return res.status(403).json({ error: "Keine Berechtigung" });
-  }
-
   const id = Number(req.params.id || 0);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
   const existing = await q(
     `
-    SELECT id, app_customer_id, department_id
+    SELECT
+      id,
+      app_customer_id,
+      department_id,
+      created_by,
+      status,
+      urgency_level,
+      truck_license_plate,
+      truck_planned_for
     FROM open_pallet_bookings
     WHERE id = $1
       AND app_customer_id = $2
@@ -2954,52 +3040,108 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
     return res.status(403).json({ error: "Forbidden" });
   }
 
+  const body = req.body || {};
+  const canEditGeneral = !!perms?.open_pallets?.edit;
+  const canEditUrgency = Number(current.created_by || 0) === Number(req.user.id || 0);
+  const wantsUrgencyUpdate = Object.prototype.hasOwnProperty.call(body, "urgency_level");
+  const wantsGeneralUpdate = [
+    "title",
+    "company",
+    "city",
+    "postal_code",
+    "order_no",
+    "note",
+    "pallet_count",
+    "status",
+    "truck_license_plate",
+    "truck_planned_for"
+  ].some((field) => Object.prototype.hasOwnProperty.call(body, field));
+
+  if (!wantsGeneralUpdate && !wantsUrgencyUpdate) {
+    return res.status(400).json({ error: "Keine Aenderungen uebergeben" });
+  }
+  if (wantsGeneralUpdate && !canEditGeneral) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+  if (wantsUrgencyUpdate && !canEditUrgency) {
+    return res.status(403).json({ error: "Dringlichkeit kann nur vom Ersteller ge\u00e4ndert werden" });
+  }
+
   const updates = [];
   const values = [];
+  let nextStatus = String(current.status || "open");
 
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "title")) {
-    const title = safeTrim(req.body?.title);
+  if (Object.prototype.hasOwnProperty.call(body, "title")) {
+    const title = safeTrim(body?.title);
     if (!title) return res.status(400).json({ error: "Titel ist Pflicht" });
     values.push(title);
     updates.push(`title = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "company")) {
-    values.push(safeTrim(req.body?.company));
+  if (Object.prototype.hasOwnProperty.call(body, "company")) {
+    values.push(safeTrim(body?.company));
     updates.push(`company = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "city")) {
-    values.push(safeTrim(req.body?.city));
+  if (Object.prototype.hasOwnProperty.call(body, "city")) {
+    values.push(safeTrim(body?.city));
     updates.push(`city = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "postal_code")) {
-    values.push(safeTrim(req.body?.postal_code));
+  if (Object.prototype.hasOwnProperty.call(body, "postal_code")) {
+    values.push(safeTrim(body?.postal_code));
     updates.push(`postal_code = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "order_no")) {
-    values.push(safeTrim(req.body?.order_no));
+  if (Object.prototype.hasOwnProperty.call(body, "order_no")) {
+    values.push(safeTrim(body?.order_no));
     updates.push(`order_no = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "note")) {
-    values.push(safeTrim(req.body?.note));
+  if (Object.prototype.hasOwnProperty.call(body, "note")) {
+    values.push(safeTrim(body?.note));
     updates.push(`note = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "pallet_count")) {
-    const palletCount = Number(req.body?.pallet_count || 0);
+  if (Object.prototype.hasOwnProperty.call(body, "pallet_count")) {
+    const palletCount = Number(body?.pallet_count || 0);
     if (!Number.isInteger(palletCount) || palletCount <= 0) {
       return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
     }
     values.push(palletCount);
     updates.push(`pallet_count = $${values.length}`);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, "status")) {
-    const statusCheck = normalizeOpenPalletStatus(req.body?.status);
+  if (Object.prototype.hasOwnProperty.call(body, "status")) {
+    const statusCheck = normalizeOpenPalletStatus(body?.status);
     if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
-    values.push(statusCheck.status);
+    nextStatus = statusCheck.status;
+    values.push(nextStatus);
     updates.push(`status = $${values.length}`);
   }
+  if (wantsUrgencyUpdate) {
+    const urgencyCheck = normalizeOpenPalletUrgency(body?.urgency_level);
+    if (!urgencyCheck.ok) return res.status(400).json({ error: urgencyCheck.msg });
+    values.push(urgencyCheck.urgency);
+    updates.push(`urgency_level = $${values.length}`);
+  }
 
-  if (!updates.length) {
-    return res.status(400).json({ error: "Keine Aenderungen uebergeben" });
+  const hasTruckPlate = Object.prototype.hasOwnProperty.call(body, "truck_license_plate");
+  const hasTruckDate = Object.prototype.hasOwnProperty.call(body, "truck_planned_for");
+  if ((hasTruckPlate || hasTruckDate) && nextStatus !== "truck_planned") {
+    return res.status(400).json({ error: "LKW-Daten k\u00f6nnen nur bei Status LKW eingeplant gespeichert werden" });
+  }
+  if (nextStatus === "truck_planned" && (Object.prototype.hasOwnProperty.call(body, "status") || hasTruckPlate || hasTruckDate)) {
+    const existingTruckDate = current.truck_planned_for
+      ? String(current.truck_planned_for).slice(0, 10)
+      : null;
+    const truckPlateCheck = normalizeOpenPalletTruckLicensePlate(
+      hasTruckPlate ? body?.truck_license_plate : current.truck_license_plate
+    );
+    if (!truckPlateCheck.ok) return res.status(400).json({ error: truckPlateCheck.msg });
+
+    const truckDateCheck = normalizeOpenPalletTruckDate(
+      hasTruckDate ? body?.truck_planned_for : existingTruckDate
+    );
+    if (!truckDateCheck.ok) return res.status(400).json({ error: truckDateCheck.msg });
+
+    values.push(truckPlateCheck.plate);
+    updates.push(`truck_license_plate = $${values.length}`);
+    values.push(truckDateCheck.date);
+    updates.push(`truck_planned_for = $${values.length}`);
   }
 
   values.push(req.user.id);
