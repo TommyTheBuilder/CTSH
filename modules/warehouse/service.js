@@ -667,9 +667,6 @@ function normalizeMovementPayload(payload, options = {}) {
     if (!storageLocationFromId || !storageLocationToId) {
       throw new WarehouseError(400, "storage_location_from_id and storage_location_to_id are required for TRANSFER");
     }
-    if (storageLocationFromId === storageLocationToId) {
-      throw new WarehouseError(400, "TRANSFER requires different source and destination locations");
-    }
     sourceSlots = sourceSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
     targetSlots = targetSlotsInput ?? sharedSlots ?? (legacySlot ? [legacySlot] : []);
     if (!sourceSlots.length || !targetSlots.length) {
@@ -677,6 +674,12 @@ function normalizeMovementPayload(payload, options = {}) {
     }
     if (sourceSlots.length !== targetSlots.length) {
       throw new WarehouseError(400, "TRANSFER requires the same number of source and target slots");
+    }
+    if (
+      storageLocationFromId === storageLocationToId &&
+      sourceSlots.every((slotNo, index) => slotNo === targetSlots[index])
+    ) {
+      throw new WarehouseError(400, "TRANSFER within the same location requires different source and target slots");
     }
   }
 

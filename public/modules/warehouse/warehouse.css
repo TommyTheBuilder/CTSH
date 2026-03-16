@@ -776,6 +776,9 @@ body.light .warehouse-topbar {
   cursor: pointer;
   overflow: visible;
   user-select: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
   transition: box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
 }
 
@@ -787,12 +790,14 @@ body.light .warehouse-topbar {
 
 .warehouse-slot-cell--free {
   background: #22c55e !important;
+  background-image: none !important;
   border-color: #22c55e !important;
   color: #ffffff !important;
 }
 
 .warehouse-slot-cell--occupied {
   background: #ef4444 !important;
+  background-image: none !important;
   border-color: #ef4444 !important;
   color: #ffffff !important;
 }
@@ -1181,6 +1186,20 @@ body.darkmode .warehouse-slot-detail-row strong,
 body.dark .warehouse-slot-cell,
 body.darkmode .warehouse-slot-cell {
   color: #f8fafc;
+}
+
+body.dark .warehouse-slot-cell--free,
+body.darkmode .warehouse-slot-cell--free {
+  background: #22c55e !important;
+  background-image: none !important;
+  border-color: #22c55e !important;
+}
+
+body.dark .warehouse-slot-cell--occupied,
+body.darkmode .warehouse-slot-cell--occupied {
+  background: #ef4444 !important;
+  background-image: none !important;
+  border-color: #ef4444 !important;
 }
 
 @media (max-width: 1380px) {

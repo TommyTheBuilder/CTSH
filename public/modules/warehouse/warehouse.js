@@ -1636,10 +1636,6 @@ function renderPickingProcessBoard() {
             </div>
             <span class="warehouse-badge ${statusBadgeClass(order.status)}">${escapeHtml(order.status)}</span>
           </div>
-          <div class="warehouse-order-card__rolls">
-            <strong>Rollen:</strong>
-            <span>${escapeHtml(order.rollen_nummern_gesamt || "-")}</span>
-          </div>
           <div class="warehouse-order-card__items">
             ${(order.items || []).map((item) => `
               <div class="warehouse-order-line">
