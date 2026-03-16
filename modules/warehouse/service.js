@@ -1680,6 +1680,21 @@ async function deleteInventoryRecord(id) {
   return { ok: true };
 }
 
+async function searchPickingInventory(filters = {}) {
+  const positionsNr = normalizeText(filters.positions_nr, "positions_nr", { required: true, maxLength: 120 });
+  const customerId = normalizeInteger(filters.customer_id, "customer_id", {
+    required: false,
+    min: 1,
+    allowNull: true
+  });
+
+  return listInventory({
+    positions_nr: positionsNr,
+    customer_id: customerId || null,
+    limit: filters.limit
+  });
+}
+
 async function listTransactions(filters = {}) {
   const { whereSql, values, limit } = buildTransactionFilters(filters, { withLimit: true });
   const params = [...values, limit];
@@ -2387,6 +2402,7 @@ module.exports = {
   getCustomer,
   getDashboardSummary,
   getInventoryRecord,
+  searchPickingInventory,
   getStorageLocation,
   listCustomers,
   listInventory,

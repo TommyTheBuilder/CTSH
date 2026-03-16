@@ -21,6 +21,7 @@ const {
   getCustomer,
   getDashboardSummary,
   getInventoryRecord,
+  searchPickingInventory,
   getStorageLocation,
   listCustomers,
   listInventory,
@@ -222,6 +223,14 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
     requirePermission("warehouse.inventory.manage"),
     handleRoute(async (req, res) => {
       res.json(await deleteInventoryRecord(req.params.id));
+    })
+  );
+
+  router.get(
+    "/picking-slot-search",
+    requirePermission("warehouse.picking.process"),
+    handleRoute(async (req, res) => {
+      res.json(await searchPickingInventory(req.query || {}));
     })
   );
 

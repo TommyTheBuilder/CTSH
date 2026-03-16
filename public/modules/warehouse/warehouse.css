@@ -12,6 +12,7 @@
 }
 
 body.light {
+  --warehouse-slot-free: #15803d;
   background:
     radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 24%),
     linear-gradient(180deg, #f5f7fb 0%, #edf2f7 100%);
@@ -128,6 +129,11 @@ body.light .warehouse-topbar {
   display: grid;
   gap: 14px;
   padding: 18px;
+}
+
+.warehouse-page-header__stats[hidden],
+.warehouse-sidebar__note[hidden] {
+  display: none !important;
 }
 
 .warehouse-mini-stat {
@@ -471,6 +477,12 @@ body.light .warehouse-topbar {
   font-size: 15px;
 }
 
+body.light .warehouse-capacity-card__stats span,
+body.light .warehouse-capacity-card__foot span {
+  color: #334155;
+  font-weight: 600;
+}
+
 .warehouse-capacity-meter {
   position: relative;
   height: 10px;
@@ -802,6 +814,11 @@ body.light .warehouse-topbar {
   color: #ffffff !important;
 }
 
+body.light .warehouse-slot-modal button.warehouse-slot-cell--free {
+  border-color: #14532d !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
 .warehouse-slot-cell--occupied {
   background: var(--warehouse-slot-occupied) !important;
   background-image: none !important;
@@ -955,6 +972,117 @@ body.light .warehouse-topbar {
   width: auto;
   min-width: 0;
   padding: 10px 12px;
+}
+
+.warehouse-picking-tools {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.warehouse-picking-tools__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.warehouse-picking-tools__head label {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.warehouse-picking-tools__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.warehouse-picking-tools__controls button,
+.warehouse-picking-search-result__actions button,
+.warehouse-order-line__actions button {
+  width: auto;
+  min-width: 0;
+}
+
+.warehouse-picking-tools .warehouse-field-help {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.warehouse-picking-search-results {
+  display: grid;
+  gap: 12px;
+}
+
+.warehouse-picking-search-summary,
+.warehouse-picking-search-result {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.warehouse-picking-search-summary {
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.55;
+}
+
+.warehouse-picking-search-result {
+  display: grid;
+  gap: 12px;
+}
+
+.warehouse-picking-search-result__top,
+.warehouse-picking-search-result__actions,
+.warehouse-order-line__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.warehouse-picking-search-result__top strong {
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.warehouse-picking-search-result__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.warehouse-picking-search-result__field {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 15, 32, 0.18);
+}
+
+.warehouse-picking-search-result__field span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.warehouse-picking-search-result__field strong {
+  color: #ffffff;
+  line-height: 1.45;
+}
+
+.warehouse-order-line__actions {
+  justify-content: flex-start;
 }
 
 .warehouse-order-board {
@@ -1303,9 +1431,24 @@ body.darkmode .warehouse-slot-modal button.warehouse-slot-cell--occupied {
     flex-direction: column;
   }
 
+  .warehouse-picking-tools__head,
+  .warehouse-picking-search-result__top,
+  .warehouse-picking-search-result__actions,
+  .warehouse-order-line__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .warehouse-picking-tools__controls {
+    grid-template-columns: 1fr;
+  }
+
   .warehouse-form-actions button,
   .warehouse-head-actions button,
-  .warehouse-order-card__actions button {
+  .warehouse-order-card__actions button,
+  .warehouse-picking-tools__controls button,
+  .warehouse-picking-search-result__actions button,
+  .warehouse-order-line__actions button {
     width: 100%;
   }
 
