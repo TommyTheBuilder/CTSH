@@ -62,7 +62,7 @@ const OPEN_PALLET_STATUS_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260316-2";
+const PALLET_ASSET_VERSION = "20260316-3";
 
 let ME = null;
 let PERMS = {};
