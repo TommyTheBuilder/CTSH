@@ -211,12 +211,12 @@ body.light .warehouse-topbar {
   font-size: 15px;
   font-weight: 700;
   text-align: left;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  will-change: transform;
 }
 
 .warehouse-nav__button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
 .warehouse-nav__button.active {
@@ -773,13 +773,13 @@ body.light .warehouse-topbar {
   font-weight: 800;
   text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+  will-change: transform;
 }
 
 .warehouse-slot-cell:hover,
 .warehouse-slot-cell:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.2);
+  transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.86);
 }
 

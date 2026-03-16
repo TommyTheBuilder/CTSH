@@ -136,12 +136,12 @@ body.theme-dark .nav-arrows {
   padding: 0.58rem 0.9rem;
   cursor: pointer;
   font-weight: 600;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  will-change: transform;
 }
 
 .btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
 }
 
 .btn--ghost {
@@ -179,7 +179,7 @@ body.theme-dark .nav-arrows {
 }
 
 .btn--danger-solid:hover {
-  box-shadow: 0 10px 24px rgba(185, 28, 28, 0.28);
+  transform: translateY(-1px);
 }
 
 #rangeLabel {

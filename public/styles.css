@@ -594,12 +594,12 @@ body.darkmode .password-modal {
   justify-content: center;
   gap: 9px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+  will-change: transform;
 }
 
 .nav-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  transform: translateY(-1px);
 }
 
 .nav-icon {
@@ -2104,7 +2104,8 @@ body.darkmode .site-copyright {
   overflow: hidden;
   isolation: isolate;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+  will-change: transform;
 }
 
 .module-button::before {
@@ -2259,9 +2260,7 @@ body.darkmode .site-copyright {
 }
 
 .module-button:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 24px 42px rgba(15, 23, 42, 0.26);
-  filter: brightness(1.04);
+  transform: translateY(-2px);
 }
 
 .module-button:focus-visible {
@@ -2966,13 +2965,12 @@ body.darkmode .module-feed::-webkit-scrollbar-thumb {
   font-weight: 700;
   letter-spacing: 0.04em;
   box-shadow: 0 20px 36px rgba(37, 99, 235, 0.24);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+  will-change: transform;
 }
 
 .auth-submit:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 24px 40px rgba(37, 99, 235, 0.3);
-  filter: brightness(1.02);
+  transform: translateY(-1px);
 }
 
 .auth-submit:disabled {
