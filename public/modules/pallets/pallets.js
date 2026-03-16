@@ -303,7 +303,7 @@ const OPEN_PALLET_STATUS_LABELS = {
   completed_waiting_document: "Erledigt - warten auf Beleg",
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
-const PALLET_ASSET_VERSION = "20260316-2";
+const PALLET_ASSET_VERSION = "20260316-3";
 
 const socket = io();
 function joinLocationRoom() {

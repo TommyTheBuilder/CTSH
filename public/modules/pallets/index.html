@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Paletten Modul</title>
-  <link rel="stylesheet" href="/public/styles.css?v=20260316-2">
+  <link rel="stylesheet" href="/public/styles.css?v=20260316-3">
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
@@ -33,27 +33,29 @@
 
 <main class="dashboard-main module-dashboard-main pallet-app-main">
   <section class="dashboard-header admin-header module-hero pallet-app-hero">
-    <div class="module-hero__copy">
-      <span class="module-hero__eyebrow">Paletten Modul</span>
-      <div class="dashboard-title-row">
-        <b>Paletten</b>
-        <span class="pill" id="me">-</span>
-      </div>
-    </div>
-
     <div class="pallet-hero-layout" id="palletHeroLayout">
-      <div class="pallet-hero-panel">
-        <article class="pallet-hero-filter-card">
-          <span class="module-section-kicker">Standort</span>
-          <label for="locationSelect">Filter f&uuml;r Vorg&auml;nge und Historie</label>
-          <select id="locationSelect" class="filter-select"></select>
-        </article>
+      <div class="pallet-hero-copy-panel">
+        <div class="module-hero__copy">
+          <span class="module-hero__eyebrow">Paletten Modul</span>
+          <div class="dashboard-title-row">
+            <b>Paletten</b>
+            <span class="pill" id="me">-</span>
+          </div>
+        </div>
 
-        <article class="pallet-hero-filter-card">
-          <span class="module-section-kicker">Abteilung</span>
-          <label for="departmentSelect">Filter f&uuml;r Historie und Export</label>
-          <select id="departmentSelect" class="filter-select"></select>
-        </article>
+        <div class="pallet-hero-panel">
+          <article class="pallet-hero-filter-card">
+            <span class="module-section-kicker">Standort</span>
+            <label for="locationSelect">Filter f&uuml;r Vorg&auml;nge und Historie</label>
+            <select id="locationSelect" class="filter-select"></select>
+          </article>
+
+          <article class="pallet-hero-filter-card">
+            <span class="module-section-kicker">Abteilung</span>
+            <label for="departmentSelect">Filter f&uuml;r Historie und Export</label>
+            <select id="departmentSelect" class="filter-select"></select>
+          </article>
+        </div>
       </div>
 
       <article class="pallet-hero-live-card" id="openPalletsHeroCard" style="display:none;">
@@ -572,6 +574,6 @@
 <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/public/modules/pallets/pallets.js?v=20260316-2"></script>
+<script src="/public/modules/pallets/pallets.js?v=20260316-3"></script>
 </body>
 </html>

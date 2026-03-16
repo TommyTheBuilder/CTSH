@@ -3119,7 +3119,7 @@ body.darkmode .auth-message {
 }
 
 .pallet-app-hero {
-  gap: 14px;
+  gap: 18px;
   padding-top: 18px;
   padding-bottom: 18px;
 }
@@ -3135,19 +3135,32 @@ body.darkmode .auth-message {
   justify-content: flex-end;
 }
 
-.pallet-open-hero-actions button {
-  min-width: 180px;
+.pallet-open-create-button {
+  width: auto;
+  min-width: 220px;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .pallet-hero-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.78fr) minmax(520px, 1.22fr);
+  grid-template-columns: minmax(340px, 0.82fr) minmax(520px, 1.18fr);
   gap: 18px;
   align-items: start;
 }
 
 .pallet-hero-layout--single {
   grid-template-columns: 1fr;
+}
+
+.pallet-hero-copy-panel {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-width: 0;
 }
 
 .pallet-hero-panel {
@@ -3178,9 +3191,9 @@ body.darkmode .auth-message {
 
 .pallet-hero-live-card {
   display: grid;
-  gap: 16px;
-  min-height: 340px;
-  padding: 20px 22px;
+  gap: 14px;
+  min-height: 308px;
+  padding: 18px 20px;
   border-radius: 28px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(219, 239, 255, 0.68));
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -3221,7 +3234,7 @@ body.darkmode .auth-message {
   display: grid;
   gap: 12px;
   align-content: start;
-  max-height: 250px;
+  max-height: 218px;
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
@@ -3804,7 +3817,7 @@ body.darkmode .nav-icon--symbol {
     justify-content: stretch;
   }
 
-  .pallet-open-hero-actions button {
+  .pallet-open-create-button {
     width: 100% !important;
     min-width: 0;
   }
