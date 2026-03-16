@@ -22,6 +22,12 @@ const state = {
     locationName: "",
     rows: []
   },
+  slotModalDetailKey: null,
+  slotModalDetailRaf: null,
+  slotModalDetailPending: {
+    row: null,
+    location: null
+  },
   selected: {
     customerId: null,
     locationId: null,
@@ -507,6 +513,12 @@ function renderSlotModalDetail(row = null, location = null) {
   const host = $("slotModalDetail");
   if (!host) return;
 
+  const detailKey = row
+    ? `${location?.id || row.storage_location_id || "-"}:${row.stellplatz_nr || "-"}:${row.status || "-"}:${row.positions_nr || "-"}:${row.beleg_nr || "-"}:${row.menge || 1}`
+    : "empty";
+  if (state.slotModalDetailKey === detailKey) return;
+  state.slotModalDetailKey = detailKey;
+
   if (!row) {
     host.innerHTML = `<div class="warehouse-empty">Wählen Sie einen Stellplatz aus oder fahren Sie mit der Maus über ein belegtes Feld.</div>`;
     return;
@@ -575,6 +587,16 @@ function renderSlotModalDetail(row = null, location = null) {
     `;
 }
 
+function scheduleSlotModalDetailRender(row = null, location = null) {
+  state.slotModalDetailPending = { row, location };
+  if (state.slotModalDetailRaf) return;
+
+  state.slotModalDetailRaf = window.requestAnimationFrame(() => {
+    state.slotModalDetailRaf = null;
+    renderSlotModalDetail(state.slotModalDetailPending.row, state.slotModalDetailPending.location);
+  });
+}
+
 function closeSlotModal() {
   const back = $("slotModalBack");
   if (!back) return;
@@ -585,6 +607,12 @@ function closeSlotModal() {
     locationName: "",
     rows: []
   };
+  state.slotModalDetailKey = null;
+  state.slotModalDetailPending = { row: null, location: null };
+  if (state.slotModalDetailRaf) {
+    window.cancelAnimationFrame(state.slotModalDetailRaf);
+    state.slotModalDetailRaf = null;
+  }
 }
 
 async function openLocationSlotModal(locationId) {
@@ -602,6 +630,7 @@ async function openLocationSlotModal(locationId) {
   title.textContent = `${location.name} - Stellplatz-Raster`;
   lead.textContent = "Freie und belegte Stellplätze werden als Raster angezeigt. Details öffnen Sie per Hover oder Klick.";
   grid.innerHTML = `<div class="warehouse-empty">Stellplätze werden geladen...</div>`;
+  state.slotModalDetailKey = null;
   renderSlotModalDetail(null, location);
 
   try {
@@ -630,9 +659,9 @@ async function openLocationSlotModal(locationId) {
     grid.querySelectorAll("[data-slot-number]").forEach((button) => {
       const slotNumber = Number(button.dataset.slotNumber);
       const row = rows.find((entry) => Number(entry.stellplatz_nr) === slotNumber) || null;
-      button.addEventListener("mouseenter", () => renderSlotModalDetail(row, location));
-      button.addEventListener("focus", () => renderSlotModalDetail(row, location));
-      button.addEventListener("click", () => renderSlotModalDetail(row, location));
+      button.addEventListener("mouseenter", () => scheduleSlotModalDetailRender(row, location));
+      button.addEventListener("focus", () => scheduleSlotModalDetailRender(row, location));
+      button.addEventListener("click", () => scheduleSlotModalDetailRender(row, location));
     });
   } catch (error) {
     grid.innerHTML = `<div class="warehouse-empty">${escapeHtml(error.message || "Stellplätze konnten nicht geladen werden.")}</div>`;
