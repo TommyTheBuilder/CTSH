@@ -7,6 +7,8 @@
   --warehouse-border: rgba(148, 163, 184, 0.24);
   --warehouse-surface: rgba(255, 255, 255, 0.86);
   --warehouse-surface-soft: rgba(248, 250, 252, 0.86);
+  --warehouse-slot-free: #22c55e;
+  --warehouse-slot-occupied: #ef4444;
 }
 
 body.light {
@@ -697,7 +699,9 @@ body.light .warehouse-topbar {
 }
 
 .warehouse-slot-modal {
+  --warehouse-slot-detail-height: 290px;
   width: min(1080px, 100%);
+  height: min(90vh, 920px);
   max-height: min(90vh, 920px);
   overflow: auto;
   padding: 24px;
@@ -705,6 +709,8 @@ body.light .warehouse-topbar {
   border: 1px solid rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
 }
 
 .warehouse-slot-modal__head {
@@ -748,11 +754,11 @@ body.light .warehouse-topbar {
 }
 
 .warehouse-slot-legend__swatch--free {
-  background: #22c55e;
+  background: var(--warehouse-slot-free);
 }
 
 .warehouse-slot-legend__swatch--occupied {
-  background: #ef4444;
+  background: var(--warehouse-slot-occupied);
 }
 
 .warehouse-slot-modal__grid {
@@ -760,6 +766,7 @@ body.light .warehouse-topbar {
   grid-template-columns: repeat(var(--slot-columns, 10), minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
+  align-content: start;
 }
 
 .warehouse-slot-cell {
@@ -789,16 +796,16 @@ body.light .warehouse-topbar {
 }
 
 .warehouse-slot-cell--free {
-  background: #22c55e !important;
+  background: var(--warehouse-slot-free) !important;
   background-image: none !important;
-  border-color: #22c55e !important;
+  border-color: var(--warehouse-slot-free) !important;
   color: #ffffff !important;
 }
 
 .warehouse-slot-cell--occupied {
-  background: #ef4444 !important;
+  background: var(--warehouse-slot-occupied) !important;
   background-image: none !important;
-  border-color: #ef4444 !important;
+  border-color: var(--warehouse-slot-occupied) !important;
   color: #ffffff !important;
 }
 
@@ -858,10 +865,21 @@ body.light .warehouse-topbar {
 
 .warehouse-slot-modal__detail {
   margin-top: 20px;
+  min-height: var(--warehouse-slot-detail-height);
+  max-height: var(--warehouse-slot-detail-height);
   padding: 18px;
   border-radius: 22px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid rgba(148, 163, 184, 0.18);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.warehouse-slot-modal__detail > .warehouse-empty {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .warehouse-slot-detail-grid {
@@ -1183,23 +1201,26 @@ body.darkmode .warehouse-slot-detail-row {
 
 body.dark .warehouse-slot-detail-row strong,
 body.darkmode .warehouse-slot-detail-row strong,
-body.dark .warehouse-slot-cell,
-body.darkmode .warehouse-slot-cell {
+body.dark .warehouse-slot-modal button.warehouse-slot-cell,
+body.darkmode .warehouse-slot-modal button.warehouse-slot-cell {
   color: #f8fafc;
+  background-image: none !important;
 }
 
-body.dark .warehouse-slot-cell--free,
-body.darkmode .warehouse-slot-cell--free {
-  background: #22c55e !important;
+body.dark .warehouse-slot-modal button.warehouse-slot-cell--free,
+body.darkmode .warehouse-slot-modal button.warehouse-slot-cell--free {
+  background: var(--warehouse-slot-free) !important;
   background-image: none !important;
-  border-color: #22c55e !important;
+  border-color: var(--warehouse-slot-free) !important;
+  color: #ffffff !important;
 }
 
-body.dark .warehouse-slot-cell--occupied,
-body.darkmode .warehouse-slot-cell--occupied {
-  background: #ef4444 !important;
+body.dark .warehouse-slot-modal button.warehouse-slot-cell--occupied,
+body.darkmode .warehouse-slot-modal button.warehouse-slot-cell--occupied {
+  background: var(--warehouse-slot-occupied) !important;
   background-image: none !important;
-  border-color: #ef4444 !important;
+  border-color: var(--warehouse-slot-occupied) !important;
+  color: #ffffff !important;
 }
 
 @media (max-width: 1380px) {
@@ -1293,6 +1314,7 @@ body.darkmode .warehouse-slot-cell--occupied {
   }
 
   .warehouse-slot-modal {
+    --warehouse-slot-detail-height: 240px;
     padding: 18px;
     border-radius: 22px;
   }
