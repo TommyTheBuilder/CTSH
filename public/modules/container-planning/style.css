@@ -136,12 +136,29 @@ body.theme-dark .nav-arrows {
   padding: 0.58rem 0.9rem;
   cursor: pointer;
   font-weight: 600;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  will-change: transform;
+  position: relative;
+  contain: paint;
+}
+
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
 }
 
 .btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
+}
+
+.btn:hover::after {
+  opacity: 1;
 }
 
 .btn--ghost {
@@ -178,8 +195,12 @@ body.theme-dark .nav-arrows {
   color: #fff;
 }
 
-.btn--danger-solid:hover {
+.btn--danger-solid::after {
   box-shadow: 0 10px 24px rgba(185, 28, 28, 0.28);
+}
+
+.btn--danger-solid:hover {
+  transform: translateY(-1px);
 }
 
 #rangeLabel {
