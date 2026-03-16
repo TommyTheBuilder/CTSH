@@ -29,6 +29,7 @@ const {
   listStorageLocations,
   listTransactions,
   startPickingOrder,
+  transferInventorySlot,
   updateCustomer,
   updateInventoryRecord,
   updatePickingOrder,
@@ -322,6 +323,14 @@ function createWarehouseRouter({ authRequired, requirePermission }) {
     requirePermission("warehouse.transactions.create"),
     handleRoute(async (req, res) => {
       res.status(201).json(await createTransactionRecord(req.body || {}, req.user.id));
+    })
+  );
+
+  router.post(
+    "/transfer",
+    requirePermission("warehouse.transactions.create"),
+    handleRoute(async (req, res) => {
+      res.json(await transferInventorySlot(req.body || {}, req.user.id));
     })
   );
 

@@ -40,7 +40,7 @@
       </div>
       <div class="warehouse-page-header__stats">
         <article class="warehouse-mini-stat">
-          <span>Offene Auftraege</span>
+          <span>Offene Aufträge</span>
           <strong id="warehouseQuickOpenOrders">0</strong>
         </article>
         <article class="warehouse-mini-stat">
@@ -439,11 +439,11 @@
                 <div class="warehouse-form-grid">
                   <div>
                     <label for="pickingCustomerLookup">Kunde</label>
-                    <input id="pickingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="Kunde wählen" autocomplete="off" />
+                    <input id="pickingCustomerLookup" type="text" list="warehouseCustomerLookupList" placeholder="Kunde eingeben oder auswählen" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="pickingBelegNr">Belegnummer</label>
-                    <input id="pickingBelegNr" type="text" placeholder="optional" autocomplete="off" />
+                    <label for="pickingNote">Notiz</label>
+                    <input id="pickingNote" type="text" placeholder="kurze Notiz" autocomplete="off" />
                   </div>
                   <div>
                     <label for="pickingDueDate">Fällig am</label>
@@ -481,7 +481,7 @@
               </div>
             </div>
             <div class="warehouse-toolbar">
-              <input id="pickingSearch" type="text" placeholder="Suche nach Beleg, Kunde oder Position" />
+              <input id="pickingSearch" type="text" placeholder="Suche nach Notiz, Kunde, Position oder Rollen" />
               <select id="pickingStatusFilter">
                 <option value="">Alle Status</option>
                 <option value="OFFEN">OFFEN</option>

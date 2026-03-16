@@ -90,7 +90,7 @@ const PICKING_ORDER_SELECT = `
     po.customer_id,
     c.kunden_nr,
     c.name AS customer_name,
-    po.beleg_nr,
+    po.notiz,
     po.ersteller_user_id,
     eu.username AS ersteller_username,
     po.bearbeiter_user_id,
@@ -98,8 +98,17 @@ const PICKING_ORDER_SELECT = `
     po.faellig_am,
     po.created_at,
     COUNT(poi.id)::int AS item_count,
-    COALESCE(SUM(poi.menge_soll), 0)::int AS menge_soll_gesamt,
-    COALESCE(SUM(poi.menge_ist), 0)::int AS menge_ist_gesamt
+    COALESCE(
+      STRING_AGG(
+        CASE
+          WHEN NULLIF(BTRIM(poi.rollen_nummern), '') IS NULL THEN NULL
+          WHEN NULLIF(BTRIM(poi.positions_nr), '') IS NULL THEN poi.rollen_nummern
+          ELSE poi.positions_nr || ': ' || poi.rollen_nummern
+        END,
+        ' | ' ORDER BY poi.id
+      ),
+      ''
+    ) AS rollen_nummern_gesamt
   FROM picking_orders po
   LEFT JOIN customers c ON c.id = po.customer_id
   LEFT JOIN users eu ON eu.id = po.ersteller_user_id
@@ -225,6 +234,83 @@ function normalizeDateOnly(value, field, options = {}) {
     throw new WarehouseError(400, `${field} is invalid`);
   }
   return parsed.toISOString().slice(0, 10);
+}
+
+async function getCustomerCore(executor, id) {
+  return getOneOrNull(
+    executor,
+    `
+    SELECT id, kunden_nr, name, adresse, kontakt, created_at
+    FROM customers
+    WHERE id = $1
+    `,
+    [id]
+  );
+}
+
+async function findCustomerByName(executor, name) {
+  return getOneOrNull(
+    executor,
+    `
+    SELECT id, kunden_nr, name, adresse, kontakt, created_at
+    FROM customers
+    WHERE LOWER(BTRIM(name)) = LOWER(BTRIM($1))
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+    [name]
+  );
+}
+
+async function resolveCustomerReference(executor, payload, options = {}) {
+  const { required = false } = options;
+  const customerIdProvided = hasOwn(payload, "customer_id");
+  const customerNameProvided = hasOwn(payload, "customer_name");
+
+  if (!customerIdProvided && !customerNameProvided) {
+    if (required) throw new WarehouseError(400, "customer_id or customer_name is required");
+    return { provided: false, customer_id: undefined, customer: null };
+  }
+
+  const customerId = customerIdProvided
+    ? normalizeInteger(payload.customer_id, "customer_id", { required: false, min: 1, allowNull: true })
+    : null;
+
+  if (customerId) {
+    const customer = await getCustomerCore(executor, customerId);
+    if (!customer) throw new WarehouseError(400, "Referenced customer not found");
+    return { provided: true, customer_id: customer.id, customer };
+  }
+
+  const customerName = customerNameProvided
+    ? normalizeText(payload.customer_name, "customer_name", { required: false, maxLength: 255 })
+    : null;
+
+  if (customerName) {
+    const lockKey = customerName.toLowerCase();
+    await executor.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+    const existing = await findCustomerByName(executor, customerName);
+    if (existing) {
+      return { provided: true, customer_id: existing.id, customer: existing };
+    }
+
+    const inserted = (
+      await executor.query(
+        `
+        INSERT INTO customers (kunden_nr, name, adresse, kontakt)
+        VALUES (NULL, $1, NULL, NULL)
+        RETURNING id, kunden_nr, name, adresse, kontakt, created_at
+        `,
+        [customerName]
+      )
+    ).rows[0];
+
+    return { provided: true, customer_id: inserted.id, customer: inserted };
+  }
+
+  if (required) throw new WarehouseError(400, "customer_id or customer_name is required");
+  return { provided: true, customer_id: null, customer: null };
 }
 
 function normalizeDateTimeFilter(value, mode) {
@@ -502,8 +588,7 @@ async function getPickingOrderById(executor, id) {
         poi.id,
         poi.order_id,
         poi.positions_nr,
-        poi.menge_soll,
-        poi.menge_ist
+        poi.rollen_nummern
       FROM picking_order_items poi
       WHERE poi.order_id = $1
       ORDER BY poi.id ASC
@@ -840,8 +925,10 @@ function normalizePickingItems(items, options = {}) {
       required: true,
       maxLength: 120
     }),
-    menge_soll: normalizeInteger(item?.menge_soll, `items[${index}].menge_soll`, { required: true, min: 1 }),
-    menge_ist: normalizeInteger(item?.menge_ist ?? 0, `items[${index}].menge_ist`, { required: true, min: 0 })
+    rollen_nummern: normalizeText(item?.rollen_nummern, `items[${index}].rollen_nummern`, {
+      required: true,
+      maxLength: 255
+    })
   }));
 }
 
@@ -1045,15 +1132,7 @@ async function listCustomers(filters = {}) {
 
 async function getCustomer(id) {
   const customerId = normalizeInteger(id, "id", { required: true, min: 1 });
-  const row = await getOneOrNull(
-    pool,
-    `
-    SELECT id, kunden_nr, name, adresse, kontakt, created_at
-    FROM customers
-    WHERE id = $1
-    `,
-    [customerId]
-  );
+  const row = await getCustomerCore(pool, customerId);
   if (!row) throw new WarehouseError(404, "Customer not found");
   return row;
 }
@@ -1646,6 +1725,46 @@ async function fetchTransactionRecord(id) {
   return row;
 }
 
+async function insertMovementTransaction(client, movement, actorId) {
+  const inserted = await client.query(
+    `
+    INSERT INTO transactions (
+      typ,
+      menge,
+      storage_location_from_id,
+      storage_location_to_id,
+      stellplatz_nr,
+      verpackungsart,
+      customer_id,
+      beleg_nr,
+      positions_nr,
+      user_id,
+      datum,
+      notiz
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    RETURNING id
+    `,
+    [
+      movement.typ,
+      movement.menge,
+      movement.storage_location_from_id,
+      movement.storage_location_to_id,
+      movement.stellplatz_nr,
+      movement.verpackungsart,
+      movement.customer_id,
+      movement.beleg_nr,
+      movement.positions_nr,
+      actorId,
+      movement.datum,
+      movement.notiz
+    ]
+  );
+
+  await replaceTransactionSlotAssignments(client, inserted.rows[0].id, movement);
+  return getTransactionById(client, inserted.rows[0].id);
+}
+
 async function createTransactionRecord(payload, userId) {
   const actorId = normalizeInteger(userId, "user_id", { required: true, min: 1 });
   const movement = normalizeMovementPayload(payload, { requireAll: true });
@@ -1653,48 +1772,139 @@ async function createTransactionRecord(payload, userId) {
   try {
     return await withTransaction(async (client) => {
       await applyMovement(client, movement, 1);
-      const inserted = await client.query(
-        `
-        INSERT INTO transactions (
-          typ,
-          menge,
-          storage_location_from_id,
-          storage_location_to_id,
-          stellplatz_nr,
-          verpackungsart,
-          customer_id,
-          beleg_nr,
-          positions_nr,
-          user_id,
-          datum,
-          notiz
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING id
-        `,
-        [
-          movement.typ,
-          movement.menge,
-          movement.storage_location_from_id,
-          movement.storage_location_to_id,
-          movement.stellplatz_nr,
-          movement.verpackungsart,
-          movement.customer_id,
-          movement.beleg_nr,
-          movement.positions_nr,
-          actorId,
-          movement.datum,
-          movement.notiz
-        ]
-      );
-
-      await replaceTransactionSlotAssignments(client, inserted.rows[0].id, movement);
-      return getTransactionById(client, inserted.rows[0].id);
+      return insertMovementTransaction(client, movement, actorId);
     });
   } catch (error) {
     throw translateDbError(error, {
       fkMessage: "Referenced customer, storage location or user not found",
       checkMessage: "Transaction data is invalid"
+    });
+  }
+}
+
+async function transferInventorySlot(payload, userId) {
+  const actorId = normalizeInteger(userId, "user_id", { required: true, min: 1 });
+  const sourceLocationId = normalizeInteger(payload.storage_location_from_id, "storage_location_from_id", {
+    required: true,
+    min: 1
+  });
+  const targetLocationId = normalizeInteger(payload.storage_location_to_id, "storage_location_to_id", {
+    required: true,
+    min: 1
+  });
+  const sourceSlot = normalizeInteger(payload.source_stellplatz_nr, "source_stellplatz_nr", {
+    required: true,
+    min: 1
+  });
+  const targetSlot = normalizeInteger(payload.target_stellplatz_nr, "target_stellplatz_nr", {
+    required: true,
+    min: 1
+  });
+  const datum = normalizeDateTime(payload.datum, "datum", { required: false, defaultNow: true });
+  const notiz = normalizeText(payload.notiz, "notiz", { required: false, maxLength: 4000 });
+
+  if (sourceLocationId === targetLocationId && sourceSlot === targetSlot) {
+    throw new WarehouseError(400, "Source and target slot must differ for a transfer");
+  }
+
+  try {
+    return await withTransaction(async (client) => {
+      await ensureStorageLocationSlot(client, sourceLocationId, sourceSlot, "source_stellplatz_nr");
+      await ensureStorageLocationSlot(client, targetLocationId, targetSlot, "target_stellplatz_nr");
+
+      const sourceInventory = await getOneOrNull(
+        client,
+        `
+        SELECT
+          i.id,
+          i.storage_location_id,
+          i.stellplatz_nr,
+          i.verpackungsart,
+          tx.customer_id,
+          tx.beleg_nr,
+          tx.positions_nr
+        FROM inventory i
+        LEFT JOIN LATERAL (
+          SELECT
+            t.customer_id,
+            t.beleg_nr,
+            t.positions_nr
+          FROM transaction_slot_assignments tsa
+          INNER JOIN transactions t ON t.id = tsa.transaction_id
+          WHERE tsa.phase = 'TARGET'
+            AND tsa.storage_location_id = i.storage_location_id
+            AND tsa.stellplatz_nr = i.stellplatz_nr
+          ORDER BY t.datum DESC, t.id DESC
+          LIMIT 1
+        ) tx ON TRUE
+        WHERE i.storage_location_id = $1
+          AND i.stellplatz_nr = $2
+        FOR UPDATE OF i
+        `,
+        [sourceLocationId, sourceSlot]
+      );
+
+      if (!sourceInventory) {
+        throw new WarehouseError(404, "Source slot is not occupied");
+      }
+
+      const targetInventory = await getOneOrNull(
+        client,
+        `
+        SELECT id
+        FROM inventory
+        WHERE storage_location_id = $1
+          AND stellplatz_nr = $2
+        FOR UPDATE
+        `,
+        [targetLocationId, targetSlot]
+      );
+
+      if (targetInventory) {
+        throw new WarehouseError(409, "Target slot is already occupied");
+      }
+
+      const movement = normalizeMovementPayload(
+        {
+          typ: "TRANSFER",
+          menge: 1,
+          storage_location_from_id: sourceLocationId,
+          storage_location_to_id: targetLocationId,
+          source_stellplaetze: [sourceSlot],
+          target_stellplaetze: [targetSlot],
+          verpackungsart: sourceInventory.verpackungsart,
+          customer_id: sourceInventory.customer_id,
+          beleg_nr: sourceInventory.beleg_nr,
+          positions_nr: sourceInventory.positions_nr,
+          datum,
+          notiz: notiz || "Umlagerung via Drag & Drop"
+        },
+        { requireAll: true }
+      );
+
+      await applyMovement(client, movement, 1);
+      const transaction = await insertMovementTransaction(client, movement, actorId);
+      const movedInventory = await getOneOrNull(
+        client,
+        `
+        SELECT id
+        FROM inventory
+        WHERE storage_location_id = $1
+          AND stellplatz_nr = $2
+        `,
+        [targetLocationId, targetSlot]
+      );
+
+      return {
+        ok: true,
+        inventory: movedInventory ? await getInventoryById(client, movedInventory.id) : null,
+        transaction
+      };
+    });
+  } catch (error) {
+    throw translateDbError(error, {
+      fkMessage: "Referenced storage location or user not found",
+      checkMessage: "Transfer data is invalid"
     });
   }
 }
@@ -1830,14 +2040,17 @@ async function listPickingOrders(filters = {}) {
     const idx = values.length;
     where.push(
       `(
-        LOWER(COALESCE(po.beleg_nr, '')) LIKE $${idx}
+        LOWER(COALESCE(po.notiz, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.kunden_nr, '')) LIKE $${idx}
         OR LOWER(COALESCE(c.name, '')) LIKE $${idx}
         OR EXISTS (
           SELECT 1
           FROM picking_order_items poi
           WHERE poi.order_id = po.id
-            AND LOWER(COALESCE(poi.positions_nr, '')) LIKE $${idx}
+            AND (
+              LOWER(COALESCE(poi.positions_nr, '')) LIKE $${idx}
+              OR LOWER(COALESCE(poi.rollen_nummern, '')) LIKE $${idx}
+            )
         )
       )`
     );
@@ -1895,8 +2108,7 @@ async function createPickingOrder(payload, userId) {
     required: false,
     defaultValue: "OFFEN"
   });
-  const customerId = normalizeInteger(payload.customer_id, "customer_id", { required: true, min: 1 });
-  const belegNr = normalizeText(payload.beleg_nr, "beleg_nr", { required: false, maxLength: 120 });
+  const notiz = normalizeText(payload.notiz, "notiz", { required: false, maxLength: 2000 });
   const bearbeiterUserId = normalizeInteger(payload.bearbeiter_user_id, "bearbeiter_user_id", {
     required: false,
     min: 1,
@@ -1907,12 +2119,13 @@ async function createPickingOrder(payload, userId) {
 
   try {
     return await withTransaction(async (client) => {
+      const customerRef = await resolveCustomerReference(client, payload, { required: true });
       const inserted = await client.query(
         `
         INSERT INTO picking_orders (
           status,
           customer_id,
-          beleg_nr,
+          notiz,
           ersteller_user_id,
           bearbeiter_user_id,
           faellig_am
@@ -1920,16 +2133,16 @@ async function createPickingOrder(payload, userId) {
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         `,
-        [status, customerId, belegNr, actorId, bearbeiterUserId, faelligAm]
+        [status, customerRef.customer_id, notiz, actorId, bearbeiterUserId, faelligAm]
       );
 
       for (const item of items) {
         await client.query(
           `
-          INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO picking_order_items (order_id, positions_nr, rollen_nummern)
+          VALUES ($1, $2, $3)
           `,
-          [inserted.rows[0].id, item.positions_nr, item.menge_soll, item.menge_ist]
+          [inserted.rows[0].id, item.positions_nr, item.rollen_nummern]
         );
       }
 
@@ -1954,13 +2167,10 @@ async function updatePickingOrder(id, payload) {
     values.push(normalizeEnum(payload.status, PICKING_STATUSES, "status", { required: true }));
     updates.push(`status = $${values.length}`);
   }
-  if (hasOwn(payload, "customer_id")) {
-    values.push(normalizeInteger(payload.customer_id, "customer_id", { required: true, min: 1 }));
-    updates.push(`customer_id = $${values.length}`);
-  }
-  if (hasOwn(payload, "beleg_nr")) {
-    values.push(normalizeText(payload.beleg_nr, "beleg_nr", { required: false, maxLength: 120 }));
-    updates.push(`beleg_nr = $${values.length}`);
+  const customerChangeProvided = hasOwn(payload, "customer_id") || hasOwn(payload, "customer_name");
+  if (hasOwn(payload, "notiz")) {
+    values.push(normalizeText(payload.notiz, "notiz", { required: false, maxLength: 2000 }));
+    updates.push(`notiz = $${values.length}`);
   }
   if (hasOwn(payload, "bearbeiter_user_id")) {
     values.push(normalizeInteger(payload.bearbeiter_user_id, "bearbeiter_user_id", {
@@ -1975,7 +2185,7 @@ async function updatePickingOrder(id, payload) {
     updates.push(`faellig_am = $${values.length}`);
   }
 
-  if (!updates.length && !itemsProvided) {
+  if (!updates.length && !itemsProvided && !customerChangeProvided) {
     throw new WarehouseError(400, "No picking order changes provided");
   }
 
@@ -1983,6 +2193,12 @@ async function updatePickingOrder(id, payload) {
     return await withTransaction(async (client) => {
       const exists = await getOneOrNull(client, `SELECT id FROM picking_orders WHERE id = $1 FOR UPDATE`, [orderId]);
       if (!exists) throw new WarehouseError(404, "Picking order not found");
+
+      if (customerChangeProvided) {
+        const customerRef = await resolveCustomerReference(client, payload, { required: false });
+        values.push(customerRef.customer_id ?? null);
+        updates.push(`customer_id = $${values.length}`);
+      }
 
       if (updates.length) {
         values.push(orderId);
@@ -2001,10 +2217,10 @@ async function updatePickingOrder(id, payload) {
         for (const item of items) {
           await client.query(
             `
-            INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO picking_order_items (order_id, positions_nr, rollen_nummern)
+            VALUES ($1, $2, $3)
             `,
-            [orderId, item.positions_nr, item.menge_soll, item.menge_ist]
+            [orderId, item.positions_nr, item.rollen_nummern]
           );
         }
       }
@@ -2061,7 +2277,7 @@ async function updatePickingOrderItem(orderId, itemId, payload, userId) {
   const normalizedOrderId = normalizeInteger(orderId, "order_id", { required: true, min: 1 });
   const normalizedItemId = normalizeInteger(itemId, "item_id", { required: true, min: 1 });
   const actorId = normalizeInteger(userId, "user_id", { required: true, min: 1 });
-  const mengeIst = normalizeInteger(payload.menge_ist, "menge_ist", { required: true, min: 0 });
+  const rollenNummern = normalizeText(payload.rollen_nummern, "rollen_nummern", { required: true, maxLength: 255 });
 
   try {
     return await withTransaction(async (client) => {
@@ -2080,10 +2296,10 @@ async function updatePickingOrderItem(orderId, itemId, payload, userId) {
       await client.query(
         `
         UPDATE picking_order_items
-        SET menge_ist = $1
+        SET rollen_nummern = $1
         WHERE id = $2 AND order_id = $3
         `,
-        [mengeIst, normalizedItemId, normalizedOrderId]
+        [rollenNummern, normalizedItemId, normalizedOrderId]
       );
 
       await client.query(
@@ -2118,10 +2334,10 @@ async function completePickingOrder(id, payload, userId) {
         for (const item of items) {
           await client.query(
             `
-            INSERT INTO picking_order_items (order_id, positions_nr, menge_soll, menge_ist)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO picking_order_items (order_id, positions_nr, rollen_nummern)
+            VALUES ($1, $2, $3)
             `,
-            [orderId, item.positions_nr, item.menge_soll, item.menge_ist]
+            [orderId, item.positions_nr, item.rollen_nummern]
           );
         }
       }
@@ -2176,6 +2392,7 @@ module.exports = {
   listStorageLocations,
   listTransactions,
   startPickingOrder,
+  transferInventorySlot,
   updateCustomer,
   updateInventoryRecord,
   updatePickingOrder,
