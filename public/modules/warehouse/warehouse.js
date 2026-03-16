@@ -29,7 +29,14 @@ const state = {
     inventoryId: null,
     pickingId: null
   },
-  pickingDraftItems: []
+  pickingDraftItems: [],
+  pickingSearch: {
+    query: "",
+    results: [],
+    loading: false,
+    context: null,
+    requestId: 0
+  }
 };
 
 function $(id) {
@@ -131,6 +138,14 @@ function permissionValue(path) {
   return current === true;
 }
 
+function canCreateTransactions() {
+  return !!(permissionValue("warehouse.transactions.create") || permissionValue("warehouse.transactions.manage"));
+}
+
+function canPostTransactions() {
+  return !!permissionValue("warehouse.transactions.create");
+}
+
 function hasAnyPermission(value) {
   if (value === true) return true;
   if (!value || typeof value !== "object") return false;
@@ -210,6 +225,233 @@ function formatTransactionSlotSummary(row) {
     return `Quelle: ${formatSlotList(row.source_stellplaetze || [])} | Ziel: ${formatSlotList(row.target_stellplaetze || [])}`;
   }
   return formatSlotList(row.target_stellplaetze || []);
+}
+
+function buildPickingSearchContextLabel(context = null) {
+  if (!context) return "";
+  const parts = [];
+  if (context.orderNote) parts.push(context.orderNote);
+  else if (context.orderId) parts.push(`Auftrag ${formatNumber(context.orderId)}`);
+  if (context.customerName) parts.push(context.customerName);
+  return parts.join(" | ");
+}
+
+function resetPickingSearch(options = {}) {
+  const { clearMessageBox = true } = options;
+  state.pickingSearch.query = "";
+  state.pickingSearch.results = [];
+  state.pickingSearch.loading = false;
+  state.pickingSearch.context = null;
+  state.pickingSearch.requestId += 1;
+  if (clearMessageBox) clearMessage("pickingSearchMsg");
+  renderPickingSearchPanel();
+}
+
+function renderPickingSearchPanel() {
+  const input = $("pickingPositionLookup");
+  if (input && input.value !== state.pickingSearch.query) {
+    input.value = state.pickingSearch.query;
+  }
+
+  const host = $("pickingPositionResults");
+  if (!host) return;
+
+  const query = String(state.pickingSearch.query || "").trim();
+  const context = state.pickingSearch.context;
+  const contextLabel = buildPickingSearchContextLabel(context);
+  const summary = query
+    ? `
+      <div class="warehouse-picking-search-summary">
+        <strong>Suchbegriff:</strong> Pos ${escapeHtml(query)}
+        ${contextLabel ? `<br /><strong>Kontext:</strong> ${escapeHtml(contextLabel)}` : ""}
+      </div>
+    `
+    : "";
+
+  if (state.pickingSearch.loading) {
+    host.innerHTML = `
+      ${summary}
+      <div class="warehouse-empty">Paletten werden gesucht...</div>
+    `;
+    return;
+  }
+
+  if (!query) {
+    host.innerHTML = `<div class="warehouse-empty">Noch keine Palette gesucht.</div>`;
+    return;
+  }
+
+  if (!state.pickingSearch.results.length) {
+    host.innerHTML = `
+      ${summary}
+      <div class="warehouse-empty">Keine Palette mit dieser Positionsnummer gefunden.</div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    ${summary}
+    ${state.pickingSearch.results.map((row) => `
+      <article class="warehouse-picking-search-result">
+        <div class="warehouse-picking-search-result__top">
+          <strong>Pos ${escapeHtml(row.positions_nr || query)}</strong>
+          <span class="warehouse-badge warehouse-badge--accent">${escapeHtml(row.verpackungsart || "Palette")}</span>
+        </div>
+        <div class="warehouse-picking-search-result__grid">
+          <div class="warehouse-picking-search-result__field">
+            <span>Lagerplatz</span>
+            <strong>${escapeHtml(row.storage_location_name || "-")}</strong>
+          </div>
+          <div class="warehouse-picking-search-result__field">
+            <span>Stellplatz</span>
+            <strong>${escapeHtml(formatNumber(row.stellplatz_nr))}</strong>
+          </div>
+          <div class="warehouse-picking-search-result__field">
+            <span>Kunde</span>
+            <strong>${escapeHtml(row.customer_name || row.kunden_nr || "-")}</strong>
+          </div>
+          <div class="warehouse-picking-search-result__field">
+            <span>Beleg</span>
+            <strong>${escapeHtml(row.beleg_nr || "-")}</strong>
+          </div>
+        </div>
+        <div class="warehouse-picking-search-result__actions">
+          <span class="warehouse-field-help">Lagerplatz ${escapeHtml(row.storage_location_name || "-")} / Stellplatz ${escapeHtml(formatNumber(row.stellplatz_nr))}</span>
+          ${canPostTransactions()
+            ? `<button class="primary" type="button" data-picking-direct-out="${escapeHtml(row.id)}">Direkt ausbuchen</button>`
+            : `<span class="warehouse-field-help">Direktausbuchung nur mit Buchungsrecht verfügbar.</span>`}
+        </div>
+      </article>
+    `).join("")}
+  `;
+
+  host.querySelectorAll("[data-picking-direct-out]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void submitPickingDirectOutbook(button.dataset.pickingDirectOut);
+    });
+  });
+}
+
+async function runPickingPositionSearch(options = {}) {
+  const query = String(options.query ?? state.pickingSearch.query ?? "").trim();
+  const nextContext = Object.prototype.hasOwnProperty.call(options, "context")
+    ? options.context
+    : state.pickingSearch.context;
+  const silent = options.silent === true;
+
+  state.pickingSearch.query = query;
+  state.pickingSearch.context = nextContext || null;
+
+  if (!query) {
+    resetPickingSearch({ clearMessageBox: !silent });
+    return;
+  }
+
+  const requestId = state.pickingSearch.requestId + 1;
+  state.pickingSearch.requestId = requestId;
+  state.pickingSearch.loading = true;
+  if (!silent) clearMessage("pickingSearchMsg");
+  renderPickingSearchPanel();
+
+  try {
+    const params = new URLSearchParams({
+      positions_nr: query,
+      limit: "150"
+    });
+    if (state.pickingSearch.context?.customerId) {
+      params.set("customer_id", String(state.pickingSearch.context.customerId));
+    }
+
+    const response = await api(`/api/warehouse/picking-slot-search?${params.toString()}`, {
+      method: "GET",
+      headers: {}
+    });
+    const data = await readJsonSafe(response);
+    if (requestId !== state.pickingSearch.requestId) return;
+    if (!response.ok) {
+      throw new Error(data?.error || "Palettensuche konnte nicht ausgeführt werden.");
+    }
+
+    state.pickingSearch.results = Array.isArray(data) ? data : [];
+    state.pickingSearch.loading = false;
+    renderPickingSearchPanel();
+    if (!state.pickingSearch.results.length && !silent) {
+      setMessage("pickingSearchMsg", `Keine Palette zu Pos ${query} gefunden.`);
+      return;
+    }
+    if (!silent) clearMessage("pickingSearchMsg");
+  } catch (error) {
+    if (requestId !== state.pickingSearch.requestId) return;
+    state.pickingSearch.results = [];
+    state.pickingSearch.loading = false;
+    renderPickingSearchPanel();
+    if (!silent) {
+      setMessage("pickingSearchMsg", error.message || "Palettensuche konnte nicht ausgeführt werden.");
+    }
+  }
+}
+
+async function submitPickingDirectOutbook(inventoryId) {
+  const row = state.pickingSearch.results.find((item) => Number(item.id) === Number(inventoryId));
+  if (!row) {
+    setMessage("pickingSearchMsg", "Die ausgewählte Palette ist nicht mehr in der Suchliste.");
+    return;
+  }
+  if (!canPostTransactions()) {
+    setMessage("pickingSearchMsg", "Direktausbuchung ist für dieses Konto nicht freigeschaltet.");
+    return;
+  }
+
+  const context = state.pickingSearch.context;
+  const locationLabelText = `${row.storage_location_name || "-"} / Stellplatz ${formatNumber(row.stellplatz_nr)}`;
+  const confirmText = context?.orderNote
+    ? `Palette fuer ${context.orderNote} von ${locationLabelText} jetzt direkt ausbuchen?`
+    : `Palette von ${locationLabelText} jetzt direkt ausbuchen?`;
+  if (!window.confirm(confirmText)) return;
+
+  const payload = {
+    typ: "OUT",
+    menge: 1,
+    storage_location_from_id: row.storage_location_id,
+    source_stellplaetze: [Number(row.stellplatz_nr)],
+    verpackungsart: row.verpackungsart,
+    customer_id: context?.customerId || row.customer_id || null,
+    beleg_nr: row.beleg_nr || null,
+    positions_nr: row.positions_nr || state.pickingSearch.query || null,
+    datum: new Date().toISOString(),
+    notiz: context?.orderId
+      ? `Direktausbuchung via Kommissionierung Auftrag ${context.orderId}${context.orderNote ? ` - ${context.orderNote}` : ""}`
+      : "Direktausbuchung via Offene Kommissionierungen"
+  };
+
+  clearMessage("pickingSearchMsg");
+  try {
+    const response = await api("/api/warehouse/transactions", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    const data = await readJsonSafe(response);
+    if (!response.ok) {
+      setMessage("pickingSearchMsg", data?.error || "Direktausbuchung konnte nicht gespeichert werden.");
+      return;
+    }
+
+    await Promise.all([
+      loadPickingOrders().catch(() => {}),
+      loadInventory().catch(() => {}),
+      loadTransactions().catch(() => {}),
+      loadDashboard().catch(() => {}),
+      loadLocations().catch(() => {})
+    ]);
+    await runPickingPositionSearch({ query: state.pickingSearch.query, silent: true });
+    setMessage(
+      "pickingSearchMsg",
+      `Palette Pos ${row.positions_nr || state.pickingSearch.query || "-"} aus ${locationLabelText} wurde direkt ausgebucht.`,
+      true
+    );
+  } catch (error) {
+    setMessage("pickingSearchMsg", error.message || "Direktausbuchung konnte nicht gespeichert werden.");
+  }
 }
 
 function locationFreeSlotCount(location) {
@@ -491,9 +733,8 @@ function validateBookingForm(options = {}) {
 function updateBookingSubmitState() {
   const button = $("bookingSubmitBtn");
   if (!button) return;
-  const canCreateTransactions = !!(permissionValue("warehouse.transactions.create") || permissionValue("warehouse.transactions.manage"));
   const validation = validateBookingForm({ showMessage: false });
-  button.disabled = !canCreateTransactions || !validation.valid;
+  button.disabled = !canCreateTransactions() || !validation.valid;
 }
 
 function buildSlotTooltipMarkup(row) {
@@ -508,7 +749,7 @@ function buildSlotTooltipMarkup(row) {
 }
 
 function canTransferSlots() {
-  return !!permissionValue("warehouse.transactions.create");
+  return canPostTransactions();
 }
 
 function resetSlotModalLead(location = null) {
@@ -766,19 +1007,9 @@ async function openLocationSlotModal(locationId) {
 function setSidebarNote() {
   const note = $("warehouseSidebarNote");
   if (!note) return;
-
-  const actions = [];
-  if (permissionValue("warehouse.transactions.create")) actions.push("Buchungen");
-  if (permissionValue("warehouse.inventory.view")) actions.push("Live-Bestand");
-  if (permissionValue("warehouse.storage_locations.manage")) actions.push("Lagerplätze");
-  if (permissionValue("warehouse.customers.manage")) actions.push("Kunden");
-  if (permissionValue("warehouse.picking.manage")) actions.push("Versandaufträge Büro");
-  if (permissionValue("warehouse.picking.process")) actions.push("Versandaufträge Lager");
-  if (permissionValue("warehouse.transactions.view")) actions.push("Historie");
-
-  note.textContent = actions.length
-    ? `Freigeschaltet: ${actions.join(", ")}.`
-    : "Für dieses Konto sind aktuell keine Warehouse-Bereiche freigeschaltet.";
+  note.textContent = "";
+  note.hidden = true;
+  note.setAttribute("aria-hidden", "true");
 }
 
 function updateQuickStats(summary = {}) {
@@ -1643,6 +1874,20 @@ function renderPickingProcessBoard() {
                   <strong>Pos ${escapeHtml(item.positions_nr || "-")}</strong>
                   <div class="warehouse-order-line__meta">Rollen Nummern: ${escapeHtml(item.rollen_nummern || "-")}</div>
                 </div>
+                <div class="warehouse-order-line__actions">
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-order-item-search="${escapeHtml(item.positions_nr || "")}"
+                    data-order-id="${escapeHtml(order.id)}"
+                    data-order-note="${escapeHtml(order.notiz || "")}"
+                    data-order-status="${escapeHtml(order.status || "")}"
+                    data-order-customer-id="${escapeHtml(order.customer_id || "")}"
+                    data-order-customer-name="${escapeHtml(order.customer_name || "")}"
+                  >
+                    Palette suchen
+                  </button>
+                </div>
               </div>
             `).join("")}
           </div>
@@ -1655,6 +1900,8 @@ function renderPickingProcessBoard() {
         </article>
       `).join("")
     : `<div class="warehouse-empty">Keine offenen Versandaufträge vorhanden.</div>`;
+
+  renderPickingSearchPanel();
 
   host.querySelectorAll("[data-order-start]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1700,6 +1947,27 @@ function renderPickingProcessBoard() {
       } catch (error) {
         setMessage("pickingMsg", error.message || "Auftrag konnte nicht abgeschlossen werden.");
       }
+    });
+  });
+
+  host.querySelectorAll("[data-order-item-search]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const query = String(button.dataset.orderItemSearch || "").trim();
+      if (!query) {
+        setMessage("pickingSearchMsg", "Für diese Position ist keine Positionsnummer hinterlegt.");
+        return;
+      }
+      const context = {
+        orderId: button.dataset.orderId ? Number(button.dataset.orderId) : null,
+        orderNote: String(button.dataset.orderNote || "").trim(),
+        orderStatus: String(button.dataset.orderStatus || "").trim(),
+        customerId: button.dataset.orderCustomerId ? Number(button.dataset.orderCustomerId) : null,
+        customerName: String(button.dataset.orderCustomerName || "").trim(),
+        positionsNr: query
+      };
+      state.pickingSearch.query = query;
+      if ($("pickingPositionLookup")) $("pickingPositionLookup").focus();
+      void runPickingPositionSearch({ query, context });
     });
   });
 }
@@ -1921,6 +2189,36 @@ function bindSearchInputs() {
   });
   $("pickingStatusFilter")?.addEventListener("change", () => void loadPickingOrders().catch((error) => setMessage("pickingMsg", error.message)));
   $("pickingReloadBtn")?.addEventListener("click", () => void loadPickingOrders().catch((error) => setMessage("pickingMsg", error.message)));
+}
+
+function bindPickingSearchPanel() {
+  $("pickingPositionLookup")?.addEventListener("input", (event) => {
+    state.pickingSearch.query = event.target.value || "";
+    if (!String(state.pickingSearch.query || "").trim()) {
+      resetPickingSearch();
+    }
+  });
+
+  $("pickingPositionLookup")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const query = event.currentTarget?.value || "";
+    state.pickingSearch.query = query;
+    void runPickingPositionSearch({ query });
+  });
+
+  $("pickingPositionSearchBtn")?.addEventListener("click", () => {
+    const query = $("pickingPositionLookup")?.value || "";
+    state.pickingSearch.query = query;
+    void runPickingPositionSearch({ query });
+  });
+
+  $("pickingPositionClearBtn")?.addEventListener("click", () => {
+    resetPickingSearch();
+    $("pickingPositionLookup")?.focus();
+  });
+
+  renderPickingSearchPanel();
 }
 
 function bindSlotModal() {
@@ -2373,6 +2671,7 @@ async function initializeData() {
   bindSlotModal();
   bindTabNavigation();
   bindSearchInputs();
+  bindPickingSearchPanel();
   bindBookingForm();
   bindInventoryForm();
   bindLocationForm();

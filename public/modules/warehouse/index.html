@@ -34,9 +34,6 @@
           <h1>Lager-Versandsystem</h1>
           <span class="pill" id="warehouseMe">-</span>
         </div>
-        <p class="warehouse-page-header__lead">
-          Live-Bestände, Lagerplätze, Kundenstamm und Versandaufträge in einer gemeinsamen Arbeitsoberfläche für Büro und Lager.
-        </p>
       </div>
       <div class="warehouse-page-header__stats" hidden aria-hidden="true">
         <article class="warehouse-mini-stat">
@@ -86,9 +83,7 @@
             <span>Historie</span>
           </button>
         </div>
-        <div class="warehouse-sidebar__note" id="warehouseSidebarNote">
-          Rollenrechte werden geladen...
-        </div>
+        <div class="warehouse-sidebar__note" id="warehouseSidebarNote" hidden aria-hidden="true"></div>
       </aside>
 
       <section class="warehouse-content">
@@ -466,6 +461,23 @@
                   <span class="warehouse-section-kicker">Lager</span>
                   <h3>Offene Kommissionierungen</h3>
                 </div>
+              </div>
+              <div class="warehouse-picking-tools">
+                <div class="warehouse-picking-tools__head">
+                  <label for="pickingPositionLookup">Palette nach Positionsnummer suchen</label>
+                  <button class="secondary warehouse-inline-btn" id="pickingPositionClearBtn" type="button">Suche leeren</button>
+                </div>
+                <div class="warehouse-picking-tools__controls">
+                  <input id="pickingPositionLookup" type="text" placeholder="Positionsnummer eingeben oder aus Auftrag übernehmen" autocomplete="off" />
+                  <button class="secondary" id="pickingPositionSearchBtn" type="button">Palette suchen</button>
+                </div>
+                <p class="warehouse-field-help">
+                  Die Suche prüft belegte Lagerplätze und Stellplätze und zeigt Lagerplatz plus Stellplatz sofort an.
+                </p>
+                <div class="warehouse-picking-search-results" id="pickingPositionResults">
+                  <div class="warehouse-empty">Noch keine Palette gesucht.</div>
+                </div>
+                <p class="warehouse-message" id="pickingSearchMsg" role="status" aria-live="polite"></p>
               </div>
               <div class="warehouse-order-board" id="pickingProcessWrap">
                 <div class="warehouse-empty">Versandaufträge werden geladen...</div>
