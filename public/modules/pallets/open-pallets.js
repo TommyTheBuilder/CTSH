@@ -72,35 +72,12 @@ function statusLabel(status) {
   return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
 }
 
-function departmentNameById(departmentId) {
-  return DEPARTMENTS.find((department) => Number(department.id) === Number(departmentId))?.name || null;
-}
-
 function buildScopeHint() {
   const hint = $("openPalletsScopeHint");
   const tableHint = $("openPalletsTableHint");
   if (!hint || !tableHint) return;
-
-  const fixedDepartmentId = Number(ME?.fixed_department_id || 0) || null;
-  const fixedDepartmentName = fixedDepartmentId ? departmentNameById(fixedDepartmentId) : null;
-  const canViewAll = !!PERMS?.open_pallets?.view_all;
-
-  if (canViewAll) {
-    hint.textContent = "Sie sehen alle Offene-Paletten-Buchungen. Diese Buchungen bleiben weiterhin separat vom normalen Palettenbestand.";
-    tableHint.textContent = fixedDepartmentName
-      ? `Buchungen koennen fuer Ihre feste Abteilung ${fixedDepartmentName} angelegt werden.`
-      : "Es ist kein feste Abteilung im Account hinterlegt. Ohne Abteilung kann keine neue Buchung angelegt werden.";
-    return;
-  }
-
-  if (fixedDepartmentName) {
-    hint.textContent = `Sie sehen ausschliesslich die Offene-Paletten-Buchungen Ihrer Abteilung ${fixedDepartmentName}. Diese Buchungen beeinflussen den normalen Bestand nicht.`;
-    tableHint.textContent = "Loeschen ist nur in dieser Seite moeglich, nicht im Live Feed.";
-    return;
-  }
-
-  hint.textContent = "Dem Account ist keine Abteilung zugeordnet. Ohne feste Abteilung koennen keine Offene-Paletten-Buchungen angezeigt oder angelegt werden.";
-  tableHint.textContent = "Bitte eine Abteilung im Benutzerkonto hinterlegen.";
+  hint.textContent = "";
+  tableHint.textContent = "";
 }
 
 function resetCreateForm() {

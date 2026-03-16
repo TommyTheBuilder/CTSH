@@ -61,7 +61,7 @@
           <div class="pallet-hero-live-card__copy">
             <span class="module-section-kicker">Live Feed</span>
             <h2>Offene Paletten</h2>
-            <p id="openPalletsFeedHint" class="muted">Aktuelle Vorg&auml;nge Ihrer Abteilung.</p>
+            <p id="openPalletsFeedHint" class="muted"></p>
           </div>
           <button class="secondary pallet-hero-live-card__action" id="openOpenPalletsPageBtn" type="button">
             Seite &ouml;ffnen
@@ -145,8 +145,8 @@
 
         <div id="casesContent">
           <p class="pallet-status-note muted">Status: 0 Storniert &#8226; 1 Aviso &#8226; 2 In Bearbeitung &#8226; 3 In Pr&uuml;fung &#8226; 4 Gebucht</p>
-          <div class="pallet-table-surface">
-            <div id="casesDashWrap" style="overflow:auto;"></div>
+          <div class="pallet-table-surface pallet-case-feed-shell">
+            <div id="casesDashWrap" class="pallet-case-feed" aria-live="polite"></div>
           </div>
         </div>
       </article>

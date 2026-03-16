@@ -746,6 +746,38 @@ function emitOpenPalletBookingsUpdated(payload = {}) {
   io.emit("openPalletBookingsUpdated", payload);
 }
 
+async function logPalletAdminHistory({
+  appCustomerId,
+  entityType,
+  entityLabel,
+  action,
+  details = {},
+  changedBy = null
+}) {
+  if (!appCustomerId || !entityType || !entityLabel || !action) return;
+  await q(
+    `
+    INSERT INTO pallet_admin_history (
+      app_customer_id,
+      entity_type,
+      entity_label,
+      action,
+      details,
+      changed_by
+    )
+    VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+    `,
+    [
+      Number(appCustomerId),
+      String(entityType),
+      String(entityLabel),
+      String(action),
+      JSON.stringify(details && typeof details === "object" ? details : {}),
+      changedBy ? Number(changedBy) : null
+    ]
+  );
+}
+
 async function deleteNotificationsForCase(caseId) {
   const deleted = await q(
     `DELETE FROM user_notifications
@@ -2486,6 +2518,28 @@ app.get("/api/modules/pallets/admin/context", authRequired, requirePalletModuleA
   });
 });
 
+app.get("/api/modules/pallets/admin/history", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const rows = (await q(
+    `
+    SELECT
+      h.id,
+      h.entity_type,
+      h.entity_label,
+      h.action,
+      h.details,
+      h.created_at,
+      COALESCE(u.username, '(gelöscht)') AS changed_by
+    FROM pallet_admin_history h
+    LEFT JOIN users u ON u.id = h.changed_by
+    WHERE h.app_customer_id = $1
+    ORDER BY h.created_at DESC, h.id DESC
+    LIMIT 200
+    `,
+    [req.moduleCustomerId]
+  )).rows;
+  res.json(rows);
+});
+
 app.get("/api/modules/pallets/admin/locations", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   res.json((await q(
     `SELECT id, name
@@ -2507,12 +2561,23 @@ app.post("/api/modules/pallets/admin/locations", authRequired, requirePalletModu
      RETURNING id, name`,
     [nm, req.moduleCustomerId]
   );
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "location",
+    entityLabel: nm,
+    action: "create",
+    changedBy: req.user.id
+  });
   res.json(r.rows[0]);
 });
 
 app.delete("/api/modules/pallets/admin/locations/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  const locationResult = await q(`SELECT id, name FROM locations WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  if (!locationResult.rowCount) {
+    return res.status(404).json({ error: "Standort nicht gefunden" });
+  }
   if (!(await assertRecordBelongsToCustomer("locations", id, req.moduleCustomerId))) {
     return res.status(404).json({ error: "Standort nicht gefunden" });
   }
@@ -2524,6 +2589,13 @@ app.delete("/api/modules/pallets/admin/locations/:id", authRequired, requirePall
   if (usedCases.rowCount > 0) return res.status(400).json({ error: "Standort hat bereits Vorgänge und kann nicht gelöscht werden" });
 
   await q(`DELETE FROM locations WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "location",
+    entityLabel: locationResult.rows[0].name,
+    action: "delete",
+    changedBy: req.user.id
+  });
   res.json({ ok: true });
 });
 
@@ -2559,17 +2631,35 @@ app.post("/api/modules/pallets/admin/departments", authRequired, requirePalletMo
      RETURNING id, name`,
     [nm, req.moduleCustomerId]
   );
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "department",
+    entityLabel: nm,
+    action: "create",
+    changedBy: req.user.id
+  });
   res.json(r.rows[0]);
 });
 
 app.delete("/api/modules/pallets/admin/departments/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  const departmentResult = await q(`SELECT id, name FROM departments WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  if (!departmentResult.rowCount) {
+    return res.status(404).json({ error: "Abteilung nicht gefunden" });
+  }
   if (!(await assertRecordBelongsToCustomer("departments", id, req.moduleCustomerId))) {
     return res.status(404).json({ error: "Abteilung nicht gefunden" });
   }
 
   await q(`DELETE FROM departments WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "department",
+    entityLabel: departmentResult.rows[0].name,
+    action: "delete",
+    changedBy: req.user.id
+  });
   res.json({ ok: true });
 });
 
@@ -3049,6 +3139,13 @@ app.post("/api/modules/pallets/admin/entrepreneurs", authRequired, requirePallet
      RETURNING id, name, street, postal_code, city`,
     [name, street, postal_code, city, req.moduleCustomerId]
   );
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "entrepreneur",
+    entityLabel: name,
+    action: "create",
+    changedBy: req.user.id
+  });
   res.json(r.rows[0]);
 });
 
@@ -3088,6 +3185,12 @@ app.put("/api/modules/pallets/admin/entrepreneurs/:id", authRequired, requirePal
     return res.status(404).json({ error: "Unternehmer nicht gefunden" });
   }
 
+  const existing = await q(
+    `SELECT id, name, street, postal_code, city FROM entrepreneurs WHERE id=$1 AND app_customer_id=$2`,
+    [id, req.moduleCustomerId]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
+
   const name = safeTrim(req.body?.name);
   const street = safeTrim(req.body?.street);
   const postal_code = safeTrim(req.body?.postal_code);
@@ -3102,6 +3205,17 @@ app.put("/api/modules/pallets/admin/entrepreneurs/:id", authRequired, requirePal
     [name, street, postal_code, city, id, req.moduleCustomerId]
   );
   if (!r.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "entrepreneur",
+    entityLabel: name,
+    action: "update",
+    changedBy: req.user.id,
+    details: {
+      before: existing.rows[0],
+      after: r.rows[0]
+    }
+  });
   res.json(r.rows[0]);
 });
 
@@ -3115,7 +3229,19 @@ app.delete("/api/entrepreneurs/manage/:id", authRequired, requirePalletModuleAdm
 app.delete("/api/modules/pallets/admin/entrepreneurs/:id", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
+  const existing = await q(
+    `SELECT id, name FROM entrepreneurs WHERE id=$1 AND app_customer_id=$2`,
+    [id, req.moduleCustomerId]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: "Unternehmer nicht gefunden" });
   await q(`DELETE FROM entrepreneurs WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  await logPalletAdminHistory({
+    appCustomerId: req.moduleCustomerId,
+    entityType: "entrepreneur",
+    entityLabel: existing.rows[0].name,
+    action: "delete",
+    changedBy: req.user.id
+  });
   res.json({ ok: true });
 });
 
