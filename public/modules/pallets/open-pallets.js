@@ -61,10 +61,14 @@ const OPEN_PALLET_STATUS_LABELS = {
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
 
+const OPEN_PALLET_PAGE_SIZE = 25;
+const PALLET_ASSET_VERSION = "20260316-2";
+
 let ME = null;
 let PERMS = {};
-let DEPARTMENTS = [];
 let OPEN_PALLET_ITEMS = [];
+let OPEN_PALLET_PAGE = 0;
+let OPEN_PALLET_HAS_MORE = false;
 
 const socket = io();
 
@@ -72,12 +76,14 @@ function statusLabel(status) {
   return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
 }
 
-function buildScopeHint() {
-  const hint = $("openPalletsScopeHint");
-  const tableHint = $("openPalletsTableHint");
-  if (!hint || !tableHint) return;
-  hint.textContent = "";
-  tableHint.textContent = "";
+function showOpenPalletModal(show) {
+  const back = $("openPalletModalBack");
+  if (!back) return;
+  back.style.display = show ? "flex" : "none";
+  back.setAttribute("aria-hidden", show ? "false" : "true");
+  if (show) {
+    window.requestAnimationFrame(() => $("openPalletTitle")?.focus());
+  }
 }
 
 function resetCreateForm() {
@@ -87,20 +93,29 @@ function resetCreateForm() {
   $("openPalletPostalCode").value = "";
   $("openPalletOrderNo").value = "";
   $("openPalletCount").value = "1";
-  $("openPalletStatus").value = "open";
   $("openPalletNote").value = "";
+  setMsg("openPalletCreateMsg", "");
+}
+
+function updatePaginationUi() {
+  const prevBtn = $("openPalletPrevBtn");
+  const nextBtn = $("openPalletNextBtn");
+  if (prevBtn) prevBtn.disabled = OPEN_PALLET_PAGE === 0;
+  if (nextBtn) nextBtn.disabled = !OPEN_PALLET_HAS_MORE;
 }
 
 function applyPermissionsToUI() {
   const canView = !!PERMS?.open_pallets?.view;
   const canCreate = !!PERMS?.open_pallets?.create;
+
   if (!canView) {
     $("openPalletsTableWrap").innerHTML = `
-      <div class="pallet-open-feed__empty">Keine Berechtigung fuer Offene Paletten.</div>
+      <div class="pallet-open-feed__empty">Keine Berechtigung für Offene Paletten.</div>
     `;
   }
-  if ($("openPalletCreateCard")) {
-    $("openPalletCreateCard").style.display = canCreate ? "" : "none";
+
+  if ($("openCreateBookingModalBtn")) {
+    $("openCreateBookingModalBtn").style.display = canCreate ? "" : "none";
   }
 }
 
@@ -122,12 +137,6 @@ async function loadPerms() {
   applyPermissionsToUI();
 }
 
-async function loadDepartments() {
-  const response = await api("/api/departments", { method: "GET", headers: {} });
-  DEPARTMENTS = response.ok ? await response.json() : [];
-  buildScopeHint();
-}
-
 function currentFilters() {
   return {
     title: $("filterTitle").value.trim(),
@@ -139,10 +148,15 @@ function currentFilters() {
   };
 }
 
-async function loadOpenPallets() {
+async function loadOpenPallets({ resetPage = false } = {}) {
   if (!PERMS?.open_pallets?.view) return;
+  if (resetPage) OPEN_PALLET_PAGE = 0;
 
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({
+    limit: String(OPEN_PALLET_PAGE_SIZE),
+    offset: String(OPEN_PALLET_PAGE * OPEN_PALLET_PAGE_SIZE)
+  });
+
   const filters = currentFilters();
   Object.entries(filters).forEach(([key, value]) => {
     if (value) params.set(key, value);
@@ -152,13 +166,24 @@ async function loadOpenPallets() {
   if (!response.ok) {
     const data = await readJsonSafe(response);
     $("openPalletsTableWrap").innerHTML = `
-      <div class="pallet-open-feed__empty">Fehler: ${escapeHtml(data?.error || "Buchungen konnten nicht geladen werden.")}</div>
+      <div class="pallet-open-feed__empty">${escapeHtml(data?.error || "Buchungen konnten nicht geladen werden.")}</div>
     `;
+    OPEN_PALLET_ITEMS = [];
+    OPEN_PALLET_HAS_MORE = false;
+    updatePaginationUi();
     return;
   }
 
   const data = await response.json();
   OPEN_PALLET_ITEMS = Array.isArray(data?.items) ? data.items : [];
+  OPEN_PALLET_HAS_MORE = Boolean(data?.has_more);
+
+  if (OPEN_PALLET_PAGE > 0 && OPEN_PALLET_ITEMS.length === 0) {
+    OPEN_PALLET_PAGE -= 1;
+    await loadOpenPallets();
+    return;
+  }
+
   renderOpenPallets();
 }
 
@@ -168,6 +193,7 @@ function renderOpenPallets() {
 
   if (OPEN_PALLET_ITEMS.length === 0) {
     wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Buchungen gefunden.</div>`;
+    updatePaginationUi();
     return;
   }
 
@@ -216,7 +242,7 @@ function renderOpenPallets() {
             </td>
             <td>
               <div class="pallet-open-table__actions">
-                ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">Loeschen</button>` : "-"}
+                ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">Löschen</button>` : "-"}
               </div>
             </td>
           </tr>
@@ -224,6 +250,8 @@ function renderOpenPallets() {
       </tbody>
     </table>
   `;
+
+  updatePaginationUi();
 
   document.querySelectorAll("[data-status-id]").forEach((select) => {
     select.addEventListener("change", async () => {
@@ -247,15 +275,14 @@ function renderOpenPallets() {
     button.addEventListener("click", async () => {
       const bookingId = Number(button.getAttribute("data-delete-id") || 0);
       if (!bookingId) return;
-      const confirmed = confirm("Buchung wirklich loeschen?");
-      if (!confirmed) return;
+      if (!confirm("Buchung wirklich löschen?")) return;
 
       const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, {
         method: "DELETE"
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        alert(data?.error || "Buchung konnte nicht geloescht werden.");
+        alert(data?.error || "Buchung konnte nicht gelöscht werden.");
         return;
       }
       await loadOpenPallets();
@@ -265,29 +292,35 @@ function renderOpenPallets() {
 
 async function createOpenPalletBooking() {
   setMsg("openPalletCreateMsg", "");
-  const response = await api("/api/modules/pallets/open-pallets", {
-    method: "POST",
-    body: JSON.stringify({
-      title: $("openPalletTitle").value.trim(),
-      company: $("openPalletCompany").value.trim(),
-      city: $("openPalletCity").value.trim(),
-      postal_code: $("openPalletPostalCode").value.trim(),
-      order_no: $("openPalletOrderNo").value.trim(),
-      pallet_count: Number($("openPalletCount").value || 0),
-      status: $("openPalletStatus").value,
-      note: $("openPalletNote").value.trim()
-    })
-  });
+  const button = $("createOpenPalletBtn");
+  if (button) button.disabled = true;
 
-  const data = await readJsonSafe(response);
-  if (!response.ok) {
-    setMsg("openPalletCreateMsg", data?.error || "Buchung konnte nicht gespeichert werden.");
-    return;
+  try {
+    const response = await api("/api/modules/pallets/open-pallets", {
+      method: "POST",
+      body: JSON.stringify({
+        title: $("openPalletTitle").value.trim(),
+        company: $("openPalletCompany").value.trim(),
+        city: $("openPalletCity").value.trim(),
+        postal_code: $("openPalletPostalCode").value.trim(),
+        order_no: $("openPalletOrderNo").value.trim(),
+        pallet_count: Number($("openPalletCount").value || 0),
+        note: $("openPalletNote").value.trim()
+      })
+    });
+
+    const data = await readJsonSafe(response);
+    if (!response.ok) {
+      setMsg("openPalletCreateMsg", data?.error || "Buchung konnte nicht gespeichert werden.");
+      return;
+    }
+
+    resetCreateForm();
+    showOpenPalletModal(false);
+    await loadOpenPallets({ resetPage: true });
+  } finally {
+    if (button) button.disabled = false;
   }
-
-  setMsg("openPalletCreateMsg", `Buchung #${data?.id || ""} wurde gespeichert.`, true);
-  resetCreateForm();
-  await loadOpenPallets();
 }
 
 function bindEvents() {
@@ -297,11 +330,27 @@ function bindEvents() {
   });
 
   $("backToPalletsBtn").addEventListener("click", () => {
-    window.location.href = "/modules/pallets/index.html";
+    window.location.href = `/modules/pallets/index.html?v=${PALLET_ASSET_VERSION}`;
+  });
+
+  $("openCreateBookingModalBtn")?.addEventListener("click", () => {
+    resetCreateForm();
+    showOpenPalletModal(true);
+  });
+
+  $("closeOpenPalletModalBtn")?.addEventListener("click", () => showOpenPalletModal(false));
+  $("cancelOpenPalletModalBtn")?.addEventListener("click", () => showOpenPalletModal(false));
+  $("openPalletModalBack")?.addEventListener("click", (event) => {
+    if (event.target === $("openPalletModalBack")) showOpenPalletModal(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("openPalletModalBack")?.getAttribute("aria-hidden") === "false") {
+      showOpenPalletModal(false);
+    }
   });
 
   $("createOpenPalletBtn")?.addEventListener("click", createOpenPalletBooking);
-  $("reloadOpenPalletsBtn").addEventListener("click", loadOpenPallets);
+  $("reloadOpenPalletsBtn").addEventListener("click", () => loadOpenPallets({ resetPage: true }));
   $("resetOpenPalletFiltersBtn").addEventListener("click", async () => {
     $("filterTitle").value = "";
     $("filterCompany").value = "";
@@ -309,6 +358,18 @@ function bindEvents() {
     $("filterPostalCode").value = "";
     $("filterOrderNo").value = "";
     $("filterStatus").value = "";
+    await loadOpenPallets({ resetPage: true });
+  });
+
+  $("openPalletPrevBtn").addEventListener("click", async () => {
+    if (OPEN_PALLET_PAGE === 0) return;
+    OPEN_PALLET_PAGE -= 1;
+    await loadOpenPallets();
+  });
+
+  $("openPalletNextBtn").addEventListener("click", async () => {
+    if (!OPEN_PALLET_HAS_MORE) return;
+    OPEN_PALLET_PAGE += 1;
     await loadOpenPallets();
   });
 
@@ -316,12 +377,12 @@ function bindEvents() {
     $(id).addEventListener("input", () => {
       clearTimeout(window.__openPalletFilterTimer);
       window.__openPalletFilterTimer = setTimeout(() => {
-        loadOpenPallets();
+        loadOpenPallets({ resetPage: true });
       }, 250);
     });
   });
 
-  $("filterStatus").addEventListener("change", loadOpenPallets);
+  $("filterStatus").addEventListener("change", () => loadOpenPallets({ resetPage: true }));
 
   socket.on("openPalletBookingsUpdated", async (payload) => {
     if (payload?.app_customer_id && Number(payload.app_customer_id) !== Number(ME?.app_customer_id || 0)) return;
@@ -333,7 +394,5 @@ function bindEvents() {
   bindEvents();
   await loadMe();
   await loadPerms();
-  await loadDepartments();
-  buildScopeHint();
-  await loadOpenPallets();
+  await loadOpenPallets({ resetPage: true });
 })();

@@ -39,6 +39,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
+const PALLET_ASSET_VERSION = "20260316-2";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -175,6 +176,38 @@ app.use(cors({ origin: corsOriginResolver, credentials: true }));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 app.get("/", (req, res) => res.redirect("/login.html"));
 app.get("/login", (req, res) => res.redirect("/login.html"));
+app.use((req, res, next) => {
+  const pathName = String(req.path || "");
+  const isVersionedPalletPage = pathName === "/modules/pallets/index.html"
+    || pathName === "/modules/pallets/open-pallets.html";
+
+  if (!isVersionedPalletPage || req.method !== "GET") {
+    return next();
+  }
+
+  if (String(req.query?.v || "").trim() === PALLET_ASSET_VERSION) {
+    return next();
+  }
+
+  const params = new URLSearchParams(req.query || {});
+  params.set("v", PALLET_ASSET_VERSION);
+  return res.redirect(`${pathName}?${params.toString()}`);
+});
+app.use((req, res, next) => {
+  const pathName = String(req.path || "");
+  const isModuleHtml = pathName.startsWith("/modules/") && pathName.endsWith(".html");
+  const isPalletAsset = pathName === "/public/styles.css"
+    || pathName.startsWith("/public/modules/pallets/");
+
+  if (isModuleHtml || isPalletAsset) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+  }
+
+  next();
+});
 app.use(async (req, res, next) => {
   if (!req.path.endsWith(".html")) return next();
 
@@ -2672,7 +2705,7 @@ app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEna
 
   const scope = getOpenPalletDepartmentScope(req.user, perms);
   if (!scope.canViewAll && !scope.fixedDepartmentId) {
-    return res.json({ items: [] });
+    return res.json({ items: [], has_more: false, limit: 25, offset: 0 });
   }
 
   const where = [
@@ -2733,6 +2766,10 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
   const postalCode = safeTrim(req.query?.postal_code);
   const orderNo = safeTrim(req.query?.order_no);
   const statusCheck = normalizeOpenPalletStatus(req.query?.status, { allowEmpty: true });
+  const limitRaw = Number(req.query?.limit || 25);
+  const offsetRaw = Number(req.query?.offset || 0);
+  const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 25;
+  const offset = Number.isInteger(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
   if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
 
   const where = ["op.app_customer_id = $1"];
@@ -2776,6 +2813,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
     idx += 1;
   }
 
+  params.push(limit + 1, offset);
   const rows = (await q(
     `
     SELECT
@@ -2792,8 +2830,8 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
       op.created_at,
       op.updated_at,
       COALESCE(d.name, 'Abteilung') AS department_name,
-      COALESCE(uc.username, '(geloescht)') AS created_by_name,
-      COALESCE(uu.username, '(geloescht)') AS updated_by_name
+      COALESCE(uc.username, '(gelöscht)') AS created_by_name,
+      COALESCE(uu.username, '(gelöscht)') AS updated_by_name
     FROM open_pallet_bookings op
     LEFT JOIN departments d
       ON d.id = op.department_id
@@ -2802,13 +2840,19 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
     LEFT JOIN users uu ON uu.id = op.updated_by
     WHERE ${where.join(" AND ")}
     ORDER BY op.updated_at DESC, op.id DESC
-    LIMIT 250
-    `
-    ,
+    LIMIT $${idx}
+    OFFSET $${idx + 1}
+    `,
     params
   )).rows;
 
-  res.json({ items: rows });
+  const has_more = rows.length > limit;
+  res.json({
+    items: has_more ? rows.slice(0, limit) : rows,
+    has_more,
+    limit,
+    offset
+  });
 });
 
 app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
@@ -2836,13 +2880,10 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const orderNo = safeTrim(req.body?.order_no);
   const note = safeTrim(req.body?.note);
   const palletCount = Number(req.body?.pallet_count || 0);
-  const statusCheck = normalizeOpenPalletStatus(req.body?.status || "open");
-
   if (!title) return res.status(400).json({ error: "Titel ist Pflicht" });
   if (!Number.isInteger(palletCount) || palletCount <= 0) {
-    return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
+    return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
   }
-  if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
 
   const result = await q(
     `
@@ -2860,7 +2901,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       note,
       status
     )
-    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,'open')
     RETURNING id
     `,
     [
@@ -2873,8 +2914,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       postalCode,
       orderNo,
       palletCount,
-      note,
-      statusCheck.status
+      note
     ]
   );
 

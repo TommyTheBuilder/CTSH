@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Offene Paletten</title>
-  <link rel="stylesheet" href="/public/styles.css">
+  <link rel="stylesheet" href="/public/styles.css?v=20260316-2">
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
   <div class="system-logo-wrap pallet-topbar-logo">
     <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="/modules/pallets/index.html" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
+    <a href="/modules/pallets/index.html?v=20260316-2" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
   </div>
   <div></div>
   <div class="row topbar-actions" style="align-items:center;">
@@ -21,75 +21,20 @@
 </header>
 
 <main class="dashboard-main module-dashboard-main pallet-app-main">
-  <section class="dashboard-header admin-header module-hero pallet-app-hero">
+  <section class="dashboard-header admin-header module-hero pallet-app-hero pallet-open-page-hero">
     <div class="module-hero__copy">
       <span class="module-hero__eyebrow">Offene Paletten</span>
       <div class="dashboard-title-row">
         <b>Offene Paletten</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead" id="openPalletsScopeHint"></p>
+    </div>
+    <div class="pallet-open-hero-actions">
+      <button class="secondary" id="openCreateBookingModalBtn" type="button" style="width:auto; min-width:180px;">Neue Buchung</button>
     </div>
   </section>
 
   <section class="pallet-open-page-grid">
-    <article class="card module-dashboard-card pallet-form-card" id="openPalletCreateCard">
-      <div class="module-dashboard-card__head">
-        <div>
-          <span class="module-section-kicker">Erfassung</span>
-          <h2>Neue Buchung</h2>
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="openPalletTitle">Titel (Pflicht)</label>
-          <input id="openPalletTitle" placeholder="z.B. Rueckholung Kunde Nord">
-        </div>
-        <div>
-          <label for="openPalletCompany">Firma</label>
-          <input id="openPalletCompany" placeholder="z.B. Muster GmbH">
-        </div>
-        <div>
-          <label for="openPalletCity">Ort</label>
-          <input id="openPalletCity" placeholder="z.B. Hamburg">
-        </div>
-        <div>
-          <label for="openPalletPostalCode">Postleitzahl</label>
-          <input id="openPalletPostalCode" placeholder="z.B. 20095">
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:16px;">
-        <div>
-          <label for="openPalletOrderNo">Auftragsnummer</label>
-          <input id="openPalletOrderNo" placeholder="z.B. A-2026-015">
-        </div>
-        <div>
-          <label for="openPalletCount">Anzahl der Paletten (Pflicht)</label>
-          <input id="openPalletCount" type="number" min="1" value="1">
-        </div>
-        <div>
-          <label for="openPalletStatus">Status</label>
-          <select id="openPalletStatus">
-            <option value="open">Offen</option>
-            <option value="truck_planned">LKW eingeplant</option>
-            <option value="completed_waiting_document">Erledigt - warten auf Beleg</option>
-            <option value="document_booked_scanned">Beleg gebucht und gescannt</option>
-          </select>
-        </div>
-        <div style="flex:1; min-width:280px;">
-          <label for="openPalletNote">Notiz</label>
-          <input id="openPalletNote" placeholder="z.B. Beleg folgt per Mail">
-        </div>
-      </div>
-
-      <div class="pallet-open-toolbar" style="margin-top:16px;">
-        <button class="primary" id="createOpenPalletBtn" type="button">Buchung speichern</button>
-      </div>
-      <p id="openPalletCreateMsg" class="pallet-message"></p>
-    </article>
-
     <article class="card module-dashboard-card pallet-form-card">
       <div class="module-dashboard-card__head">
         <div>
@@ -133,20 +78,69 @@
 
       <div class="pallet-open-toolbar" style="margin-top:16px;">
         <button class="secondary" id="reloadOpenPalletsBtn" type="button">Neu laden</button>
-        <button class="secondary" id="resetOpenPalletFiltersBtn" type="button">Filter zuruecksetzen</button>
+        <button class="secondary" id="resetOpenPalletFiltersBtn" type="button">Filter zurücksetzen</button>
       </div>
 
       <div class="pallet-section-table" style="margin-top:16px;">
         <div id="openPalletsTableWrap" style="overflow:auto;"></div>
       </div>
-      <p class="pallet-status-note muted" id="openPalletsTableHint" style="display:none;"></p>
+      <div class="pallet-open-toolbar pallet-open-toolbar--pagination" id="openPalletPagination" style="margin-top:16px;">
+        <button class="secondary" id="openPalletPrevBtn" type="button">Zurück</button>
+        <button class="secondary" id="openPalletNextBtn" type="button">Weiter</button>
+      </div>
     </article>
   </section>
 </main>
 
+<div class="modalBack" id="openPalletModalBack" aria-hidden="true">
+  <div class="modal password-modal pallet-booking-modal" role="dialog" aria-modal="true" aria-labelledby="openPalletModalTitle" style="max-width:920px;">
+    <div class="password-modal-head">
+      <h3 id="openPalletModalTitle">Neue Buchung</h3>
+      <button class="secondary" id="closeOpenPalletModalBtn" type="button">Schließen</button>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label for="openPalletTitle">Titel (Pflicht)</label>
+        <input id="openPalletTitle" placeholder="z.B. Rückholung Kunde Nord">
+      </div>
+      <div>
+        <label for="openPalletCompany">Firma</label>
+        <input id="openPalletCompany" placeholder="z.B. Muster GmbH">
+      </div>
+      <div>
+        <label for="openPalletCity">Ort</label>
+        <input id="openPalletCity" placeholder="z.B. Hamburg">
+      </div>
+      <div>
+        <label for="openPalletPostalCode">Postleitzahl</label>
+        <input id="openPalletPostalCode" placeholder="z.B. 20095">
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label for="openPalletOrderNo">Auftragsnummer</label>
+        <input id="openPalletOrderNo" placeholder="z.B. A-2026-015">
+      </div>
+      <div>
+        <label for="openPalletCount">Anzahl der Paletten (Pflicht)</label>
+        <input id="openPalletCount" type="number" min="1" value="1">
+      </div>
+      <div style="flex:1; min-width:280px;">
+        <label for="openPalletNote">Notiz</label>
+        <input id="openPalletNote" placeholder="z.B. Beleg folgt per Mail">
+      </div>
+    </div>
+    <p id="openPalletCreateMsg" class="pallet-message"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:8px;">
+      <button class="secondary" id="cancelOpenPalletModalBtn" type="button">Abbrechen</button>
+      <button class="primary" id="createOpenPalletBtn" type="button">Buchung speichern</button>
+    </div>
+  </div>
+</div>
+
 <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/public/modules/pallets/open-pallets.js"></script>
+<script src="/public/modules/pallets/open-pallets.js?v=20260316-2"></script>
 </body>
 </html>

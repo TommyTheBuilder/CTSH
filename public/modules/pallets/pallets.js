@@ -303,6 +303,7 @@ const OPEN_PALLET_STATUS_LABELS = {
   completed_waiting_document: "Erledigt - warten auf Beleg",
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
+const PALLET_ASSET_VERSION = "20260316-2";
 
 const socket = io();
 function joinLocationRoom() {
@@ -334,7 +335,7 @@ $("adminBtn")?.addEventListener("click", () => {
   window.location.href = "/modules/pallets/admin.html";
 });
 $("openOpenPalletsPageBtn")?.addEventListener("click", () => {
-  window.location.href = "/modules/pallets/open-pallets.html";
+  window.location.href = `/modules/pallets/open-pallets.html?v=${PALLET_ASSET_VERSION}`;
 });
 
 async function loadMe() {
@@ -905,9 +906,17 @@ function renderCasesDashboard() {
   const wrap = $("casesDashWrap");
   if (!wrap) return;
 
-  const rows = CASES.slice(0, 25);
+  const today = new Date();
+  const rows = CASES.filter((item) => {
+    if (!item?.created_at) return false;
+    const createdAt = new Date(item.created_at);
+    return !Number.isNaN(createdAt.getTime())
+      && createdAt.getDate() === today.getDate()
+      && createdAt.getMonth() === today.getMonth()
+      && createdAt.getFullYear() === today.getFullYear();
+  }).slice(0, 25);
   if (rows.length === 0) {
-    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Vorg&auml;nge</div>`;
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Vorgänge</div>`;
     return;
   }
 
@@ -930,7 +939,7 @@ function renderCasesDashboard() {
         <span>Erstellt: ${escapeHtml(formatDate(c.created_at))}</span>
       </div>
       <div class="pallet-case-feed__footer">
-        <button class="secondary" type="button" data-open-case="${escapeHtml(c.id)}">Oeffnen</button>
+        <button class="secondary" type="button" data-open-case="${escapeHtml(c.id)}">Öffnen</button>
       </div>
     </article>
   `).join("");
