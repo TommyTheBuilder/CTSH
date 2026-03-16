@@ -41,17 +41,33 @@
       </div>
     </div>
 
-    <div class="pallet-hero-panel">
-      <article class="pallet-hero-filter-card">
-        <span class="module-section-kicker">Standort</span>
-        <label for="locationSelect">Filter f&uuml;r Vorg&auml;nge und Historie</label>
-        <select id="locationSelect" class="filter-select"></select>
-      </article>
+    <div class="pallet-hero-layout" id="palletHeroLayout">
+      <div class="pallet-hero-panel">
+        <article class="pallet-hero-filter-card">
+          <span class="module-section-kicker">Standort</span>
+          <label for="locationSelect">Filter f&uuml;r Vorg&auml;nge und Historie</label>
+          <select id="locationSelect" class="filter-select"></select>
+        </article>
 
-      <article class="pallet-hero-filter-card">
-        <span class="module-section-kicker">Abteilung</span>
-        <label for="departmentSelect">Filter f&uuml;r Historie und Export</label>
-        <select id="departmentSelect" class="filter-select"></select>
+        <article class="pallet-hero-filter-card">
+          <span class="module-section-kicker">Abteilung</span>
+          <label for="departmentSelect">Filter f&uuml;r Historie und Export</label>
+          <select id="departmentSelect" class="filter-select"></select>
+        </article>
+      </div>
+
+      <article class="pallet-hero-live-card" id="openPalletsHeroCard" style="display:none;">
+        <div class="pallet-hero-live-card__head">
+          <div class="pallet-hero-live-card__copy">
+            <span class="module-section-kicker">Live Feed</span>
+            <h2>Offene Paletten</h2>
+            <p id="openPalletsFeedHint" class="muted">Aktuelle Vorg&auml;nge Ihrer Abteilung.</p>
+          </div>
+          <button class="secondary pallet-hero-live-card__action" id="openOpenPalletsPageBtn" type="button">
+            Seite &ouml;ffnen
+          </button>
+        </div>
+        <div id="openPalletsFeedWrap" class="pallet-open-feed"></div>
       </article>
     </div>
   </section>

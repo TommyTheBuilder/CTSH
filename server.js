@@ -243,7 +243,7 @@ app.use("/modules", async (req, res, next) => {
   try {
     const perms = await getMyPermissions(user);
     let allowed = false;
-    if (req.path === "/pallets/index.html") {
+    if (req.path === "/pallets/index.html" || req.path === "/pallets/open-pallets.html") {
       const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
       allowed = canAccessModule("pallets", user, perms, enabledModuleKeys);
     } else if (req.path === "/pallets/admin.html") {
@@ -477,6 +477,39 @@ function safeTrim(v) {
   return t ? t : null;
 }
 
+const OPEN_PALLET_STATUSES = {
+  open: "Offen",
+  truck_planned: "LKW eingeplant",
+  completed_waiting_document: "Erledigt - warten auf Beleg",
+  document_booked_scanned: "Beleg gebucht und gescannt"
+};
+
+function normalizeOpenPalletStatus(statusRaw, { allowEmpty = false } = {}) {
+  const status = String(statusRaw || "").trim().toLowerCase();
+  if (!status) {
+    if (allowEmpty) return { ok: true, status: null };
+    return { ok: false, msg: "Status ist Pflicht" };
+  }
+  if (!Object.prototype.hasOwnProperty.call(OPEN_PALLET_STATUSES, status)) {
+    return { ok: false, msg: "Ungueltiger Status" };
+  }
+  return { ok: true, status };
+}
+
+function canViewAllOpenPallets(perms) {
+  return Boolean(perms?.admin?.full_access || perms?.open_pallets?.view_all);
+}
+
+function getOpenPalletDepartmentScope(user, perms) {
+  const fixedDepartmentId = user?.fixed_department_id ? Number(user.fixed_department_id) : null;
+  const canViewAll = canViewAllOpenPallets(perms);
+  return {
+    canViewAll,
+    fixedDepartmentId,
+    restrictedDepartmentId: canViewAll ? null : fixedDepartmentId
+  };
+}
+
 function flattenPermissionRoles(perms, prefix = "") {
   const roles = [];
   if (!perms || typeof perms !== "object") return roles;
@@ -707,6 +740,10 @@ function emitNotificationsDeleted(payloadByUser) {
       notification_ids: notificationIds
     });
   }
+}
+
+function emitOpenPalletBookingsUpdated(payload = {}) {
+  io.emit("openPalletBookingsUpdated", payload);
 }
 
 async function deleteNotificationsForCase(caseId) {
@@ -2533,6 +2570,375 @@ app.delete("/api/modules/pallets/admin/departments/:id", authRequired, requirePa
   }
 
   await q(`DELETE FROM departments WHERE id=$1 AND app_customer_id=$2`, [id, req.moduleCustomerId]);
+  res.json({ ok: true });
+});
+
+// ---------- OPEN PALLET BOOKINGS ----------
+app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.view) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  if (!scope.canViewAll && !scope.fixedDepartmentId) {
+    return res.json({ items: [] });
+  }
+
+  const where = [
+    "op.app_customer_id = $1",
+    "op.status <> 'document_booked_scanned'"
+  ];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
+
+  if (scope.restrictedDepartmentId) {
+    where.push(`op.department_id = $${idx}`);
+    params.push(scope.restrictedDepartmentId);
+    idx += 1;
+  }
+
+  params.push(6);
+  const rows = (await q(
+    `
+    SELECT
+      op.id,
+      op.title,
+      op.company,
+      op.city,
+      op.postal_code,
+      op.order_no,
+      op.pallet_count,
+      op.status,
+      op.updated_at,
+      COALESCE(d.name, 'Abteilung') AS department_name
+    FROM open_pallet_bookings op
+    LEFT JOIN departments d
+      ON d.id = op.department_id
+     AND d.app_customer_id = op.app_customer_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY op.updated_at DESC, op.id DESC
+    LIMIT $${idx}
+    `,
+    params
+  )).rows;
+
+  res.json({ items: rows });
+});
+
+app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.view) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  if (!scope.canViewAll && !scope.fixedDepartmentId) {
+    return res.json({ items: [] });
+  }
+
+  const title = safeTrim(req.query?.title);
+  const company = safeTrim(req.query?.company);
+  const city = safeTrim(req.query?.city);
+  const postalCode = safeTrim(req.query?.postal_code);
+  const orderNo = safeTrim(req.query?.order_no);
+  const statusCheck = normalizeOpenPalletStatus(req.query?.status, { allowEmpty: true });
+  if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
+
+  const where = ["op.app_customer_id = $1"];
+  const params = [req.user.app_customer_id];
+  let idx = 2;
+
+  if (scope.restrictedDepartmentId) {
+    where.push(`op.department_id = $${idx}`);
+    params.push(scope.restrictedDepartmentId);
+    idx += 1;
+  }
+
+  if (title) {
+    where.push(`op.title ILIKE $${idx}`);
+    params.push(`%${title}%`);
+    idx += 1;
+  }
+  if (company) {
+    where.push(`COALESCE(op.company, '') ILIKE $${idx}`);
+    params.push(`%${company}%`);
+    idx += 1;
+  }
+  if (city) {
+    where.push(`COALESCE(op.city, '') ILIKE $${idx}`);
+    params.push(`%${city}%`);
+    idx += 1;
+  }
+  if (postalCode) {
+    where.push(`COALESCE(op.postal_code, '') ILIKE $${idx}`);
+    params.push(`%${postalCode}%`);
+    idx += 1;
+  }
+  if (orderNo) {
+    where.push(`COALESCE(op.order_no, '') ILIKE $${idx}`);
+    params.push(`%${orderNo}%`);
+    idx += 1;
+  }
+  if (statusCheck.status) {
+    where.push(`op.status = $${idx}`);
+    params.push(statusCheck.status);
+    idx += 1;
+  }
+
+  const rows = (await q(
+    `
+    SELECT
+      op.id,
+      op.title,
+      op.company,
+      op.city,
+      op.postal_code,
+      op.order_no,
+      op.pallet_count,
+      op.note,
+      op.status,
+      op.department_id,
+      op.created_at,
+      op.updated_at,
+      COALESCE(d.name, 'Abteilung') AS department_name,
+      COALESCE(uc.username, '(geloescht)') AS created_by_name,
+      COALESCE(uu.username, '(geloescht)') AS updated_by_name
+    FROM open_pallet_bookings op
+    LEFT JOIN departments d
+      ON d.id = op.department_id
+     AND d.app_customer_id = op.app_customer_id
+    LEFT JOIN users uc ON uc.id = op.created_by
+    LEFT JOIN users uu ON uu.id = op.updated_by
+    WHERE ${where.join(" AND ")}
+    ORDER BY op.updated_at DESC, op.id DESC
+    LIMIT 250
+    `
+    ,
+    params
+  )).rows;
+
+  res.json({ items: rows });
+});
+
+app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.create) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  const fallbackDepartmentId = scope.fixedDepartmentId;
+  const requestedDepartmentId = req.body?.department_id ? Number(req.body.department_id) : null;
+  const departmentId = fallbackDepartmentId || (scope.canViewAll ? requestedDepartmentId : null);
+  if (!departmentId) {
+    return res.status(400).json({ error: "Diesem Konto ist keine Abteilung zugeordnet." });
+  }
+
+  if (!(await assertRecordBelongsToCustomer("departments", departmentId, req.user.app_customer_id))) {
+    return res.status(400).json({ error: "Abteilung nicht gefunden" });
+  }
+
+  const title = safeTrim(req.body?.title);
+  const company = safeTrim(req.body?.company);
+  const city = safeTrim(req.body?.city);
+  const postalCode = safeTrim(req.body?.postal_code);
+  const orderNo = safeTrim(req.body?.order_no);
+  const note = safeTrim(req.body?.note);
+  const palletCount = Number(req.body?.pallet_count || 0);
+  const statusCheck = normalizeOpenPalletStatus(req.body?.status || "open");
+
+  if (!title) return res.status(400).json({ error: "Titel ist Pflicht" });
+  if (!Number.isInteger(palletCount) || palletCount <= 0) {
+    return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
+  }
+  if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
+
+  const result = await q(
+    `
+    INSERT INTO open_pallet_bookings (
+      app_customer_id,
+      department_id,
+      created_by,
+      updated_by,
+      title,
+      company,
+      city,
+      postal_code,
+      order_no,
+      pallet_count,
+      note,
+      status
+    )
+    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    RETURNING id
+    `,
+    [
+      req.user.app_customer_id,
+      departmentId,
+      req.user.id,
+      title,
+      company,
+      city,
+      postalCode,
+      orderNo,
+      palletCount,
+      note,
+      statusCheck.status
+    ]
+  );
+
+  emitOpenPalletBookingsUpdated({
+    app_customer_id: req.user.app_customer_id,
+    department_id: departmentId,
+    booking_id: result.rows[0].id,
+    action: "create"
+  });
+
+  res.json({ id: result.rows[0].id });
+});
+
+app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.edit) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const existing = await q(
+    `
+    SELECT id, app_customer_id, department_id
+    FROM open_pallet_bookings
+    WHERE id = $1
+      AND app_customer_id = $2
+    `,
+    [id, req.user.app_customer_id]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: "Nicht gefunden" });
+
+  const current = existing.rows[0];
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  if (scope.restrictedDepartmentId && Number(current.department_id || 0) !== Number(scope.restrictedDepartmentId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const updates = [];
+  const values = [];
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "title")) {
+    const title = safeTrim(req.body?.title);
+    if (!title) return res.status(400).json({ error: "Titel ist Pflicht" });
+    values.push(title);
+    updates.push(`title = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "company")) {
+    values.push(safeTrim(req.body?.company));
+    updates.push(`company = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "city")) {
+    values.push(safeTrim(req.body?.city));
+    updates.push(`city = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "postal_code")) {
+    values.push(safeTrim(req.body?.postal_code));
+    updates.push(`postal_code = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "order_no")) {
+    values.push(safeTrim(req.body?.order_no));
+    updates.push(`order_no = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "note")) {
+    values.push(safeTrim(req.body?.note));
+    updates.push(`note = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "pallet_count")) {
+    const palletCount = Number(req.body?.pallet_count || 0);
+    if (!Number.isInteger(palletCount) || palletCount <= 0) {
+      return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
+    }
+    values.push(palletCount);
+    updates.push(`pallet_count = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "status")) {
+    const statusCheck = normalizeOpenPalletStatus(req.body?.status);
+    if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
+    values.push(statusCheck.status);
+    updates.push(`status = $${values.length}`);
+  }
+
+  if (!updates.length) {
+    return res.status(400).json({ error: "Keine Aenderungen uebergeben" });
+  }
+
+  values.push(req.user.id);
+  updates.push(`updated_by = $${values.length}`);
+  updates.push("updated_at = now()");
+
+  values.push(id, req.user.app_customer_id);
+  await q(
+    `
+    UPDATE open_pallet_bookings
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length - 1}
+      AND app_customer_id = $${values.length}
+    `,
+    values
+  );
+
+  emitOpenPalletBookingsUpdated({
+    app_customer_id: req.user.app_customer_id,
+    department_id: current.department_id,
+    booking_id: id,
+    action: "update"
+  });
+
+  res.json({ ok: true });
+});
+
+app.delete("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.delete) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const existing = await q(
+    `
+    SELECT id, department_id
+    FROM open_pallet_bookings
+    WHERE id = $1
+      AND app_customer_id = $2
+    `,
+    [id, req.user.app_customer_id]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: "Nicht gefunden" });
+
+  const current = existing.rows[0];
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  if (scope.restrictedDepartmentId && Number(current.department_id || 0) !== Number(scope.restrictedDepartmentId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await q(
+    `
+    DELETE FROM open_pallet_bookings
+    WHERE id = $1
+      AND app_customer_id = $2
+    `,
+    [id, req.user.app_customer_id]
+  );
+
+  emitOpenPalletBookingsUpdated({
+    app_customer_id: req.user.app_customer_id,
+    department_id: current.department_id,
+    booking_id: id,
+    action: "delete"
+  });
+
   res.json({ ok: true });
 });
 

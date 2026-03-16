@@ -346,6 +346,7 @@ async function migrate() {
 
   const defaultRolePermissions = JSON.stringify({
     bookings: { create: true, view: true, export: true, receipt: true, edit: false, delete: false, translogica: false },
+    open_pallets: { view: true, create: true, edit: true, delete: true, view_all: false },
     stock: { view: true, overall: true },
     cases: {
       create: true,

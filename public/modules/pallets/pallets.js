@@ -22,6 +22,15 @@ function setMsg(elId, text, ok = false) {
   el.textContent = text || "";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function formatDate(value) {
   if (!value) return "-";
   const d = new Date(value);
@@ -288,6 +297,13 @@ const PRODUCT_TYPE_LABELS = {
   gitterbox: "Gitterboxen"
 };
 
+const OPEN_PALLET_STATUS_LABELS = {
+  open: "Offen",
+  truck_planned: "LKW eingeplant",
+  completed_waiting_document: "Erledigt - warten auf Beleg",
+  document_booked_scanned: "Beleg gebucht und gescannt"
+};
+
 const socket = io();
 function joinLocationRoom() {
   if (CURRENT_LOCATION > 0) socket.emit("joinLocation", CURRENT_LOCATION);
@@ -316,6 +332,9 @@ $("logoutBtn").addEventListener("click", () => {
 $("adminBtn")?.addEventListener("click", () => {
   closeSettingsMenu();
   window.location.href = "/modules/pallets/admin.html";
+});
+$("openOpenPalletsPageBtn")?.addEventListener("click", () => {
+  window.location.href = "/modules/pallets/open-pallets.html";
 });
 
 async function loadMe() {
@@ -385,6 +404,12 @@ function applyPermsToUI() {
   }
   if ($("adminBtn")) {
     $("adminBtn").style.display = CORE_CONTEXT?.admin?.can_open_pallet_admin ? "" : "none";
+  }
+  if ($("openPalletsHeroCard")) {
+    $("openPalletsHeroCard").style.display = PERMS?.open_pallets?.view ? "" : "none";
+  }
+  if ($("palletHeroLayout")) {
+    $("palletHeroLayout").classList.toggle("pallet-hero-layout--single", !PERMS?.open_pallets?.view);
   }
   if ($("containerRegistrationBtn")) {
     $("containerRegistrationBtn").style.display = (PERMS?.integrations?.container_login || PERMS?.integrations?.container_registration) ? "" : "none";
@@ -563,6 +588,78 @@ function statusLabel(s) {
     3: "In Prüfung",
     4: "Gebucht"
   })[Number(s)] || String(s);
+}
+
+function openPalletStatusLabel(status) {
+  return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
+}
+
+async function loadOpenPalletsFeed() {
+  const card = $("openPalletsHeroCard");
+  const wrap = $("openPalletsFeedWrap");
+  const hint = $("openPalletsFeedHint");
+  if (!card || !wrap || !hint) return;
+
+  if (!PERMS?.open_pallets?.view) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  const fixedDepartmentId = Number(ME?.fixed_department_id || 0) || null;
+  const departmentName = fixedDepartmentId
+    ? (DEPARTMENTS.find((department) => Number(department.id) === fixedDepartmentId)?.name || "Ihre Abteilung")
+    : null;
+
+  hint.textContent = PERMS?.open_pallets?.view_all
+    ? "Live Feed ueber alle Abteilungen mit offenen Eintraegen."
+    : (departmentName
+      ? `Live Feed fuer die Abteilung ${departmentName}.`
+      : "Diesem Konto ist keine Abteilung zugeordnet.");
+
+  if (!PERMS?.open_pallets?.view_all && !fixedDepartmentId) {
+    wrap.innerHTML = `
+      <div class="pallet-open-feed__empty">
+        Bitte im Account eine Abteilung hinterlegen, damit der Live Feed angezeigt werden kann.
+      </div>
+    `;
+    return;
+  }
+
+  wrap.innerHTML = `<div class="pallet-open-feed__empty">Live Feed wird geladen ...</div>`;
+
+  const response = await api("/api/modules/pallets/open-pallets/feed", { method: "GET", headers: {} });
+  if (!response.ok) {
+    const data = await readJsonSafe(response);
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Fehler: ${escapeHtml(data?.error || "Live Feed konnte nicht geladen werden.")}</div>`;
+    return;
+  }
+
+  const data = await response.json();
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (items.length === 0) {
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine offenen Paletten vorhanden.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = items.map((item) => `
+    <article class="pallet-open-feed__item">
+      <div class="pallet-open-feed__item-top">
+        <strong>${escapeHtml(item.title || "-")}</strong>
+        <span class="pallet-status-badge pallet-status-badge--${escapeHtml(item.status || "open")}">
+          ${escapeHtml(openPalletStatusLabel(item.status))}
+        </span>
+      </div>
+      <div class="pallet-open-feed__meta">
+        ${item.company ? `<span>Firma: ${escapeHtml(item.company)}</span>` : ""}
+        ${item.city ? `<span>Ort: ${escapeHtml(item.city)}</span>` : ""}
+        ${item.postal_code ? `<span>PLZ: ${escapeHtml(item.postal_code)}</span>` : ""}
+        ${item.order_no ? `<span>Auftragsnummer: ${escapeHtml(item.order_no)}</span>` : ""}
+        <span>Paletten: ${escapeHtml(item.pallet_count)}</span>
+        ${PERMS?.open_pallets?.view_all && item.department_name ? `<span>Abteilung: ${escapeHtml(item.department_name)}</span>` : ""}
+      </div>
+    </article>
+  `).join("");
 }
 
 // ---------- Stock ----------
@@ -1616,6 +1713,11 @@ socket.on("bookingsUpdated", async (payload) => {
   await loadStock();
 });
 
+socket.on("openPalletBookingsUpdated", async (payload) => {
+  if (payload?.app_customer_id && Number(payload.app_customer_id) !== Number(ME?.app_customer_id || 0)) return;
+  await loadOpenPalletsFeed();
+});
+
 // Init
 (async function init() {
   bindTabs();
@@ -1646,4 +1748,5 @@ socket.on("bookingsUpdated", async (payload) => {
   await loadHistory({ resetPage: true });
   await loadEntrepreneurHistoryPlates();
   await loadEntrepreneurHistory();
+  await loadOpenPalletsFeed();
 })();

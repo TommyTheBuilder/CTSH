@@ -31,6 +31,19 @@ const PERMISSION_SECTIONS = [
     ]
   },
   {
+    key: "pallets_open_pallets",
+    moduleKey: "pallets",
+    title: "Paletten: Offene Paletten",
+    description: "Separater Bereich fuer offene Paletten mit eigenem Live Feed und Abteilungs-Sichtbarkeit.",
+    permissions: [
+      { path: "open_pallets.view", label: "Offene Paletten sehen" },
+      { path: "open_pallets.create", label: "Offene Paletten anlegen" },
+      { path: "open_pallets.edit", label: "Offene Paletten bearbeiten" },
+      { path: "open_pallets.delete", label: "Offene Paletten loeschen" },
+      { path: "open_pallets.view_all", label: "Alle Offene-Paletten-Buchungen sehen" }
+    ]
+  },
+  {
     key: "pallets_stock",
     moduleKey: "pallets",
     title: "Paletten: Bestände und Fälle",
@@ -160,6 +173,7 @@ function getPath(target, path) {
 function buildEmptyPermissions() {
   return {
     bookings: { create: false, view: false, export: false, receipt: false, edit: false, delete: false, translogica: false },
+    open_pallets: { view: false, create: false, edit: false, delete: false, view_all: false },
     stock: { view: false, overall: false },
     cases: {
       create: false,
