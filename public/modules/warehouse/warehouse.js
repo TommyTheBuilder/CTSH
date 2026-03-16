@@ -20,7 +20,8 @@ const state = {
   slotModal: {
     locationId: null,
     locationName: "",
-    rows: []
+    rows: [],
+    dragSource: null
   },
   selected: {
     customerId: null,
@@ -173,7 +174,10 @@ function resolveLocation(value) {
 }
 
 function customerLabel(customer) {
-  return `${customer.kunden_nr} - ${customer.name}`;
+  const customerNo = String(customer?.kunden_nr || "").trim();
+  const customerName = String(customer?.name || "").trim();
+  if (customerNo && customerName) return `${customerNo} - ${customerName}`;
+  return customerName || customerNo || "-";
 }
 
 function locationLabel(location) {
@@ -503,6 +507,26 @@ function buildSlotTooltipMarkup(row) {
   `;
 }
 
+function canTransferSlots() {
+  return !!permissionValue("warehouse.transactions.create");
+}
+
+function resetSlotModalLead(location = null) {
+  const lead = $("slotModalLead");
+  if (!lead) return;
+  lead.style.color = "";
+  lead.textContent = location
+    ? "Freie und belegte Stellplätze werden als Raster angezeigt. Details öffnen Sie per Hover, Klick oder Drag & Drop."
+    : "Belegte und freie Stellplätze werden geladen.";
+}
+
+function setSlotModalLead(text, ok = true) {
+  const lead = $("slotModalLead");
+  if (!lead) return;
+  lead.style.color = ok ? "#0a7a2f" : "#b00020";
+  lead.textContent = text || "";
+}
+
 function renderSlotModalDetail(row = null, location = null) {
   const host = $("slotModalDetail");
   if (!host) return;
@@ -578,13 +602,72 @@ function renderSlotModalDetail(row = null, location = null) {
 function closeSlotModal() {
   const back = $("slotModalBack");
   if (!back) return;
+  clearSlotDropTargets();
   back.style.display = "none";
   back.setAttribute("aria-hidden", "true");
   state.slotModal = {
     locationId: null,
     locationName: "",
-    rows: []
+    rows: [],
+    dragSource: null
   };
+}
+
+function clearSlotDropTargets() {
+  document.querySelectorAll(".warehouse-slot-cell--drop-target, .warehouse-slot-cell--dragging").forEach((node) => {
+    node.classList.remove("warehouse-slot-cell--drop-target", "warehouse-slot-cell--dragging");
+  });
+}
+
+async function submitSlotTransfer(sourceRow, targetRow, location) {
+  if (!sourceRow || !targetRow) return;
+  if (sourceRow.status !== "OCCUPIED" || targetRow.status !== "FREE") return;
+  if (!canTransferSlots()) {
+    setSlotModalLead("Keine Berechtigung für Umlagerungen vorhanden.", false);
+    return;
+  }
+
+  setSlotModalLead(
+    `Umlagerung von Stellplatz ${formatNumber(sourceRow.stellplatz_nr)} nach ${formatNumber(targetRow.stellplatz_nr)} wird gespeichert...`,
+    true
+  );
+
+  try {
+    const response = await api("/api/warehouse/transfer", {
+      method: "POST",
+      body: JSON.stringify({
+        storage_location_from_id: sourceRow.storage_location_id || location.id,
+        storage_location_to_id: targetRow.storage_location_id || location.id,
+        source_stellplatz_nr: sourceRow.stellplatz_nr,
+        target_stellplatz_nr: targetRow.stellplatz_nr,
+        notiz: "Umlagerung via Drag & Drop"
+      })
+    });
+    const data = await readJsonSafe(response);
+    if (!response.ok) {
+      setSlotModalLead(data?.error || "Umlagerung konnte nicht gespeichert werden.", false);
+      return;
+    }
+
+    invalidateLocationSlotCache(location.id);
+    await Promise.all([
+      loadInventory().catch(() => {}),
+      loadTransactions().catch(() => {}),
+      loadDashboard().catch(() => {}),
+      loadLocations().catch(() => {})
+    ]);
+    await openLocationSlotModal(location.id);
+
+    const refreshedLocation = state.refs.locations.find((entry) => Number(entry.id) === Number(location.id)) || location;
+    const movedRow = (state.slotModal.rows || []).find((entry) => Number(entry.stellplatz_nr) === Number(targetRow.stellplatz_nr)) || null;
+    renderSlotModalDetail(movedRow, refreshedLocation);
+    setSlotModalLead(
+      `Stellplatz ${formatNumber(sourceRow.stellplatz_nr)} wurde nach ${formatNumber(targetRow.stellplatz_nr)} umgelagert.`,
+      true
+    );
+  } catch (error) {
+    setSlotModalLead(error.message || "Umlagerung konnte nicht gespeichert werden.", false);
+  }
 }
 
 async function openLocationSlotModal(locationId) {
@@ -593,14 +676,13 @@ async function openLocationSlotModal(locationId) {
 
   const back = $("slotModalBack");
   const title = $("slotModalTitle");
-  const lead = $("slotModalLead");
   const grid = $("slotModalGrid");
-  if (!back || !title || !lead || !grid) return;
+  if (!back || !title || !grid) return;
 
   back.style.display = "flex";
   back.setAttribute("aria-hidden", "false");
   title.textContent = `${location.name} - Stellplatz-Raster`;
-  lead.textContent = "Freie und belegte Stellplätze werden als Raster angezeigt. Details öffnen Sie per Hover oder Klick.";
+  resetSlotModalLead(location);
   grid.innerHTML = `<div class="warehouse-empty">Stellplätze werden geladen...</div>`;
   renderSlotModalDetail(null, location);
 
@@ -609,7 +691,8 @@ async function openLocationSlotModal(locationId) {
     state.slotModal = {
       locationId: location.id,
       locationName: location.name,
-      rows
+      rows,
+      dragSource: null
     };
 
     grid.style.setProperty("--slot-columns", String(Math.min(Math.max(Number(location.kapazitaet || 1), 1), 10)));
@@ -619,6 +702,9 @@ async function openLocationSlotModal(locationId) {
         <button
           class="warehouse-slot-cell warehouse-slot-cell--${occupied ? "occupied" : "free"}"
           type="button"
+          draggable="${occupied && canTransferSlots() ? "true" : "false"}"
+          data-status="${escapeHtml(row.status)}"
+          data-inventory-id="${escapeHtml(row.inventory_id || "")}"
           data-slot-number="${escapeHtml(row.stellplatz_nr)}"
         >
           <span class="warehouse-slot-cell__number">${escapeHtml(formatNumber(row.stellplatz_nr))}</span>
@@ -633,8 +719,46 @@ async function openLocationSlotModal(locationId) {
       button.addEventListener("mouseenter", () => renderSlotModalDetail(row, location));
       button.addEventListener("focus", () => renderSlotModalDetail(row, location));
       button.addEventListener("click", () => renderSlotModalDetail(row, location));
+      button.addEventListener("dragstart", (event) => {
+        if (!row || row.status !== "OCCUPIED" || !canTransferSlots()) {
+          event.preventDefault();
+          return;
+        }
+        state.slotModal.dragSource = row;
+        clearSlotDropTargets();
+        button.classList.add("warehouse-slot-cell--dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", String(row.stellplatz_nr));
+        }
+        renderSlotModalDetail(row, location);
+      });
+      button.addEventListener("dragend", () => {
+        state.slotModal.dragSource = null;
+        clearSlotDropTargets();
+      });
+      button.addEventListener("dragover", (event) => {
+        const sourceRow = state.slotModal.dragSource;
+        if (!sourceRow || !row || row.status !== "FREE") return;
+        if (Number(sourceRow.stellplatz_nr) === Number(row.stellplatz_nr)) return;
+        event.preventDefault();
+        button.classList.add("warehouse-slot-cell--drop-target");
+      });
+      button.addEventListener("dragleave", () => {
+        button.classList.remove("warehouse-slot-cell--drop-target");
+      });
+      button.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        const sourceRow = state.slotModal.dragSource;
+        state.slotModal.dragSource = null;
+        clearSlotDropTargets();
+        if (!sourceRow || !row || row.status !== "FREE") return;
+        if (Number(sourceRow.stellplatz_nr) === Number(row.stellplatz_nr)) return;
+        await submitSlotTransfer(sourceRow, row, location);
+      });
     });
   } catch (error) {
+    setSlotModalLead(error.message || "Stellplätze konnten nicht geladen werden.", false);
     grid.innerHTML = `<div class="warehouse-empty">${escapeHtml(error.message || "Stellplätze konnten nicht geladen werden.")}</div>`;
   }
 }
@@ -1161,12 +1285,12 @@ function renderDashboard() {
               <span class="warehouse-badge ${statusBadgeClass(row.status)}">${escapeHtml(row.status)}</span>
               <span>${escapeHtml(row.faellig_am ? formatDate(row.faellig_am) : "ohne Termin")}</span>
             </div>
-            <div class="warehouse-list-item__title">${escapeHtml(row.beleg_nr || "Ohne Beleg")}</div>
+            <div class="warehouse-list-item__title">${escapeHtml(row.notiz || "Ohne Notiz")}</div>
             <div class="warehouse-list-item__meta">
               ${escapeHtml(row.customer_name || "-")} | ${escapeHtml(row.item_count)} Positionen
             </div>
             <div class="warehouse-list-item__foot">
-              Soll: ${escapeHtml(row.menge_soll_gesamt)} | Ist: ${escapeHtml(row.menge_ist_gesamt)}
+              Rollen: ${escapeHtml(row.rollen_nummern_gesamt || "-")}
             </div>
           </article>
         `).join("")
@@ -1264,7 +1388,7 @@ function renderCustomers() {
         <tbody>
           ${rows.map((customer) => `
             <tr>
-              <td>${escapeHtml(customer.kunden_nr)}</td>
+              <td>${escapeHtml(customer.kunden_nr || "-")}</td>
               <td>${escapeHtml(customer.name)}</td>
               <td>${escapeHtml(customer.adresse || "-")}</td>
               <td>${escapeHtml(customer.kontakt || "-")}</td>
@@ -1285,7 +1409,7 @@ function renderCustomers() {
       const customer = state.refs.customers.find((item) => Number(item.id) === Number(button.dataset.customerEdit));
       if (!customer) return;
       state.selected.customerId = customer.id;
-      $("customerNumber").value = customer.kunden_nr;
+      $("customerNumber").value = customer.kunden_nr || "";
       $("customerName").value = customer.name;
       $("customerAddress").value = customer.adresse || "";
       $("customerContact").value = customer.kontakt || "";
@@ -1405,8 +1529,7 @@ function createPickingDraftItem(item = {}) {
   return {
     localId: nextLocalId("pick"),
     positions_nr: String(item.positions_nr || "").trim(),
-    menge_soll: item.menge_soll || 1,
-    menge_ist: item.menge_ist || 0
+    rollen_nummern: String(item.rollen_nummern || "").trim()
   };
 }
 
@@ -1421,12 +1544,8 @@ function renderPickingItemEditor() {
         <input type="text" data-item-field="positions_nr" value="${escapeHtml(item.positions_nr || "")}" placeholder="Positionsnummer" autocomplete="off" />
       </div>
       <div>
-        <label>Menge Soll</label>
-        <input type="number" data-item-field="menge_soll" value="${escapeHtml(item.menge_soll || 1)}" min="1" />
-      </div>
-      <div>
-        <label>Menge Ist</label>
-        <input type="number" data-item-field="menge_ist" value="${escapeHtml(item.menge_ist || 0)}" min="0" />
+        <label>Rollen Nummern</label>
+        <input type="text" data-item-field="rollen_nummern" value="${escapeHtml(item.rollen_nummern || "")}" placeholder="z.B. 1-15 oder 1-6, 8-14" autocomplete="off" />
       </div>
       <div>
         <label>&nbsp;</label>
@@ -1450,8 +1569,7 @@ function renderPickingItemEditor() {
 function readPickingDraftItems() {
   return Array.from(document.querySelectorAll("[data-draft-item]")).map((row) => ({
     positions_nr: row.querySelector('[data-item-field="positions_nr"]')?.value || "",
-    menge_soll: Number(row.querySelector('[data-item-field="menge_soll"]')?.value || 0),
-    menge_ist: Number(row.querySelector('[data-item-field="menge_ist"]')?.value || 0)
+    rollen_nummern: row.querySelector('[data-item-field="rollen_nummern"]')?.value || ""
   }));
 }
 
@@ -1464,24 +1582,24 @@ function renderPickingTable() {
       <table class="warehouse-table">
         <thead>
           <tr>
-            <th>Beleg</th>
+            <th>Notiz</th>
             <th>Status</th>
             <th>Kunde</th>
             <th>Fällig</th>
             <th>Positionen</th>
-            <th>Soll / Ist</th>
+            <th>Rollen Nummern</th>
             <th>Aktionen</th>
           </tr>
         </thead>
         <tbody>
           ${state.pickingOrders.map((row) => `
             <tr>
-              <td>${escapeHtml(row.beleg_nr || "-")}</td>
+              <td>${escapeHtml(row.notiz || "-")}</td>
               <td><span class="warehouse-badge ${statusBadgeClass(row.status)}">${escapeHtml(row.status)}</span></td>
               <td>${escapeHtml(row.customer_name || "-")}</td>
               <td>${escapeHtml(row.faellig_am ? formatDate(row.faellig_am) : "-")}</td>
               <td>${escapeHtml(row.item_count || 0)}</td>
-              <td>${escapeHtml(row.menge_soll_gesamt || 0)} / ${escapeHtml(row.menge_ist_gesamt || 0)}</td>
+              <td>${escapeHtml(row.rollen_nummern_gesamt || "-")}</td>
               <td>
                 <div class="warehouse-table__actions">
                   ${permissionValue("warehouse.picking.manage") ? `<button class="secondary" type="button" data-picking-edit="${row.id}">Bearbeiten</button>` : ""}
@@ -1511,27 +1629,23 @@ function renderPickingProcessBoard() {
         <article class="warehouse-order-card" data-process-order="${order.id}">
           <div class="warehouse-order-card__head">
             <div>
-              <div class="warehouse-order-card__title">${escapeHtml(order.beleg_nr || "Ohne Beleg")}</div>
+              <div class="warehouse-order-card__title">${escapeHtml(order.notiz || "Ohne Notiz")}</div>
               <div class="warehouse-order-card__meta">
               ${escapeHtml(order.customer_name || "-")} | Fällig: ${escapeHtml(order.faellig_am ? formatDate(order.faellig_am) : "ohne Termin")}
               </div>
             </div>
             <span class="warehouse-badge ${statusBadgeClass(order.status)}">${escapeHtml(order.status)}</span>
           </div>
+          <div class="warehouse-order-card__rolls">
+            <strong>Rollen:</strong>
+            <span>${escapeHtml(order.rollen_nummern_gesamt || "-")}</span>
+          </div>
           <div class="warehouse-order-card__items">
             ${(order.items || []).map((item) => `
               <div class="warehouse-order-line">
                 <div>
                   <strong>Pos ${escapeHtml(item.positions_nr || "-")}</strong>
-                  <span>Soll ${escapeHtml(item.menge_soll)}</span>
-                </div>
-                <div>
-                  <label>Ist</label>
-                  <input type="number" min="0" data-order-item-id="${item.id}" data-order-item-position="${escapeHtml(item.positions_nr || "")}" data-order-item-soll="${item.menge_soll}" value="${escapeHtml(item.menge_ist)}" />
-                </div>
-                <div>
-                  <label>Offen</label>
-                  <span>${escapeHtml(Math.max(Number(item.menge_soll) - Number(item.menge_ist), 0))}</span>
+                  <div class="warehouse-order-line__meta">Rollen Nummern: ${escapeHtml(item.rollen_nummern || "-")}</div>
                 </div>
               </div>
             `).join("")}
@@ -1559,7 +1673,7 @@ function renderPickingProcessBoard() {
           setMessage("pickingMsg", data?.error || "Auftrag konnte nicht gestartet werden.");
           return;
         }
-        setMessage("pickingMsg", `Auftrag ${data?.beleg_nr || button.dataset.orderStart} ist jetzt in Bearbeitung.`, true);
+        setMessage("pickingMsg", `Auftrag ${data?.notiz || button.dataset.orderStart} ist jetzt in Bearbeitung.`, true);
         await loadPickingOrders();
       } catch (error) {
         setMessage("pickingMsg", error.message || "Auftrag konnte nicht gestartet werden.");
@@ -1570,28 +1684,21 @@ function renderPickingProcessBoard() {
   host.querySelectorAll("[data-order-complete]").forEach((button) => {
     button.addEventListener("click", async () => {
       clearMessage("pickingMsg");
-      const card = button.closest("[data-process-order]");
       const orderId = Number(button.dataset.orderComplete);
       const order = state.pickingOrders.find((item) => Number(item.id) === orderId);
-      if (!card || !order) return;
-
-      const items = Array.from(card.querySelectorAll("[data-order-item-id]")).map((input) => ({
-        positions_nr: String(input.dataset.orderItemPosition || "").trim(),
-        menge_soll: Number(input.dataset.orderItemSoll),
-        menge_ist: Number(input.value || 0)
-      }));
+      if (!order) return;
 
       try {
         const response = await api(`/api/warehouse/picking-orders/${orderId}/complete`, {
           method: "PUT",
-          body: JSON.stringify({ items })
+          body: JSON.stringify({})
         });
         const data = await readJsonSafe(response);
         if (!response.ok) {
           setMessage("pickingMsg", data?.error || "Auftrag konnte nicht abgeschlossen werden.");
           return;
         }
-        setMessage("pickingMsg", `Auftrag ${data?.beleg_nr || order.beleg_nr || order.id} wurde erledigt.`, true);
+        setMessage("pickingMsg", `Auftrag ${data?.notiz || order.notiz || order.id} wurde erledigt.`, true);
         await loadPickingOrders();
         await loadDashboard();
       } catch (error) {
@@ -1747,7 +1854,7 @@ async function selectPickingOrder(id) {
   $("pickingCustomerLookup").value = data.customer_id
     ? customerLabel({ kunden_nr: data.kunden_nr || "", name: data.customer_name || "" })
     : "";
-  $("pickingBelegNr").value = data.beleg_nr || "";
+  $("pickingNote").value = data.notiz || "";
   $("pickingDueDate").value = data.faellig_am || "";
   state.pickingDraftItems = (data.items || []).map((item) => createPickingDraftItem(item));
   if (!state.pickingDraftItems.length) state.pickingDraftItems = [createPickingDraftItem()];
@@ -2156,25 +2263,26 @@ function bindPickingForm() {
     event.preventDefault();
     clearMessage("pickingMsg");
 
-    const customer = resolveCustomer($("pickingCustomerLookup").value);
+    const customerValue = String($("pickingCustomerLookup").value || "").trim();
+    const customer = resolveCustomer(customerValue);
     const items = readPickingDraftItems().map((item) => ({
       positions_nr: String(item.positions_nr || "").trim(),
-      menge_soll: Number(item.menge_soll || 0),
-      menge_ist: Number(item.menge_ist || 0)
+      rollen_nummern: String(item.rollen_nummern || "").trim()
     }));
 
-    if (!customer) {
-      setMessage("pickingMsg", "Bitte einen gültigen Kunden auswählen.");
+    if (!customerValue) {
+      setMessage("pickingMsg", "Bitte einen Kunden eingeben.");
       return;
     }
-    if (!items.length || items.some((item) => !item.positions_nr || item.menge_soll <= 0 || item.menge_ist < 0)) {
+    if (!items.length || items.some((item) => !item.positions_nr || !item.rollen_nummern)) {
       setMessage("pickingMsg", "Bitte alle Positionen vollständig ausfüllen.");
       return;
     }
 
     const payload = {
-      customer_id: customer.id,
-      beleg_nr: $("pickingBelegNr").value.trim() || null,
+      customer_id: customer?.id || null,
+      customer_name: customerValue,
+      notiz: $("pickingNote").value.trim() || null,
       faellig_am: $("pickingDueDate").value || null,
       items
     };
@@ -2194,7 +2302,7 @@ function bindPickingForm() {
         setMessage("pickingMsg", data?.error || "Versandauftrag konnte nicht gespeichert werden.");
         return;
       }
-      setMessage("pickingMsg", `Versandauftrag ${data?.beleg_nr || payload.beleg_nr || data?.id} wurde gespeichert.`, true);
+      setMessage("pickingMsg", `Versandauftrag ${data?.notiz || payload.notiz || data?.id} wurde gespeichert.`, true);
       resetPickingForm();
       await Promise.all([loadPickingOrders(), loadDashboard()]);
     } catch (error) {
