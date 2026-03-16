@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Offene Paletten</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body>
+<header class="topbar topbar-modern admin-topbar">
+  <div class="system-logo-wrap pallet-topbar-logo">
+    <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
+    <a href="/modules/pallets/index.html" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
+  </div>
+  <div></div>
+  <div class="row topbar-actions" style="align-items:center;">
+    <button class="secondary" id="backToPalletsBtn" type="button" style="width:auto; min-width:190px;">Zum Palettenmodul</button>
+    <button class="secondary" id="logoutBtn" type="button" style="width:auto; min-width:140px;">Logout</button>
+    <div id="themeToggleMount" style="display:none;"></div>
+  </div>
+</header>
+
+<main class="dashboard-main module-dashboard-main pallet-app-main">
+  <section class="dashboard-header admin-header module-hero pallet-app-hero">
+    <div class="module-hero__copy">
+      <span class="module-hero__eyebrow">Offene Paletten</span>
+      <div class="dashboard-title-row">
+        <b>Offene Paletten</b>
+        <span class="pill" id="me">-</span>
+      </div>
+      <p class="module-hero__lead" id="openPalletsScopeHint">
+        Separater Bereich fuer offene Paletten. Diese Buchungen beeinflussen nicht den Bestand des eigentlichen Palettenmoduls.
+      </p>
+    </div>
+  </section>
+
+  <section class="pallet-open-page-grid">
+    <article class="card module-dashboard-card pallet-form-card" id="openPalletCreateCard">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Erfassung</span>
+          <h2>Neue Buchung</h2>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="openPalletTitle">Titel (Pflicht)</label>
+          <input id="openPalletTitle" placeholder="z.B. Rueckholung Kunde Nord">
+        </div>
+        <div>
+          <label for="openPalletCompany">Firma</label>
+          <input id="openPalletCompany" placeholder="z.B. Muster GmbH">
+        </div>
+        <div>
+          <label for="openPalletCity">Ort</label>
+          <input id="openPalletCity" placeholder="z.B. Hamburg">
+        </div>
+        <div>
+          <label for="openPalletPostalCode">Postleitzahl</label>
+          <input id="openPalletPostalCode" placeholder="z.B. 20095">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <div>
+          <label for="openPalletOrderNo">Auftragsnummer</label>
+          <input id="openPalletOrderNo" placeholder="z.B. A-2026-015">
+        </div>
+        <div>
+          <label for="openPalletCount">Anzahl der Paletten (Pflicht)</label>
+          <input id="openPalletCount" type="number" min="1" value="1">
+        </div>
+        <div>
+          <label for="openPalletStatus">Status</label>
+          <select id="openPalletStatus">
+            <option value="open">Offen</option>
+            <option value="truck_planned">LKW eingeplant</option>
+            <option value="completed_waiting_document">Erledigt - warten auf Beleg</option>
+            <option value="document_booked_scanned">Beleg gebucht und gescannt</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:280px;">
+          <label for="openPalletNote">Notiz</label>
+          <input id="openPalletNote" placeholder="z.B. Beleg folgt per Mail">
+        </div>
+      </div>
+
+      <div class="pallet-open-toolbar" style="margin-top:16px;">
+        <button class="primary" id="createOpenPalletBtn" type="button">Buchung speichern</button>
+      </div>
+      <p id="openPalletCreateMsg" class="pallet-message"></p>
+    </article>
+
+    <article class="card module-dashboard-card pallet-form-card">
+      <div class="module-dashboard-card__head">
+        <div>
+          <span class="module-section-kicker">Filter</span>
+          <h2>Buchungen</h2>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="filterTitle">Titel</label>
+          <input id="filterTitle" placeholder="Titel filtern">
+        </div>
+        <div>
+          <label for="filterCompany">Firma</label>
+          <input id="filterCompany" placeholder="Firma filtern">
+        </div>
+        <div>
+          <label for="filterCity">Ort</label>
+          <input id="filterCity" placeholder="Ort filtern">
+        </div>
+        <div>
+          <label for="filterPostalCode">Postleitzahl</label>
+          <input id="filterPostalCode" placeholder="PLZ filtern">
+        </div>
+        <div>
+          <label for="filterOrderNo">Auftragsnummer</label>
+          <input id="filterOrderNo" placeholder="Auftragsnummer filtern">
+        </div>
+        <div>
+          <label for="filterStatus">Status</label>
+          <select id="filterStatus">
+            <option value="">Alle</option>
+            <option value="open">Offen</option>
+            <option value="truck_planned">LKW eingeplant</option>
+            <option value="completed_waiting_document">Erledigt - warten auf Beleg</option>
+            <option value="document_booked_scanned">Beleg gebucht und gescannt</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="pallet-open-toolbar" style="margin-top:16px;">
+        <button class="secondary" id="reloadOpenPalletsBtn" type="button">Neu laden</button>
+        <button class="secondary" id="resetOpenPalletFiltersBtn" type="button">Filter zuruecksetzen</button>
+      </div>
+
+      <div class="pallet-section-table" style="margin-top:16px;">
+        <div id="openPalletsTableWrap" style="overflow:auto;"></div>
+      </div>
+      <p class="pallet-status-note muted" id="openPalletsTableHint"></p>
+    </article>
+  </section>
+</main>
+
+<footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
+<script src="/theme.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/public/modules/pallets/open-pallets.js"></script>
+</body>
+</html>

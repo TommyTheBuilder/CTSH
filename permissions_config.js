@@ -40,6 +40,13 @@ function createPermissionDefaults() {
       delete: false,
       translogica: false
     },
+    open_pallets: {
+      view: true,
+      create: true,
+      edit: true,
+      delete: true,
+      view_all: false
+    },
     stock: { view: true, overall: true },
     cases: {
       create: true,
@@ -97,6 +104,13 @@ function createFullAccessPermissions() {
       edit: true,
       delete: true,
       translogica: true
+    },
+    open_pallets: {
+      view: true,
+      create: true,
+      edit: true,
+      delete: true,
+      view_all: true
     },
     stock: { view: true, overall: true },
     cases: {
@@ -312,6 +326,7 @@ function hasPalletModulePermission(perms) {
   if (perms?.admin?.full_access) return true;
   return Boolean(
     hasAnyPermission(perms?.bookings)
+    || hasAnyPermission(perms?.open_pallets)
     || hasAnyPermission(perms?.stock)
     || hasAnyPermission(perms?.cases)
     || hasAnyPermission(perms?.filters)
