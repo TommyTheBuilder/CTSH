@@ -4,6 +4,7 @@ let locations = [];
 let departments = [];
 let entrepreneurs = [];
 let editingEntrepreneurId = null;
+let adminHistory = [];
 
 function $(id) {
   return document.getElementById(id);
@@ -26,6 +27,28 @@ function setMsg(id, text, ok = false) {
   if (!el) return;
   el.style.color = ok ? "#0a7a2f" : "#b00020";
   el.textContent = text || "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function closeSettingsMenu() {
@@ -175,6 +198,7 @@ function renderLocations() {
       if (!response.ok) return setMsg("locationMsg", data?.error || "Löschen fehlgeschlagen.");
       setMsg("locationMsg", "Standort gelöscht.", true);
       await loadLocations();
+      await loadAdminHistory();
     });
   });
 }
@@ -197,6 +221,7 @@ function renderDepartments() {
       if (!response.ok) return setMsg("departmentMsg", data?.error || "Löschen fehlgeschlagen.");
       setMsg("departmentMsg", "Abteilung gelöscht.", true);
       await loadDepartments();
+      await loadAdminHistory();
     });
   });
 }
@@ -243,6 +268,7 @@ function renderEntrepreneurs() {
       if (String(editingEntrepreneurId) === String(button.dataset.deleteEntrepreneur)) resetEntrepreneurForm();
       setMsg("entrepreneurMsg", "Frachtführer gelöscht.", true);
       await loadEntrepreneurs();
+      await loadAdminHistory();
     });
   });
 }
@@ -273,6 +299,68 @@ async function loadEntrepreneurs() {
   renderEntrepreneurs();
 }
 
+function historyActionLabel(action) {
+  return ({
+    create: "Angelegt",
+    update: "Geändert",
+    delete: "Gelöscht"
+  })[action] || action || "-";
+}
+
+function historyEntityLabel(entityType) {
+  return ({
+    location: "Standort",
+    department: "Abteilung",
+    entrepreneur: "Frachtführer"
+  })[entityType] || entityType || "-";
+}
+
+function summarizeHistoryDetails(entry) {
+  const before = entry?.details?.before;
+  const after = entry?.details?.after;
+  if (!before || !after) return "-";
+
+  const fields = [
+    { key: "name", label: "Name" },
+    { key: "street", label: "Straße" },
+    { key: "postal_code", label: "PLZ" },
+    { key: "city", label: "Ort" }
+  ];
+
+  const changes = fields
+    .filter(({ key }) => String(before?.[key] ?? "") !== String(after?.[key] ?? ""))
+    .map(({ key, label }) => `${label}: ${before?.[key] ?? "-"} -> ${after?.[key] ?? "-"}`);
+
+  return changes.length ? changes.join(" | ") : "-";
+}
+
+function renderAdminHistory() {
+  const body = $("adminHistoryBody");
+  if (!body) return;
+
+  if (!adminHistory.length) {
+    body.innerHTML = `<tr><td colspan="6">Keine Einträge</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = adminHistory.map((entry) => `
+    <tr>
+      <td>${escapeHtml(formatDateTime(entry.created_at))}</td>
+      <td>${escapeHtml(historyEntityLabel(entry.entity_type))}</td>
+      <td>${escapeHtml(historyActionLabel(entry.action))}</td>
+      <td>${escapeHtml(entry.entity_label || "-")}</td>
+      <td>${escapeHtml(summarizeHistoryDetails(entry))}</td>
+      <td>${escapeHtml(entry.changed_by || "-")}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadAdminHistory() {
+  const response = await api("/api/modules/pallets/admin/history", { method: "GET", headers: {} });
+  adminHistory = response.ok ? await response.json() : [];
+  renderAdminHistory();
+}
+
 function bindActions() {
   $("saveLocationBtn")?.addEventListener("click", async () => {
     const name = String($("locationName").value || "").trim();
@@ -286,6 +374,7 @@ function bindActions() {
     $("locationName").value = "";
     setMsg("locationMsg", "Standort gespeichert.", true);
     await loadLocations();
+    await loadAdminHistory();
   });
 
   $("saveDepartmentBtn")?.addEventListener("click", async () => {
@@ -300,6 +389,7 @@ function bindActions() {
     $("departmentName").value = "";
     setMsg("departmentMsg", "Abteilung gespeichert.", true);
     await loadDepartments();
+    await loadAdminHistory();
   });
 
   $("saveEntrepreneurBtn")?.addEventListener("click", async () => {
@@ -326,6 +416,7 @@ function bindActions() {
     resetEntrepreneurForm();
     setMsg("entrepreneurMsg", wasEditing ? "Frachtführer aktualisiert." : "Frachtführer gespeichert.", true);
     await loadEntrepreneurs();
+    await loadAdminHistory();
   });
 
   $("resetEntrepreneurBtn")?.addEventListener("click", () => {
@@ -340,5 +431,5 @@ function bindActions() {
   bindActions();
   const ok = await loadContext();
   if (!ok) return;
-  await Promise.all([loadLocations(), loadDepartments(), loadEntrepreneurs()]);
+  await Promise.all([loadLocations(), loadDepartments(), loadEntrepreneurs(), loadAdminHistory()]);
 })();

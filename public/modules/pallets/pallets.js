@@ -590,6 +590,16 @@ function statusLabel(s) {
   })[Number(s)] || String(s);
 }
 
+function caseStatusClass(status) {
+  return ({
+    0: "cancelled",
+    1: "aviso",
+    2: "processing",
+    3: "review",
+    4: "booked"
+  })[Number(status)] || "neutral";
+}
+
 function openPalletStatusLabel(status) {
   return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
 }
@@ -607,26 +617,14 @@ async function loadOpenPalletsFeed() {
 
   card.style.display = "";
   const fixedDepartmentId = Number(ME?.fixed_department_id || 0) || null;
-  const departmentName = fixedDepartmentId
-    ? (DEPARTMENTS.find((department) => Number(department.id) === fixedDepartmentId)?.name || "Ihre Abteilung")
-    : null;
-
-  hint.textContent = PERMS?.open_pallets?.view_all
-    ? "Live Feed ueber alle Abteilungen mit offenen Eintraegen."
-    : (departmentName
-      ? `Live Feed fuer die Abteilung ${departmentName}.`
-      : "Diesem Konto ist keine Abteilung zugeordnet.");
+  hint.textContent = "";
 
   if (!PERMS?.open_pallets?.view_all && !fixedDepartmentId) {
-    wrap.innerHTML = `
-      <div class="pallet-open-feed__empty">
-        Bitte im Account eine Abteilung hinterlegen, damit der Live Feed angezeigt werden kann.
-      </div>
-    `;
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Einträge</div>`;
     return;
   }
 
-  wrap.innerHTML = `<div class="pallet-open-feed__empty">Live Feed wird geladen ...</div>`;
+  wrap.innerHTML = `<div class="pallet-open-feed__empty"></div>`;
 
   const response = await api("/api/modules/pallets/open-pallets/feed", { method: "GET", headers: {} });
   if (!response.ok) {
@@ -638,7 +636,7 @@ async function loadOpenPalletsFeed() {
   const data = await response.json();
   const items = Array.isArray(data?.items) ? data.items : [];
   if (items.length === 0) {
-    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine offenen Paletten vorhanden.</div>`;
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Einträge</div>`;
     return;
   }
 
@@ -900,6 +898,42 @@ function renderCasesDashboard() {
     </table>
   `;
   $("casesDashWrap").innerHTML = html;
+  bindOpenCaseButtons();
+}
+
+function renderCasesDashboard() {
+  const wrap = $("casesDashWrap");
+  if (!wrap) return;
+
+  const rows = CASES.slice(0, 25);
+  if (rows.length === 0) {
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Vorg&auml;nge</div>`;
+    return;
+  }
+
+  wrap.innerHTML = rows.map(c => `
+    <article class="pallet-case-feed__item">
+      <div class="pallet-case-feed__top">
+        <div class="pallet-case-feed__headline">
+          <strong>${escapeHtml(c.license_plate || "-")}</strong>
+          <span>#${escapeHtml(c.id)}</span>
+        </div>
+        <span class="pallet-status-badge pallet-status-badge--${escapeHtml(caseStatusClass(c.status))}">
+          ${escapeHtml(statusLabel(c.status))}
+        </span>
+      </div>
+      <div class="pallet-case-feed__meta">
+        ${c.department ? `<span>Abteilung: ${escapeHtml(c.department)}</span>` : ""}
+        <span>Produkt: ${escapeHtml(PRODUCT_TYPE_LABELS[c.product_type] || c.product_type || "-")}</span>
+        <span>IN/OUT: ${escapeHtml(`${c.qty_in ?? 0}/${c.qty_out ?? 0}`)}</span>
+        ${c.entrepreneur ? `<span>Frachtf&uuml;hrer: ${escapeHtml(c.entrepreneur)}</span>` : ""}
+        <span>Erstellt: ${escapeHtml(formatDate(c.created_at))}</span>
+      </div>
+      <div class="pallet-case-feed__footer">
+        <button class="secondary" type="button" data-open-case="${escapeHtml(c.id)}">Oeffnen</button>
+      </div>
+    </article>
+  `).join("");
   bindOpenCaseButtons();
 }
 
