@@ -39,7 +39,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-2";
+const PALLET_ASSET_VERSION = "20260317-3";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -541,7 +541,7 @@ function normalizeOpenPalletStatus(statusRaw, { allowEmpty = false } = {}) {
     return { ok: false, msg: "Status ist Pflicht" };
   }
   if (!Object.prototype.hasOwnProperty.call(OPEN_PALLET_STATUSES, status)) {
-    return { ok: false, msg: "Ungueltiger Status" };
+    return { ok: false, msg: "Ungültiger Status" };
   }
   return { ok: true, status };
 }
@@ -581,7 +581,7 @@ function normalizeOpenPalletTitle(titleRaw, { allowEmpty = false, allowLegacy = 
     return { ok: true, title: rawTitle };
   }
 
-  return { ok: false, msg: "Titel ist ungueltig. Erlaubt: Abholung oder Rueckfuehrung" };
+  return { ok: false, msg: "Titel ist ungültig. Erlaubt: Abholung oder Rückführung" };
 }
 
 function normalizeOpenPalletCustomerId(customerIdRaw, { allowEmpty = true } = {}) {
@@ -593,7 +593,7 @@ function normalizeOpenPalletCustomerId(customerIdRaw, { allowEmpty = true } = {}
 
   const customerId = Number(trimmed);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return { ok: false, msg: "Kunde ist ungueltig" };
+    return { ok: false, msg: "Kunde ist ungültig" };
   }
   return { ok: true, customerId };
 }
@@ -609,7 +609,7 @@ function normalizeOpenPalletTruckLicensePlate(plateRaw, { allowEmpty = false } =
   if (normalized.length < 3 || normalized.length > 20) {
     return { ok: false, msg: "Kennzeichen ist ung\u00fcltig" };
   }
-  if (!/^[A-Z0-9ÄÖÜ\-\s]+$/u.test(normalized)) {
+  if (!/^[A-Z0-9\u00c4\u00d6\u00dc\-\s]+$/u.test(normalized)) {
     return { ok: false, msg: "Kennzeichen ist ung\u00fcltig" };
   }
 
@@ -2925,6 +2925,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
   const company = safeTrim(req.query?.company);
   const city = safeTrim(req.query?.city);
   const postalCode = safeTrim(req.query?.postal_code);
+  const country = safeTrim(req.query?.country);
   const orderNo = safeTrim(req.query?.order_no);
   const statusCheck = normalizeOpenPalletStatus(req.query?.status, { allowEmpty: true });
   const limitRaw = Number(req.query?.limit || 25);
@@ -2962,6 +2963,11 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
   if (postalCode) {
     whereNew.push(`COALESCE(op.postal_code, '') ILIKE $${idxNew}`);
     paramsNew.push(`%${postalCode}%`);
+    idxNew += 1;
+  }
+  if (country) {
+    whereNew.push(`COALESCE(op.country, '') ILIKE $${idxNew}`);
+    paramsNew.push(`%${country}%`);
     idxNew += 1;
   }
   if (orderNo) {
@@ -3003,8 +3009,8 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
       op.updated_at,
       COALESCE(c.name, op.company, '-') AS customer_name,
       COALESCE(d.name, 'Abteilung') AS department_name,
-      COALESCE(uc.username, '(geloescht)') AS created_by_name,
-      COALESCE(uu.username, '(geloescht)') AS updated_by_name,
+      COALESCE(uc.username, '(gelöscht)') AS created_by_name,
+      COALESCE(uu.username, '(gelöscht)') AS updated_by_name,
       COALESCE(tp.username, '-') AS truck_planned_by_name
     FROM open_pallet_bookings op
     LEFT JOIN departments d
@@ -3168,8 +3174,8 @@ app.get("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnab
       op.updated_at,
       COALESCE(c.name, op.company, '-') AS customer_name,
       COALESCE(d.name, 'Abteilung') AS department_name,
-      COALESCE(uc.username, '(geloescht)') AS created_by_name,
-      COALESCE(uu.username, '(geloescht)') AS updated_by_name,
+      COALESCE(uc.username, '(gelöscht)') AS created_by_name,
+      COALESCE(uu.username, '(gelöscht)') AS updated_by_name,
       COALESCE(tp.username, '-') AS truck_planned_by_name
     FROM open_pallet_bookings op
     LEFT JOIN departments d
@@ -3362,6 +3368,45 @@ app.patch("/api/modules/pallets/open-pallet-customers/:id", authRequired, requir
   }
 });
 
+app.delete("/api/modules/pallets/open-pallet-customers/:id", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.create && !perms?.open_pallets?.edit) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const existing = await q(
+    `
+    SELECT id
+    FROM open_pallet_customers
+    WHERE id = $1
+      AND app_customer_id = $2
+    LIMIT 1
+    `,
+    [id, req.user.app_customer_id]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: "Nicht gefunden" });
+
+  await q(
+    `
+    DELETE FROM open_pallet_customers
+    WHERE id = $1
+      AND app_customer_id = $2
+    `,
+    [id, req.user.app_customer_id]
+  );
+
+  emitOpenPalletBookingsUpdated({
+    app_customer_id: req.user.app_customer_id,
+    action: "customer-delete",
+    customer_id: id
+  });
+
+  res.json({ ok: true });
+});
+
 app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
   const perms = await getMyPermissions(req.user);
   if (!perms?.open_pallets?.create) {
@@ -3389,7 +3434,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   if (!urgencyCheckNew.ok) return res.status(400).json({ error: urgencyCheckNew.msg });
   if (!customerIdCheckNew.ok) return res.status(400).json({ error: customerIdCheckNew.msg });
   if (!Number.isInteger(palletCountNew) || palletCountNew <= 0) {
-    return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
+    return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
   }
 
   let customerRecordNew = null;
@@ -3612,7 +3657,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   ];
   const hasAnyChangeNew = editableFieldsNew.some((field) => Object.prototype.hasOwnProperty.call(bodyNew, field));
   if (!hasAnyChangeNew) {
-    return res.status(400).json({ error: "Keine Aenderungen uebergeben" });
+    return res.status(400).json({ error: "Keine Änderungen übergeben" });
   }
 
   if (!canEditOpenPalletBooking(perms, req.user, currentFullNew)) {
@@ -3671,7 +3716,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   if (Object.prototype.hasOwnProperty.call(bodyNew, "pallet_count")) {
     const palletCountNew = Number(bodyNew?.pallet_count || 0);
     if (!Number.isInteger(palletCountNew) || palletCountNew <= 0) {
-      return res.status(400).json({ error: "Anzahl der Paletten muss groesser als 0 sein" });
+      return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
     }
     valuesNew.push(palletCountNew);
     updatesNew.push(`pallet_count = $${valuesNew.length}`);
@@ -3693,7 +3738,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const hasTruckPlateNew = Object.prototype.hasOwnProperty.call(bodyNew, "truck_license_plate");
   const hasTruckDateNew = Object.prototype.hasOwnProperty.call(bodyNew, "truck_planned_for");
   if ((hasTruckPlateNew || hasTruckDateNew) && nextStatusNew !== "truck_planned") {
-    return res.status(400).json({ error: "LKW-Daten koennen nur bei Status LKW eingeplant gespeichert werden" });
+    return res.status(400).json({ error: "LKW-Daten können nur bei Status LKW eingeplant gespeichert werden" });
   }
   if (nextStatusNew === "truck_planned" && (Object.prototype.hasOwnProperty.call(bodyNew, "status") || hasTruckPlateNew || hasTruckDateNew)) {
     const existingTruckDateNew = currentFullNew.truck_planned_for
@@ -3722,7 +3767,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   }
 
   if (updatesNew.length === 0) {
-    return res.status(400).json({ error: "Keine Aenderungen uebergeben" });
+    return res.status(400).json({ error: "Keine Änderungen übergeben" });
   }
 
   valuesNew.push(req.user.id);

@@ -48,7 +48,7 @@ button.secondary { background:#e9eef5; color:#0b2a4a; }
 button:disabled { opacity:.6; cursor:not-allowed; }
 table { width:100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid #eee; padding: 8px; text-align:left; font-size: 14px; }
-.modalBack { position:fixed; inset:0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding: 14px; z-index: 3200; }
+.modalBack { position:fixed; inset:0; background: rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; padding: 20px 14px; overflow-y:auto; z-index: 3200; }
 .modal { background:#fff; width:min(900px, 100%); border-radius: 14px; padding: 14px; }
 .confirm-modal { width:min(520px, 100%); box-shadow:0 20px 45px rgba(15,23,42,.28); border:1px solid #e5e7eb; padding:18px; }
 .confirm-modal h3 { margin:0; font-size:18px; }
@@ -4100,11 +4100,16 @@ body.darkmode .module-checklist__item {
 .pallet-booking-detail-modal {
   width: min(1280px, 100%);
   max-width: 1280px;
+  max-height: calc(100vh - 40px);
   padding: 22px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .pallet-booking-modal-head {
   align-items: flex-start;
+  flex-shrink: 0;
 }
 
 .pallet-booking-modal-head__actions {
@@ -4116,18 +4121,26 @@ body.darkmode .module-checklist__item {
 
 .pallet-booking-modal-head__actions button {
   width: auto;
-  min-width: 150px;
+  min-width: 0;
+  padding-inline: 16px;
 }
 
 .pallet-customer-modal {
   width: min(1180px, 100%);
   max-width: 1180px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .pallet-customer-modal__layout {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 18px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .pallet-customer-modal__list,
@@ -4191,13 +4204,26 @@ body.darkmode .module-checklist__item {
 
 .pallet-booking-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 20px;
   align-items: start;
 }
 
+.pallet-booking-shell__main,
+#bookingModalBody {
+  min-height: 0;
+  min-width: 0;
+}
+
+#bookingModalBody {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .pallet-booking-panel {
   padding: 22px;
+  min-width: 0;
 }
 
 .pallet-booking-panel__head,
@@ -4271,6 +4297,11 @@ body.darkmode .module-checklist__item {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 16px;
+  padding-bottom: 4px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0), rgba(248, 251, 255, 0.96) 28%, rgba(248, 251, 255, 1) 100%);
 }
 
 .pallet-booking-form-actions button {
@@ -4358,6 +4389,10 @@ body.darkmode .pallet-detail-field label {
   color: #94a3b8;
 }
 
+body.darkmode .pallet-booking-form-actions {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.92) 28%, rgba(15, 23, 42, 0.98) 100%);
+}
+
 body.darkmode .pallet-open-link-button {
   color: #93c5fd;
 }
@@ -4387,5 +4422,21 @@ body.darkmode .pallet-open-link-button {
   .pallet-customer-modal,
   .pallet-detail-main-card {
     padding: 16px;
+  }
+
+  .pallet-booking-modal-head,
+  .password-modal-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pallet-booking-modal-head__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .pallet-booking-modal-head__actions button,
+  .pallet-booking-form-actions button {
+    width: 100%;
   }
 }
