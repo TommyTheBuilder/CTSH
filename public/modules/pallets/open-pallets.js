@@ -85,7 +85,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-2";
+const PALLET_ASSET_VERSION = "20260317-3";
 
 let ME = null;
 let PERMS = {};
@@ -149,6 +149,7 @@ function currentFilters() {
     company: $("filterCompany").value.trim(),
     city: $("filterCity").value.trim(),
     postal_code: $("filterPostalCode").value.trim(),
+    country: $("filterCountry").value.trim(),
     order_no: $("filterOrderNo").value.trim(),
     status: $("filterStatus").value
   };
@@ -196,8 +197,12 @@ async function loadCustomers({ silent = false } = {}) {
     return;
   }
   OPEN_PALLET_CUSTOMERS = await response.json();
+  if (ACTIVE_CUSTOMER_ID && !OPEN_PALLET_CUSTOMERS.some((customer) => Number(customer.id) === Number(ACTIVE_CUSTOMER_ID))) {
+    ACTIVE_CUSTOMER_ID = null;
+  }
   renderCustomerList();
   refreshBookingCustomerSelectOptions();
+  updateCustomerDeleteButton();
 }
 
 async function loadOpenPallets({ resetPage = false } = {}) {
@@ -276,7 +281,7 @@ function renderOpenPallets() {
             <td>
               <div class="pallet-open-table__actions">
                 <button class="secondary" data-open-id="${item.id}" type="button">Öffnen</button>
-                <button class="secondary" data-tab-id="${item.id}" type="button">Neuer Tab</button>
+                <button class="secondary" data-tab-id="${item.id}" type="button">Detailansicht</button>
                 ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">Löschen</button>` : ""}
               </div>
             </td>
@@ -329,6 +334,7 @@ function clearCustomerForm() {
   ["customerName", "customerStreet", "customerAddressExtra", "customerPostalCode", "customerCity", "customerCountry"].forEach((id) => {
     if ($(id)) $(id).value = "";
   });
+  updateCustomerDeleteButton();
 }
 
 function fillCustomerForm(customer) {
@@ -339,6 +345,13 @@ function fillCustomerForm(customer) {
   $("customerPostalCode").value = customer?.postal_code || "";
   $("customerCity").value = customer?.city || "";
   $("customerCountry").value = customer?.country || "";
+  updateCustomerDeleteButton();
+}
+
+function updateCustomerDeleteButton() {
+  const button = $("deleteCustomerBtn");
+  if (!button) return;
+  button.style.display = ACTIVE_CUSTOMER_ID ? "" : "none";
 }
 
 function renderCustomerList() {
@@ -390,7 +403,26 @@ async function saveCustomer() {
 
   setMsg("customerModalMsg", "");
   await loadCustomers({ silent: true });
+  await loadOpenPallets();
   fillCustomerForm(data);
+  renderCustomerList();
+}
+
+async function deleteCustomer() {
+  if (!ACTIVE_CUSTOMER_ID) return;
+  if (!confirm("Kunde wirklich löschen?")) return;
+
+  setMsg("customerModalMsg", "");
+  const response = await api(`/api/modules/pallets/open-pallet-customers/${ACTIVE_CUSTOMER_ID}`, { method: "DELETE" });
+  const data = await readJsonSafe(response);
+  if (!response.ok) {
+    setMsg("customerModalMsg", data?.error || "Kunde konnte nicht gelöscht werden.");
+    return;
+  }
+
+  clearCustomerForm();
+  await loadCustomers({ silent: true });
+  await loadOpenPallets();
   renderCustomerList();
 }
 
@@ -427,8 +459,9 @@ function renderBookingModal() {
   const editable = isCreate ? canCreateBookings() : canEditBooking(booking);
   const disabled = isEditing ? "" : "disabled";
   const workflowDisabled = isCreate ? "disabled" : disabled;
+  const showTruckFields = !isCreate;
 
-  $("bookingModalTitle").textContent = isCreate ? "Neue Buchung" : `Details für ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
+  $("bookingModalTitle").textContent = isCreate ? "Neue Buchung" : `Details f\u00fcr ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
   $("bookingModalEditBtn").style.display = !isCreate && editable && !isEditing ? "" : "none";
   $("bookingModalTabBtn").style.display = !isCreate && booking.id ? "" : "none";
   setMsg("bookingModalMsg", "");
@@ -454,11 +487,13 @@ function renderBookingModal() {
             <div class="pallet-booking-field"><label for="bookingPalletCount">Paletten</label><input id="bookingPalletCount" type="number" min="1" value="${escapeHtml(booking.pallet_count || 1)}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingStatus">Status</label><select id="bookingStatus" ${workflowDisabled}>${bookingStatusOptions(booking.status || "open")}</select></div>
             <div class="pallet-booking-field"><label for="bookingUrgency">Dringlichkeit</label><select id="bookingUrgency" ${disabled}>${bookingUrgencyOptions(booking.urgency_level || "medium")}</select></div>
+            ${showTruckFields ? `
             <div class="pallet-booking-field"><label for="bookingTruckPlate">LKW Kennzeichen</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${workflowDisabled}></div>
-            <div class="pallet-booking-field"><label for="bookingTruckDate">Einplanung für</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${workflowDisabled}></div>
+            <div class="pallet-booking-field"><label for="bookingTruckDate">Einplanung f\u00fcr</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${workflowDisabled}></div>
+            ` : ""}
             <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingNote">Notiz</label><textarea id="bookingNote" rows="4" ${disabled}>${escapeHtml(booking.note || "")}</textarea></div>
           </div>
-          <div class="pallet-booking-form-actions">${isEditing ? `<button class="primary" id="saveBookingBtn" type="button">${escapeHtml(isCreate ? "Buchung speichern" : "Änderungen speichern")}</button>` : ""}${!isCreate && isEditing ? `<button class="secondary" id="cancelBookingEditBtn" type="button">Bearbeitung abbrechen</button>` : ""}</div>
+          <div class="pallet-booking-form-actions">${isEditing ? `<button class="primary" id="saveBookingBtn" type="button">${escapeHtml(isCreate ? "Buchung speichern" : "\u00c4nderungen speichern")}</button>` : ""}${!isCreate && isEditing ? `<button class="secondary" id="cancelBookingEditBtn" type="button">Bearbeitung abbrechen</button>` : ""}</div>
         </section>
       </div>
       <aside class="pallet-booking-shell__side">
@@ -549,8 +584,8 @@ function collectBookingFormPayload() {
     note: $("bookingNote").value.trim()
   };
   if (payload.status === "truck_planned") {
-    payload.truck_license_plate = $("bookingTruckPlate").value.trim();
-    payload.truck_planned_for = $("bookingTruckDate").value;
+    payload.truck_license_plate = $("bookingTruckPlate")?.value.trim() || "";
+    payload.truck_planned_for = $("bookingTruckDate")?.value || "";
   }
   return payload;
 }
@@ -561,9 +596,9 @@ async function saveBookingFromModal() {
   const payload = collectBookingFormPayload();
   setMsg("bookingModalMsg", "");
 
-  if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel ausw&auml;hlen.");
+  if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel auswählen.");
   if (!Number.isInteger(payload.pallet_count) || payload.pallet_count <= 0) {
-    return setMsg("bookingModalMsg", "Die Palettenanzahl muss gr&ouml;&szlig;er als 0 sein.");
+    return setMsg("bookingModalMsg", "Die Palettenanzahl muss größer als 0 sein.");
   }
   if (payload.status === "truck_planned" && (!payload.truck_license_plate || !payload.truck_planned_for)) {
     return setMsg("bookingModalMsg", "Bei Status LKW eingeplant sind Kennzeichen und Datum Pflicht.");
@@ -608,6 +643,7 @@ function bindEvents() {
   $("closeBookingModalBtn").addEventListener("click", closeBookingModal);
   $("closeCustomerModalBtn").addEventListener("click", closeCustomerModal);
   $("cancelCustomerModalBtn").addEventListener("click", closeCustomerModal);
+  $("deleteCustomerBtn").addEventListener("click", deleteCustomer);
   $("newCustomerBtn").addEventListener("click", () => {
     clearCustomerForm();
     renderCustomerList();
@@ -634,6 +670,7 @@ function bindEvents() {
     $("filterCompany").value = "";
     $("filterCity").value = "";
     $("filterPostalCode").value = "";
+    $("filterCountry").value = "";
     $("filterOrderNo").value = "";
     $("filterStatus").value = "";
     await loadOpenPallets({ resetPage: true });
@@ -649,7 +686,7 @@ function bindEvents() {
     await loadOpenPallets();
   });
 
-  ["filterCompany", "filterCity", "filterPostalCode", "filterOrderNo"].forEach((id) => {
+  ["filterCompany", "filterCity", "filterPostalCode", "filterCountry", "filterOrderNo"].forEach((id) => {
     $(id).addEventListener("input", () => {
       clearTimeout(window.__openPalletFilterTimer);
       window.__openPalletFilterTimer = setTimeout(() => loadOpenPallets({ resetPage: true }), 250);

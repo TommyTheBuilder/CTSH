@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Offene Paletten</title>
-  <link rel="stylesheet" href="/public/styles.css?v=20260317-2">
+  <link rel="stylesheet" href="/public/styles.css?v=20260317-3">
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
   <div class="system-logo-wrap pallet-topbar-logo">
     <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="/modules/pallets/index.html?v=20260317-2" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
+    <a href="/modules/pallets/index.html?v=20260317-3" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
   </div>
   <div></div>
   <div class="row topbar-actions" style="align-items:center;">
@@ -74,6 +74,10 @@
           <input id="filterPostalCode" placeholder="PLZ filtern">
         </div>
         <div>
+          <label for="filterCountry">Land</label>
+          <input id="filterCountry" placeholder="Land filtern">
+        </div>
+        <div>
           <label for="filterOrderNo">Auftragsnummer</label>
           <input id="filterOrderNo" placeholder="Auftragsnummer filtern">
         </div>
@@ -114,7 +118,7 @@
       </div>
       <div class="pallet-booking-modal-head__actions">
         <button class="secondary" id="bookingModalEditBtn" type="button" style="display:none;">Bearbeiten</button>
-        <button class="secondary" id="bookingModalTabBtn" type="button" style="display:none;">Neuer Tab</button>
+        <button class="secondary" id="bookingModalTabBtn" type="button" style="display:none;">Detailansicht</button>
         <button class="secondary" id="closeBookingModalBtn" type="button">Schlie&szlig;en</button>
       </div>
     </div>
@@ -170,6 +174,7 @@
         <p id="customerModalMsg" class="pallet-message"></p>
         <div class="row" style="justify-content:flex-end; margin-top:10px;">
           <button class="secondary" id="cancelCustomerModalBtn" type="button">Abbrechen</button>
+          <button class="danger" id="deleteCustomerBtn" type="button" style="display:none;">Löschen</button>
           <button class="primary" id="saveCustomerBtn" type="button">Kunde speichern</button>
         </div>
       </div>
@@ -180,6 +185,6 @@
 <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/public/modules/pallets/open-pallets.js?v=20260317-2"></script>
+<script src="/public/modules/pallets/open-pallets.js?v=20260317-3"></script>
 </body>
 </html>

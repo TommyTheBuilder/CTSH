@@ -54,7 +54,7 @@ const STATUS_LABELS = {
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
 const URGENCY_LABELS = { low: "Niedrig", medium: "Mittel", high: "Hoch", critical: "Kritisch" };
-const PALLET_ASSET_VERSION = "20260317-2";
+const PALLET_ASSET_VERSION = "20260317-3";
 
 function titleLabel(value) {
   return TITLE_LABELS[value] || value || "-";
@@ -78,7 +78,7 @@ async function init() {
   const params = new URLSearchParams(window.location.search);
   const bookingId = Number(params.get("id") || 0);
   if (!bookingId) {
-    $("detailContent").innerHTML = `<div class="pallet-open-feed__empty">Keine Buchungs-ID übergeben.</div>`;
+    $("detailContent").innerHTML = `<div class="pallet-open-feed__empty">Keine Buchungs-ID \u00fcbergeben.</div>`;
     return;
   }
 
@@ -89,9 +89,9 @@ async function init() {
     return;
   }
 
-  $("detailPageTitle").textContent = `Details für ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
+  $("detailPageTitle").textContent = `Details f\u00fcr ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
   $("detailPageBadge").textContent = statusLabel(booking.status);
-  $("openInModuleBtn").textContent = booking.can_edit ? "Im Modul bearbeiten" : "Im Modul öffnen";
+  $("openInModuleBtn").textContent = booking.can_edit ? "Im Modul bearbeiten" : "Im Modul \u00f6ffnen";
   $("openInModuleBtn").addEventListener("click", () => {
     window.location.href = `/modules/pallets/open-pallets.html?v=${PALLET_ASSET_VERSION}&booking=${encodeURIComponent(booking.id)}`;
   });
@@ -126,14 +126,14 @@ async function init() {
           <div class="pallet-detail-field"><label>Aktualisiert von</label><div>${escapeHtml(booking.updated_by_name || "-")}</div></div>
           <div class="pallet-detail-field"><label>Aktualisiert am</label><div>${escapeHtml(formatDateTime(booking.updated_at))}</div></div>
           <div class="pallet-detail-field"><label>LKW Kennzeichen</label><div>${escapeHtml(booking.truck_license_plate || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Einplanung für</label><div>${escapeHtml(formatDate(booking.truck_planned_for))}</div></div>
+          <div class="pallet-detail-field"><label>Einplanung f\u00fcr</label><div>${escapeHtml(formatDate(booking.truck_planned_for))}</div></div>
           <div class="pallet-detail-field"><label>Disponent Status 2</label><div>${escapeHtml(booking.truck_planned_by_name || "-")}</div></div>
           <div class="pallet-detail-field pallet-detail-field--wide"><label>Notiz</label><div>${escapeHtml(booking.note || "-")}</div></div>
         </div>
       </article>
 
       <aside class="pallet-detail-side-card">
-        <div class="pallet-detail-side-card__head">Übersicht</div>
+        <div class="pallet-detail-side-card__head">\u00dcbersicht</div>
         <div class="pallet-detail-side-card__body">
           <div class="pallet-detail-side-item"><span>Status</span><strong>${escapeHtml(statusLabel(booking.status))}</strong></div>
           <div class="pallet-detail-side-item"><span>Dringlichkeit</span><strong>${escapeHtml(urgencyLabel(booking.urgency_level))}</strong></div>
