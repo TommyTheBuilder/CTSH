@@ -43,7 +43,7 @@ async function readJsonSafe(response) {
 
 function formatDate(value) {
   if (!value) return "-";
-  const date = new Date(`${value}T00:00:00`);
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
@@ -65,6 +65,11 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+const OPEN_PALLET_TITLE_LABELS = {
+  abholung: "Abholung",
+  rueckfuehrung: "R\u00fcckf\u00fchrung"
+};
+
 const OPEN_PALLET_STATUS_LABELS = {
   open: "Offen",
   truck_planned: "LKW eingeplant",
@@ -80,101 +85,86 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260316-5";
+const PALLET_ASSET_VERSION = "20260317-2";
 
 let ME = null;
 let PERMS = {};
 let OPEN_PALLET_ITEMS = [];
 let OPEN_PALLET_PAGE = 0;
 let OPEN_PALLET_HAS_MORE = false;
-let OPEN_PALLET_TRUCK_MODAL_CONTEXT = null;
+let OPEN_PALLET_CUSTOMERS = [];
+let ACTIVE_CUSTOMER_ID = null;
+let BOOKING_MODAL_STATE = null;
 
 const socket = io();
 
-function statusLabel(status) {
-  return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
+function titleLabel(value) {
+  return OPEN_PALLET_TITLE_LABELS[value] || value || "-";
 }
 
-function urgencyLabel(level) {
-  return OPEN_PALLET_URGENCY_LABELS[level] || OPEN_PALLET_URGENCY_LABELS.medium;
+function statusLabel(value) {
+  return OPEN_PALLET_STATUS_LABELS[value] || value || "-";
 }
 
-function getTruckInfoText(item) {
+function urgencyLabel(value) {
+  return OPEN_PALLET_URGENCY_LABELS[value] || OPEN_PALLET_URGENCY_LABELS.medium;
+}
+
+function fullAddress(item) {
+  const lineOne = [item?.street, item?.address_extra].filter(Boolean).join(", ");
+  const lineTwo = [item?.postal_code, item?.city].filter(Boolean).join(" ");
+  return [lineOne, lineTwo, item?.country].filter(Boolean).join(" | ") || "-";
+}
+
+function truckInfoText(item) {
   const parts = [];
   if (item?.truck_license_plate) parts.push(`Kennzeichen: ${item.truck_license_plate}`);
   if (item?.truck_planned_for) parts.push(`Datum: ${formatDate(item.truck_planned_for)}`);
+  if (item?.truck_planned_by_name && item.truck_planned_by_name !== "-") parts.push(`Disponent: ${item.truck_planned_by_name}`);
   return parts.join(" | ");
 }
 
-function showOpenPalletModal(show) {
-  const back = $("openPalletModalBack");
+function canCreateBookings() {
+  return !!PERMS?.open_pallets?.create;
+}
+
+function canManageCustomers() {
+  return !!PERMS?.open_pallets?.create || !!PERMS?.open_pallets?.edit;
+}
+
+function canEditBooking(item) {
+  return !!item?.can_edit || !!PERMS?.open_pallets?.edit || Number(item?.created_by || 0) === Number(ME?.id || 0);
+}
+
+function showModal(backId, show) {
+  const back = $(backId);
   if (!back) return;
   back.style.display = show ? "flex" : "none";
   back.setAttribute("aria-hidden", show ? "false" : "true");
-  if (show) {
-    window.requestAnimationFrame(() => $("openPalletTitle")?.focus());
-  }
 }
 
-function openTruckPlanningModal(context) {
-  OPEN_PALLET_TRUCK_MODAL_CONTEXT = context;
-  $("truckPlanningPlate").value = context?.truckLicensePlate || "";
-  $("truckPlanningDate").value = context?.truckPlannedFor || "";
-  setMsg("truckPlanningModalMsg", "");
-
-  const back = $("truckPlanningModalBack");
-  if (!back) return;
-  back.style.display = "flex";
-  back.setAttribute("aria-hidden", "false");
-  window.requestAnimationFrame(() => $("truckPlanningPlate")?.focus());
-}
-
-function closeTruckPlanningModal({ restoreStatus = false } = {}) {
-  if (restoreStatus && OPEN_PALLET_TRUCK_MODAL_CONTEXT?.selectEl) {
-    OPEN_PALLET_TRUCK_MODAL_CONTEXT.selectEl.value = OPEN_PALLET_TRUCK_MODAL_CONTEXT.previousStatus;
-  }
-
-  const back = $("truckPlanningModalBack");
-  if (back) {
-    back.style.display = "none";
-    back.setAttribute("aria-hidden", "true");
-  }
-  setMsg("truckPlanningModalMsg", "");
-  OPEN_PALLET_TRUCK_MODAL_CONTEXT = null;
-}
-
-function resetCreateForm() {
-  $("openPalletTitle").value = "";
-  $("openPalletCompany").value = "";
-  $("openPalletCity").value = "";
-  $("openPalletPostalCode").value = "";
-  $("openPalletOrderNo").value = "";
-  $("openPalletCount").value = "1";
-  $("openPalletUrgency").value = "medium";
-  $("openPalletNote").value = "";
-  setMsg("openPalletCreateMsg", "");
+function currentFilters() {
+  return {
+    title: $("filterTitle").value,
+    company: $("filterCompany").value.trim(),
+    city: $("filterCity").value.trim(),
+    postal_code: $("filterPostalCode").value.trim(),
+    order_no: $("filterOrderNo").value.trim(),
+    status: $("filterStatus").value
+  };
 }
 
 function updatePaginationUi() {
-  const prevBtn = $("openPalletPrevBtn");
-  const nextBtn = $("openPalletNextBtn");
-  if (prevBtn) prevBtn.disabled = OPEN_PALLET_PAGE === 0;
-  if (nextBtn) nextBtn.disabled = !OPEN_PALLET_HAS_MORE;
+  $("openPalletPrevBtn").disabled = OPEN_PALLET_PAGE === 0;
+  $("openPalletNextBtn").disabled = !OPEN_PALLET_HAS_MORE;
 }
 
 function applyPermissionsToUI() {
-  const canView = !!PERMS?.open_pallets?.view;
-  const canCreate = !!PERMS?.open_pallets?.create;
-
-  if (!canView) {
-    $("openPalletsTableWrap").innerHTML = `
-      <div class="pallet-open-feed__empty">Keine Berechtigung f&uuml;r Offene Paletten.</div>
-    `;
+  if (!PERMS?.open_pallets?.view) {
+    $("openPalletsTableWrap").innerHTML = `<div class="pallet-open-feed__empty">Keine Berechtigung f&uuml;r Offene Paletten.</div>`;
   }
-
-  if ($("openCreateBookingModalBtn")) {
-    $("openCreateBookingModalBtn").style.display = canCreate ? "" : "none";
-  }
+  $("openCreateBookingModalBtn").style.display = canCreateBookings() ? "" : "none";
+  $("openCustomerModalBtn").style.display = canManageCustomers() ? "" : "none";
 }
 
 async function loadMe() {
@@ -195,15 +185,19 @@ async function loadPerms() {
   applyPermissionsToUI();
 }
 
-function currentFilters() {
-  return {
-    title: $("filterTitle").value.trim(),
-    company: $("filterCompany").value.trim(),
-    city: $("filterCity").value.trim(),
-    postal_code: $("filterPostalCode").value.trim(),
-    order_no: $("filterOrderNo").value.trim(),
-    status: $("filterStatus").value
-  };
+async function loadCustomers({ silent = false } = {}) {
+  if (!PERMS?.open_pallets?.view) return;
+  const response = await api("/api/modules/pallets/open-pallet-customers", { method: "GET", headers: {} });
+  if (!response.ok) {
+    if (!silent) {
+      const data = await readJsonSafe(response);
+      setMsg("customerModalMsg", data?.error || "Kunden konnten nicht geladen werden.");
+    }
+    return;
+  }
+  OPEN_PALLET_CUSTOMERS = await response.json();
+  renderCustomerList();
+  refreshBookingCustomerSelectOptions();
 }
 
 async function loadOpenPallets({ resetPage = false } = {}) {
@@ -214,18 +208,14 @@ async function loadOpenPallets({ resetPage = false } = {}) {
     limit: String(OPEN_PALLET_PAGE_SIZE),
     offset: String(OPEN_PALLET_PAGE * OPEN_PALLET_PAGE_SIZE)
   });
-
-  const filters = currentFilters();
-  Object.entries(filters).forEach(([key, value]) => {
+  Object.entries(currentFilters()).forEach(([key, value]) => {
     if (value) params.set(key, value);
   });
 
   const response = await api(`/api/modules/pallets/open-pallets?${params.toString()}`, { method: "GET", headers: {} });
   if (!response.ok) {
     const data = await readJsonSafe(response);
-    $("openPalletsTableWrap").innerHTML = `
-      <div class="pallet-open-feed__empty">${escapeHtml(data?.error || "Buchungen konnten nicht geladen werden.")}</div>
-    `;
+    $("openPalletsTableWrap").innerHTML = `<div class="pallet-open-feed__empty">${escapeHtml(data?.error || "Buchungen konnten nicht geladen werden.")}</div>`;
     OPEN_PALLET_ITEMS = [];
     OPEN_PALLET_HAS_MORE = false;
     updatePaginationUi();
@@ -235,59 +225,17 @@ async function loadOpenPallets({ resetPage = false } = {}) {
   const data = await response.json();
   OPEN_PALLET_ITEMS = Array.isArray(data?.items) ? data.items : [];
   OPEN_PALLET_HAS_MORE = Boolean(data?.has_more);
-
   if (OPEN_PALLET_PAGE > 0 && OPEN_PALLET_ITEMS.length === 0) {
     OPEN_PALLET_PAGE -= 1;
     await loadOpenPallets();
     return;
   }
-
   renderOpenPallets();
-}
-
-function renderStatusControl(item) {
-  const statusControl = PERMS?.open_pallets?.edit
-    ? `
-        <select data-status-id="${item.id}">
-          ${Object.entries(OPEN_PALLET_STATUS_LABELS).map(([value, label]) => `
-            <option value="${escapeHtml(value)}" ${item.status === value ? "selected" : ""}>${escapeHtml(label)}</option>
-          `).join("")}
-        </select>
-      `
-    : `
-        <span class="pallet-status-badge pallet-status-badge--${escapeHtml(item.status || "open")}">${escapeHtml(statusLabel(item.status))}</span>
-      `;
-
-  const truckInfo = getTruckInfoText(item);
-  return `
-    ${statusControl}
-    ${truckInfo ? `<div class="pallet-open-table__submeta">${escapeHtml(truckInfo)}</div>` : ""}
-  `;
-}
-
-function renderUrgencyControl(item) {
-  const isCreator = Number(item.created_by || 0) === Number(ME?.id || 0);
-  if (isCreator) {
-    return `
-      <select data-urgency-id="${item.id}">
-        ${Object.entries(OPEN_PALLET_URGENCY_LABELS).map(([value, label]) => `
-          <option value="${escapeHtml(value)}" ${item.urgency_level === value ? "selected" : ""}>${escapeHtml(label)}</option>
-        `).join("")}
-      </select>
-    `;
-  }
-
-  return `
-    <span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(item.urgency_level || "medium")}">
-      ${escapeHtml(urgencyLabel(item.urgency_level))}
-    </span>
-  `;
 }
 
 function renderOpenPallets() {
   const wrap = $("openPalletsTableWrap");
   if (!wrap) return;
-
   if (OPEN_PALLET_ITEMS.length === 0) {
     wrap.innerHTML = `<div class="pallet-open-feed__empty">Keine Buchungen gefunden.</div>`;
     updatePaginationUi();
@@ -299,15 +247,13 @@ function renderOpenPallets() {
       <thead>
         <tr>
           <th>Titel</th>
-          <th>Firma</th>
-          <th>Ort</th>
-          <th>PLZ</th>
+          <th>Kunde / Firma</th>
+          <th>Adresse</th>
           <th>Auftragsnummer</th>
           <th>Paletten</th>
           <th>Status</th>
           <th>Dringlichkeit</th>
-          <th>Notiz</th>
-          <th>Abteilung</th>
+          <th>Disponent</th>
           <th>Aktualisiert</th>
           <th>Aktion</th>
         </tr>
@@ -315,23 +261,23 @@ function renderOpenPallets() {
       <tbody>
         ${OPEN_PALLET_ITEMS.map((item) => `
           <tr class="pallet-open-table__row pallet-open-table__row--urgency-${escapeHtml(item.urgency_level || "medium")}">
-            <td><strong>${escapeHtml(item.title || "-")}</strong></td>
-            <td>${escapeHtml(item.company || "-")}</td>
-            <td>${escapeHtml(item.city || "-")}</td>
-            <td>${escapeHtml(item.postal_code || "-")}</td>
+            <td><button class="pallet-open-link-button" data-open-id="${item.id}" type="button">${escapeHtml(titleLabel(item.title))}</button></td>
+            <td><strong>${escapeHtml(item.customer_name || item.company || "-")}</strong>${item.company && item.customer_name && item.company !== item.customer_name ? `<div class="muted">${escapeHtml(item.company)}</div>` : ""}</td>
+            <td>${escapeHtml(fullAddress(item))}</td>
             <td>${escapeHtml(item.order_no || "-")}</td>
             <td>${escapeHtml(item.pallet_count)}</td>
-            <td class="pallet-open-table__status">${renderStatusControl(item)}</td>
-            <td class="pallet-open-table__urgency">${renderUrgencyControl(item)}</td>
-            <td>${escapeHtml(item.note || "-")}</td>
-            <td>${escapeHtml(item.department_name || "-")}</td>
-            <td>
-              ${escapeHtml(formatDateTime(item.updated_at))}
-              <div class="muted">von ${escapeHtml(item.updated_by_name || item.created_by_name || "-")}</div>
+            <td class="pallet-open-table__status">
+              <span class="pallet-status-badge pallet-status-badge--${escapeHtml(item.status || "open")}">${escapeHtml(statusLabel(item.status))}</span>
+              ${truckInfoText(item) ? `<div class="pallet-open-table__submeta">${escapeHtml(truckInfoText(item))}</div>` : ""}
             </td>
+            <td class="pallet-open-table__urgency"><span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(item.urgency_level || "medium")}">${escapeHtml(urgencyLabel(item.urgency_level))}</span></td>
+            <td>${escapeHtml(item.truck_planned_by_name || "-")}</td>
+            <td>${escapeHtml(formatDateTime(item.updated_at))}<div class="muted">von ${escapeHtml(item.updated_by_name || item.created_by_name || "-")}</div></td>
             <td>
               <div class="pallet-open-table__actions">
-                ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">L&ouml;schen</button>` : "-"}
+                <button class="secondary" data-open-id="${item.id}" type="button">Öffnen</button>
+                <button class="secondary" data-tab-id="${item.id}" type="button">Neuer Tab</button>
+                ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">Löschen</button>` : ""}
               </div>
             </td>
           </tr>
@@ -341,159 +287,311 @@ function renderOpenPallets() {
   `;
 
   updatePaginationUi();
-
-  document.querySelectorAll("[data-status-id]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      const bookingId = Number(select.getAttribute("data-status-id") || 0);
-      const nextStatus = select.value;
-      const item = OPEN_PALLET_ITEMS.find((entry) => Number(entry.id) === bookingId);
-      const previousStatus = item?.status || "open";
-      if (!bookingId || nextStatus === previousStatus) return;
-
-      if (nextStatus === "truck_planned") {
-        openTruckPlanningModal({
-          bookingId,
-          previousStatus,
-          selectEl: select,
-          truckLicensePlate: item?.truck_license_plate || "",
-          truckPlannedFor: item?.truck_planned_for ? String(item.truck_planned_for).slice(0, 10) : ""
-        });
-        return;
-      }
-
-      select.disabled = true;
-      try {
-        const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: nextStatus })
-        });
-        const data = await readJsonSafe(response);
-        if (!response.ok) {
-          alert(data?.error || "Status konnte nicht gespeichert werden.");
-          select.value = previousStatus;
-          return;
-        }
-        await loadOpenPallets();
-      } finally {
-        select.disabled = false;
-      }
+  document.querySelectorAll("[data-open-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const bookingId = Number(button.getAttribute("data-open-id") || 0);
+      if (bookingId) await openBookingModalForId(bookingId);
     });
   });
-
-  document.querySelectorAll("[data-urgency-id]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      const bookingId = Number(select.getAttribute("data-urgency-id") || 0);
-      const item = OPEN_PALLET_ITEMS.find((entry) => Number(entry.id) === bookingId);
-      const previousUrgency = item?.urgency_level || "medium";
-      const nextUrgency = select.value;
-      if (!bookingId || nextUrgency === previousUrgency) return;
-
-      select.disabled = true;
-      try {
-        const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, {
-          method: "PATCH",
-          body: JSON.stringify({ urgency_level: nextUrgency })
-        });
-        const data = await readJsonSafe(response);
-        if (!response.ok) {
-          alert(data?.error || "Dringlichkeit konnte nicht gespeichert werden.");
-          select.value = previousUrgency;
-          return;
-        }
-        await loadOpenPallets();
-      } finally {
-        select.disabled = false;
-      }
+  document.querySelectorAll("[data-tab-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const bookingId = Number(button.getAttribute("data-tab-id") || 0);
+      if (bookingId) openBookingTab(bookingId);
     });
   });
-
   document.querySelectorAll("[data-delete-id]").forEach((button) => {
     button.addEventListener("click", async () => {
       const bookingId = Number(button.getAttribute("data-delete-id") || 0);
-      if (!bookingId) return;
-      if (!confirm("Buchung wirklich l\u00f6schen?")) return;
-
-      const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, {
-        method: "DELETE"
-      });
+      if (!bookingId || !confirm("Buchung wirklich löschen?")) return;
+      const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, { method: "DELETE" });
       const data = await readJsonSafe(response);
-      if (!response.ok) {
-        alert(data?.error || "Buchung konnte nicht gel\u00f6scht werden.");
-        return;
-      }
+      if (!response.ok) return alert(data?.error || "Buchung konnte nicht gelöscht werden.");
       await loadOpenPallets();
     });
   });
 }
 
-async function createOpenPalletBooking() {
-  setMsg("openPalletCreateMsg", "");
-  const button = $("createOpenPalletBtn");
-  if (button) button.disabled = true;
-
-  try {
-    const response = await api("/api/modules/pallets/open-pallets", {
-      method: "POST",
-      body: JSON.stringify({
-        title: $("openPalletTitle").value.trim(),
-        company: $("openPalletCompany").value.trim(),
-        city: $("openPalletCity").value.trim(),
-        postal_code: $("openPalletPostalCode").value.trim(),
-        order_no: $("openPalletOrderNo").value.trim(),
-        pallet_count: Number($("openPalletCount").value || 0),
-        urgency_level: $("openPalletUrgency").value,
-        note: $("openPalletNote").value.trim()
-      })
-    });
-
-    const data = await readJsonSafe(response);
-    if (!response.ok) {
-      setMsg("openPalletCreateMsg", data?.error || "Buchung konnte nicht gespeichert werden.");
-      return;
-    }
-
-    resetCreateForm();
-    showOpenPalletModal(false);
-    await loadOpenPallets({ resetPage: true });
-  } finally {
-    if (button) button.disabled = false;
-  }
+function openCustomerModal() {
+  ACTIVE_CUSTOMER_ID = null;
+  clearCustomerForm();
+  renderCustomerList();
+  setMsg("customerModalMsg", "");
+  showModal("customerModalBack", true);
 }
 
-async function saveTruckPlanning() {
-  const context = OPEN_PALLET_TRUCK_MODAL_CONTEXT;
-  if (!context?.bookingId) return;
+function closeCustomerModal() {
+  showModal("customerModalBack", false);
+  setMsg("customerModalMsg", "");
+}
 
-  const plate = $("truckPlanningPlate").value.trim();
-  const date = $("truckPlanningDate").value;
-  if (!plate || !date) {
-    setMsg("truckPlanningModalMsg", "Kennzeichen und Datum sind Pflicht.");
+function clearCustomerForm() {
+  ACTIVE_CUSTOMER_ID = null;
+  ["customerName", "customerStreet", "customerAddressExtra", "customerPostalCode", "customerCity", "customerCountry"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+}
+
+function fillCustomerForm(customer) {
+  ACTIVE_CUSTOMER_ID = Number(customer?.id || 0) || null;
+  $("customerName").value = customer?.name || "";
+  $("customerStreet").value = customer?.street || "";
+  $("customerAddressExtra").value = customer?.address_extra || "";
+  $("customerPostalCode").value = customer?.postal_code || "";
+  $("customerCity").value = customer?.city || "";
+  $("customerCountry").value = customer?.country || "";
+}
+
+function renderCustomerList() {
+  const wrap = $("customerListWrap");
+  if (!wrap) return;
+  if (!OPEN_PALLET_CUSTOMERS.length) {
+    wrap.innerHTML = `<div class="pallet-open-feed__empty">Noch keine Kunden gespeichert.</div>`;
     return;
   }
 
-  const saveBtn = $("saveTruckPlanningBtn");
-  if (saveBtn) saveBtn.disabled = true;
-  setMsg("truckPlanningModalMsg", "");
+  wrap.innerHTML = OPEN_PALLET_CUSTOMERS.map((customer) => `
+    <button class="pallet-customer-list__item ${Number(customer.id) === Number(ACTIVE_CUSTOMER_ID || 0) ? "is-active" : ""}" data-customer-id="${customer.id}" type="button">
+      <strong>${escapeHtml(customer.name)}</strong>
+      <span>${escapeHtml(fullAddress(customer))}</span>
+    </button>
+  `).join("");
 
-  try {
-    const response = await api(`/api/modules/pallets/open-pallets/${context.bookingId}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "truck_planned",
-        truck_license_plate: plate,
-        truck_planned_for: date
-      })
+  document.querySelectorAll("[data-customer-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const customerId = Number(button.getAttribute("data-customer-id") || 0);
+      const customer = OPEN_PALLET_CUSTOMERS.find((entry) => Number(entry.id) === customerId);
+      if (!customer) return;
+      fillCustomerForm(customer);
+      renderCustomerList();
     });
+  });
+}
+
+async function saveCustomer() {
+  setMsg("customerModalMsg", "");
+  const payload = {
+    name: $("customerName").value.trim(),
+    street: $("customerStreet").value.trim(),
+    address_extra: $("customerAddressExtra").value.trim(),
+    postal_code: $("customerPostalCode").value.trim(),
+    city: $("customerCity").value.trim(),
+    country: $("customerCountry").value.trim()
+  };
+
+  const response = await api(
+    ACTIVE_CUSTOMER_ID ? `/api/modules/pallets/open-pallet-customers/${ACTIVE_CUSTOMER_ID}` : "/api/modules/pallets/open-pallet-customers",
+    { method: ACTIVE_CUSTOMER_ID ? "PATCH" : "POST", body: JSON.stringify(payload) }
+  );
+  const data = await readJsonSafe(response);
+  if (!response.ok) {
+    setMsg("customerModalMsg", data?.error || "Kunde konnte nicht gespeichert werden.");
+    return;
+  }
+
+  setMsg("customerModalMsg", "");
+  await loadCustomers({ silent: true });
+  fillCustomerForm(data);
+  renderCustomerList();
+}
+
+function bookingCustomerOptions(selectedId) {
+  return [`<option value="">Bitte w&auml;hlen...</option>`, ...OPEN_PALLET_CUSTOMERS.map((customer) => `<option value="${customer.id}" ${Number(selectedId || 0) === Number(customer.id) ? "selected" : ""}>${escapeHtml(customer.name)}</option>`)].join("");
+}
+
+function bookingTitleOptions(selectedTitle) {
+  const currentTitle = String(selectedTitle || "");
+  const prefix = currentTitle && !OPEN_PALLET_TITLE_LABELS[currentTitle] ? `<option value="">Bitte Titel ausw&auml;hlen</option>` : "";
+  return [prefix, ...Object.entries(OPEN_PALLET_TITLE_LABELS).map(([value, label]) => `<option value="${value}" ${currentTitle === value ? "selected" : ""}>${escapeHtml(label)}</option>`)].join("");
+}
+
+function bookingStatusOptions(selectedStatus) {
+  return Object.entries(OPEN_PALLET_STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${selectedStatus === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
+function bookingUrgencyOptions(selectedUrgency) {
+  return Object.entries(OPEN_PALLET_URGENCY_LABELS).map(([value, label]) => `<option value="${value}" ${selectedUrgency === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
+function refreshBookingCustomerSelectOptions() {
+  const select = $("bookingCustomer");
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = bookingCustomerOptions(currentValue);
+  if (currentValue) select.value = currentValue;
+}
+
+function renderBookingModal() {
+  const booking = BOOKING_MODAL_STATE?.booking || {};
+  const isCreate = BOOKING_MODAL_STATE?.mode === "create";
+  const isEditing = isCreate || !!BOOKING_MODAL_STATE?.editMode;
+  const editable = isCreate ? canCreateBookings() : canEditBooking(booking);
+  const disabled = isEditing ? "" : "disabled";
+  const workflowDisabled = isCreate ? "disabled" : disabled;
+
+  $("bookingModalTitle").textContent = isCreate ? "Neue Buchung" : `Details für ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
+  $("bookingModalEditBtn").style.display = !isCreate && editable && !isEditing ? "" : "none";
+  $("bookingModalTabBtn").style.display = !isCreate && booking.id ? "" : "none";
+  setMsg("bookingModalMsg", "");
+
+  $("bookingModalBody").innerHTML = `
+    <div class="pallet-booking-shell">
+      <div class="pallet-booking-shell__main">
+        <section class="pallet-booking-panel">
+          <div class="pallet-booking-panel__head">
+            <div><span class="module-section-kicker">Buchungsdaten</span></div>
+            <div class="pallet-booking-panel__badges">${booking.status ? `<span class="pallet-status-badge pallet-status-badge--${escapeHtml(booking.status)}">${escapeHtml(statusLabel(booking.status))}</span>` : ""}${booking.urgency_level ? `<span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(booking.urgency_level)}">${escapeHtml(urgencyLabel(booking.urgency_level))}</span>` : ""}</div>
+          </div>
+          <div class="pallet-booking-grid">
+            <div class="pallet-booking-field"><label for="bookingTitle">Titel</label><select id="bookingTitle" ${disabled}>${bookingTitleOptions(booking.title || "abholung")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingCustomer">Kunde (Stammdaten)</label><select id="bookingCustomer" ${disabled}>${bookingCustomerOptions(booking.customer_id)}</select></div>
+            <div class="pallet-booking-field"><label for="bookingCompany">Firma</label><input id="bookingCompany" value="${escapeHtml(booking.company || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingOrderNo">Auftragsnummer</label><input id="bookingOrderNo" value="${escapeHtml(booking.order_no || "")}" ${disabled}></div>
+            <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingStreet">Stra&szlig;e / Hausnummer</label><input id="bookingStreet" value="${escapeHtml(booking.street || "")}" ${disabled}></div>
+            <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingAddressExtra">Adresszusatz</label><input id="bookingAddressExtra" value="${escapeHtml(booking.address_extra || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingPostalCode">Postleitzahl</label><input id="bookingPostalCode" value="${escapeHtml(booking.postal_code || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingCity">Ort</label><input id="bookingCity" value="${escapeHtml(booking.city || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingCountry">Land</label><input id="bookingCountry" value="${escapeHtml(booking.country || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingPalletCount">Paletten</label><input id="bookingPalletCount" type="number" min="1" value="${escapeHtml(booking.pallet_count || 1)}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingStatus">Status</label><select id="bookingStatus" ${workflowDisabled}>${bookingStatusOptions(booking.status || "open")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingUrgency">Dringlichkeit</label><select id="bookingUrgency" ${disabled}>${bookingUrgencyOptions(booking.urgency_level || "medium")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingTruckPlate">LKW Kennzeichen</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${workflowDisabled}></div>
+            <div class="pallet-booking-field"><label for="bookingTruckDate">Einplanung für</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${workflowDisabled}></div>
+            <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingNote">Notiz</label><textarea id="bookingNote" rows="4" ${disabled}>${escapeHtml(booking.note || "")}</textarea></div>
+          </div>
+          <div class="pallet-booking-form-actions">${isEditing ? `<button class="primary" id="saveBookingBtn" type="button">${escapeHtml(isCreate ? "Buchung speichern" : "Änderungen speichern")}</button>` : ""}${!isCreate && isEditing ? `<button class="secondary" id="cancelBookingEditBtn" type="button">Bearbeitung abbrechen</button>` : ""}</div>
+        </section>
+      </div>
+      <aside class="pallet-booking-shell__side">
+        <section class="pallet-booking-sidebar-card">
+          <div class="pallet-booking-sidebar-card__head">Status</div>
+          <div class="pallet-booking-sidebar-card__body">
+            <div class="pallet-booking-meta"><span>Kunde</span><strong>${escapeHtml(booking.customer_name || booking.company || "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Adresse</span><strong>${escapeHtml(fullAddress(booking))}</strong></div>
+            <div class="pallet-booking-meta"><span>Abteilung</span><strong>${escapeHtml(booking.department_name || "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Erstellt von</span><strong>${escapeHtml(booking.created_by_name || ME?.username || "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Aktualisiert</span><strong>${escapeHtml(booking.updated_at ? formatDateTime(booking.updated_at) : "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Disponent Status 2</span><strong>${escapeHtml(booking.truck_planned_by_name || "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Einplanung</span><strong>${escapeHtml(booking.truck_planned_for ? formatDate(booking.truck_planned_for) : "-")}</strong></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  `;
+
+  bindBookingModalEvents();
+}
+
+function bindBookingModalEvents() {
+  $("bookingModalEditBtn")?.addEventListener("click", () => {
+    BOOKING_MODAL_STATE.editMode = true;
+    renderBookingModal();
+  });
+  $("bookingModalTabBtn")?.addEventListener("click", () => {
+    if (BOOKING_MODAL_STATE?.booking?.id) openBookingTab(BOOKING_MODAL_STATE.booking.id);
+  });
+  $("cancelBookingEditBtn")?.addEventListener("click", () => {
+    BOOKING_MODAL_STATE.editMode = false;
+    renderBookingModal();
+  });
+  $("saveBookingBtn")?.addEventListener("click", saveBookingFromModal);
+  $("bookingCustomer")?.addEventListener("change", () => {
+    if (!(BOOKING_MODAL_STATE?.mode === "create" || BOOKING_MODAL_STATE?.editMode)) return;
+    const customer = OPEN_PALLET_CUSTOMERS.find((entry) => Number(entry.id) === Number($("bookingCustomer").value || 0));
+    if (!customer) return;
+    $("bookingCompany").value = customer.name || "";
+    $("bookingStreet").value = customer.street || "";
+    $("bookingAddressExtra").value = customer.address_extra || "";
+    $("bookingPostalCode").value = customer.postal_code || "";
+    $("bookingCity").value = customer.city || "";
+    $("bookingCountry").value = customer.country || "";
+  });
+}
+
+async function openBookingModalForId(bookingId) {
+  const response = await api(`/api/modules/pallets/open-pallets/${bookingId}`, { method: "GET", headers: {} });
+  const data = await readJsonSafe(response);
+  if (!response.ok) return alert(data?.error || "Buchung konnte nicht geladen werden.");
+  BOOKING_MODAL_STATE = { mode: "detail", booking: data, editMode: false };
+  renderBookingModal();
+  showModal("bookingModalBack", true);
+}
+
+function openCreateBookingModal() {
+  BOOKING_MODAL_STATE = { mode: "create", booking: { title: "abholung", status: "open", urgency_level: "medium", pallet_count: 1 }, editMode: true };
+  renderBookingModal();
+  showModal("bookingModalBack", true);
+}
+
+function closeBookingModal() {
+  BOOKING_MODAL_STATE = null;
+  setMsg("bookingModalMsg", "");
+  showModal("bookingModalBack", false);
+}
+
+function openBookingTab(bookingId) {
+  window.open(`/modules/pallets/open-pallet-detail.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}`, "_blank", "noopener,noreferrer");
+}
+
+function collectBookingFormPayload() {
+  const payload = {
+    title: $("bookingTitle").value,
+    customer_id: $("bookingCustomer").value || null,
+    company: $("bookingCompany").value.trim(),
+    street: $("bookingStreet").value.trim(),
+    address_extra: $("bookingAddressExtra").value.trim(),
+    postal_code: $("bookingPostalCode").value.trim(),
+    city: $("bookingCity").value.trim(),
+    country: $("bookingCountry").value.trim(),
+    order_no: $("bookingOrderNo").value.trim(),
+    pallet_count: Number($("bookingPalletCount").value || 0),
+    status: $("bookingStatus").value,
+    urgency_level: $("bookingUrgency").value,
+    note: $("bookingNote").value.trim()
+  };
+  if (payload.status === "truck_planned") {
+    payload.truck_license_plate = $("bookingTruckPlate").value.trim();
+    payload.truck_planned_for = $("bookingTruckDate").value;
+  }
+  return payload;
+}
+
+async function saveBookingFromModal() {
+  const isCreate = BOOKING_MODAL_STATE?.mode === "create";
+  const bookingId = BOOKING_MODAL_STATE?.booking?.id;
+  const payload = collectBookingFormPayload();
+  setMsg("bookingModalMsg", "");
+
+  if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel ausw&auml;hlen.");
+  if (!Number.isInteger(payload.pallet_count) || payload.pallet_count <= 0) {
+    return setMsg("bookingModalMsg", "Die Palettenanzahl muss gr&ouml;&szlig;er als 0 sein.");
+  }
+  if (payload.status === "truck_planned" && (!payload.truck_license_plate || !payload.truck_planned_for)) {
+    return setMsg("bookingModalMsg", "Bei Status LKW eingeplant sind Kennzeichen und Datum Pflicht.");
+  }
+
+  const button = $("saveBookingBtn");
+  if (button) button.disabled = true;
+  try {
+    const response = await api(
+      isCreate ? "/api/modules/pallets/open-pallets" : `/api/modules/pallets/open-pallets/${bookingId}`,
+      { method: isCreate ? "POST" : "PATCH", body: JSON.stringify(payload) }
+    );
     const data = await readJsonSafe(response);
     if (!response.ok) {
-      setMsg("truckPlanningModalMsg", data?.error || "LKW-Daten konnten nicht gespeichert werden.");
+      setMsg("bookingModalMsg", data?.error || "Buchung konnte nicht gespeichert werden.");
       return;
     }
 
-    closeTruckPlanningModal();
-    await loadOpenPallets();
+    await loadOpenPallets({ resetPage: isCreate });
+    if (isCreate) {
+      closeBookingModal();
+      return;
+    }
+
+    await openBookingModalForId(bookingId);
+    setMsg("bookingModalMsg", "");
   } finally {
-    if (saveBtn) saveBtn.disabled = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -502,45 +600,34 @@ function bindEvents() {
     localStorage.removeItem("token");
     window.location.href = "/login.html";
   });
-
   $("backToPalletsBtn").addEventListener("click", () => {
     window.location.href = `/modules/pallets/index.html?v=${PALLET_ASSET_VERSION}`;
   });
-
-  $("openCreateBookingModalBtn")?.addEventListener("click", () => {
-    resetCreateForm();
-    showOpenPalletModal(true);
+  $("openCreateBookingModalBtn").addEventListener("click", openCreateBookingModal);
+  $("openCustomerModalBtn").addEventListener("click", openCustomerModal);
+  $("closeBookingModalBtn").addEventListener("click", closeBookingModal);
+  $("closeCustomerModalBtn").addEventListener("click", closeCustomerModal);
+  $("cancelCustomerModalBtn").addEventListener("click", closeCustomerModal);
+  $("newCustomerBtn").addEventListener("click", () => {
+    clearCustomerForm();
+    renderCustomerList();
+    setMsg("customerModalMsg", "");
   });
+  $("saveCustomerBtn").addEventListener("click", saveCustomer);
 
-  $("closeOpenPalletModalBtn")?.addEventListener("click", () => showOpenPalletModal(false));
-  $("cancelOpenPalletModalBtn")?.addEventListener("click", () => showOpenPalletModal(false));
-  $("openPalletModalBack")?.addEventListener("click", (event) => {
-    if (event.target === $("openPalletModalBack")) showOpenPalletModal(false);
+  $("bookingModalBack").addEventListener("click", (event) => {
+    if (event.target === $("bookingModalBack")) closeBookingModal();
   });
-
-  $("closeTruckPlanningModalBtn")?.addEventListener("click", () => closeTruckPlanningModal({ restoreStatus: true }));
-  $("cancelTruckPlanningBtn")?.addEventListener("click", () => closeTruckPlanningModal({ restoreStatus: true }));
-  $("saveTruckPlanningBtn")?.addEventListener("click", saveTruckPlanning);
-  $("truckPlanningModalBack")?.addEventListener("click", (event) => {
-    if (event.target === $("truckPlanningModalBack")) {
-      closeTruckPlanningModal({ restoreStatus: true });
-    }
+  $("customerModalBack").addEventListener("click", (event) => {
+    if (event.target === $("customerModalBack")) closeCustomerModal();
   });
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-
-    if ($("truckPlanningModalBack")?.getAttribute("aria-hidden") === "false") {
-      closeTruckPlanningModal({ restoreStatus: true });
-      return;
-    }
-
-    if ($("openPalletModalBack")?.getAttribute("aria-hidden") === "false") {
-      showOpenPalletModal(false);
-    }
+    if ($("bookingModalBack").getAttribute("aria-hidden") === "false") return closeBookingModal();
+    if ($("customerModalBack").getAttribute("aria-hidden") === "false") return closeCustomerModal();
   });
 
-  $("createOpenPalletBtn")?.addEventListener("click", createOpenPalletBooking);
   $("reloadOpenPalletsBtn").addEventListener("click", () => loadOpenPallets({ resetPage: true }));
   $("resetOpenPalletFiltersBtn").addEventListener("click", async () => {
     $("filterTitle").value = "";
@@ -551,29 +638,26 @@ function bindEvents() {
     $("filterStatus").value = "";
     await loadOpenPallets({ resetPage: true });
   });
-
   $("openPalletPrevBtn").addEventListener("click", async () => {
     if (OPEN_PALLET_PAGE === 0) return;
     OPEN_PALLET_PAGE -= 1;
     await loadOpenPallets();
   });
-
   $("openPalletNextBtn").addEventListener("click", async () => {
     if (!OPEN_PALLET_HAS_MORE) return;
     OPEN_PALLET_PAGE += 1;
     await loadOpenPallets();
   });
 
-  ["filterTitle", "filterCompany", "filterCity", "filterPostalCode", "filterOrderNo"].forEach((id) => {
+  ["filterCompany", "filterCity", "filterPostalCode", "filterOrderNo"].forEach((id) => {
     $(id).addEventListener("input", () => {
       clearTimeout(window.__openPalletFilterTimer);
-      window.__openPalletFilterTimer = setTimeout(() => {
-        loadOpenPallets({ resetPage: true });
-      }, 250);
+      window.__openPalletFilterTimer = setTimeout(() => loadOpenPallets({ resetPage: true }), 250);
     });
   });
-
-  $("filterStatus").addEventListener("change", () => loadOpenPallets({ resetPage: true }));
+  ["filterTitle", "filterStatus"].forEach((id) => {
+    $(id).addEventListener("change", () => loadOpenPallets({ resetPage: true }));
+  });
 
   socket.on("openPalletBookingsUpdated", async (payload) => {
     if (payload?.app_customer_id && Number(payload.app_customer_id) !== Number(ME?.app_customer_id || 0)) return;
@@ -581,9 +665,17 @@ function bindEvents() {
   });
 }
 
+async function openBookingFromQueryParam() {
+  const params = new URLSearchParams(window.location.search);
+  const bookingId = Number(params.get("booking") || 0);
+  if (bookingId) await openBookingModalForId(bookingId);
+}
+
 (async function init() {
   bindEvents();
   await loadMe();
   await loadPerms();
+  await loadCustomers({ silent: true });
   await loadOpenPallets({ resetPage: true });
+  await openBookingFromQueryParam();
 })();
