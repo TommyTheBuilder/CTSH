@@ -39,7 +39,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-4";
+const PALLET_ASSET_VERSION = "20260317-5";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -180,7 +180,8 @@ app.use((req, res, next) => {
   const pathName = String(req.path || "");
   const isVersionedPalletPage = pathName === "/modules/pallets/index.html"
     || pathName === "/modules/pallets/open-pallets.html"
-    || pathName === "/modules/pallets/open-pallet-detail.html";
+    || pathName === "/modules/pallets/open-pallet-detail.html"
+    || pathName === "/modules/pallets/open-pallet-print.html";
 
   if (!isVersionedPalletPage || req.method !== "GET") {
     return next();
@@ -281,6 +282,7 @@ app.use("/modules", async (req, res, next) => {
       req.path === "/pallets/index.html"
       || req.path === "/pallets/open-pallets.html"
       || req.path === "/pallets/open-pallet-detail.html"
+      || req.path === "/pallets/open-pallet-print.html"
     ) {
       const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
       allowed = canAccessModule("pallets", user, perms, enabledModuleKeys);

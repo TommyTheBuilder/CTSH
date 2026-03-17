@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Offene Paletten PDF</title>
+  <style>
+    :root {
+      --print-bg: #e8edf3;
+      --sheet-bg: #ffffff;
+      --sheet-line: #d8e0e9;
+      --sheet-text: #0f1724;
+      --sheet-muted: #5d6b7f;
+      --sheet-dark: #0d213b;
+      --sheet-accent: #159b88;
+      --sheet-card: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--print-bg);
+      color: var(--sheet-text);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+    }
+
+    .print-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 24px;
+      background: rgba(13, 33, 59, 0.96);
+      backdrop-filter: blur(10px);
+    }
+
+    .print-toolbar__group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .print-toolbar__label {
+      color: #f8fbff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .print-toolbar select,
+    .print-toolbar button {
+      height: 44px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 0 16px;
+      font: inherit;
+    }
+
+    .print-toolbar select {
+      min-width: 170px;
+      background: #ffffff;
+      color: #111827;
+    }
+
+    .print-toolbar button {
+      background: #ffffff;
+      color: #0d213b;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .print-toolbar button.primary {
+      background: #159b88;
+      color: #ffffff;
+      border-color: #159b88;
+    }
+
+    .sheet-wrap {
+      padding: 28px 18px 40px;
+    }
+
+    .driver-sheet {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 18mm 16mm;
+      background: var(--sheet-bg);
+      box-shadow: 0 28px 60px rgba(15, 23, 36, 0.12);
+      border-radius: 28px;
+    }
+
+    .driver-hero {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 28px 30px;
+      border-radius: 26px;
+      background: linear-gradient(135deg, #0d213b 0%, #17365b 58%, #159b88 100%);
+      color: #ffffff;
+    }
+
+    .driver-hero__icon {
+      width: 74px;
+      height: 74px;
+      display: grid;
+      place-items: center;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    .driver-hero__icon svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    .driver-hero__eyebrow {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .driver-hero h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.08;
+    }
+
+    .driver-hero p {
+      margin: 10px 0 0;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .driver-count {
+      min-width: 158px;
+      padding: 18px 22px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.14);
+      text-align: center;
+    }
+
+    .driver-count span {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.76);
+    }
+
+    .driver-count strong {
+      display: block;
+      font-size: 40px;
+      line-height: 1;
+    }
+
+    .driver-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .driver-meta__item {
+      padding: 16px 18px;
+      border: 1px solid var(--sheet-line);
+      border-radius: 18px;
+      background: var(--sheet-card);
+    }
+
+    .driver-meta__item span {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--sheet-muted);
+    }
+
+    .driver-meta__item strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.35;
+      color: var(--sheet-text);
+    }
+
+    .driver-section {
+      margin-top: 24px;
+    }
+
+    .driver-section__head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .driver-section__head b {
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--sheet-muted);
+    }
+
+    .driver-section__head::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--sheet-line);
+    }
+
+    .driver-route--single {
+      display: block;
+    }
+
+    .driver-route--transfer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr);
+      gap: 16px;
+      align-items: center;
+    }
+
+    .driver-arrow {
+      display: grid;
+      place-items: center;
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #159b88 0%, #0d213b 100%);
+      color: #ffffff;
+    }
+
+    .driver-arrow svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .driver-card {
+      border: 1px solid var(--sheet-line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .driver-card__head {
+      padding: 16px 20px;
+      background: #159b88;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+    }
+
+    .driver-card--destination .driver-card__head {
+      background: #0d213b;
+    }
+
+    .driver-card__body {
+      padding: 8px 20px 14px;
+    }
+
+    .driver-card__row {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 12px 0;
+      border-top: 1px solid #edf2f7;
+    }
+
+    .driver-card__row:first-child {
+      border-top: 0;
+    }
+
+    .driver-card__row span {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--sheet-muted);
+    }
+
+    .driver-card__row strong {
+      font-size: 18px;
+      line-height: 1.45;
+      word-break: break-word;
+      color: var(--sheet-text);
+    }
+
+    .driver-note {
+      padding: 0;
+      border: 1px solid var(--sheet-line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .driver-note__head {
+      padding: 16px 20px;
+      background: #eef6f4;
+      color: #0d213b;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .driver-note__body {
+      padding: 18px 20px 20px;
+      font-size: 18px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .driver-footer {
+      margin-top: 22px;
+      padding-top: 14px;
+      border-top: 1px solid var(--sheet-line);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--sheet-muted);
+    }
+
+    .print-empty {
+      max-width: 760px;
+      margin: 70px auto;
+      padding: 22px 24px;
+      border-radius: 24px;
+      background: #ffffff;
+      box-shadow: 0 24px 48px rgba(15, 23, 36, 0.12);
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 960px) {
+      .driver-sheet {
+        width: 100%;
+        min-height: auto;
+        padding: 22px 18px;
+        border-radius: 0;
+      }
+
+      .driver-hero {
+        grid-template-columns: 1fr;
+      }
+
+      .driver-meta {
+        grid-template-columns: 1fr;
+      }
+
+      .driver-route--transfer {
+        grid-template-columns: 1fr;
+      }
+
+      .driver-arrow {
+        margin: 0 auto;
+        transform: rotate(90deg);
+      }
+
+      .driver-card__row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media print {
+      html, body {
+        background: #ffffff;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .sheet-wrap {
+        padding: 0;
+      }
+
+      .driver-sheet {
+        width: auto;
+        min-height: auto;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/public/modules/pallets/open-pallet-print.js?v=20260317-5"></script>
+</body>
+</html>
