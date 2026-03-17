@@ -30,6 +30,7 @@ const {
   getUserContext,
   getUserPermissions,
   isAppAdmin,
+  isWarehouseUser,
   listCustomers,
   resolveManagedCustomerId
 } = require("./core/platform_access");
@@ -40,7 +41,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-10";
+const PALLET_ASSET_VERSION = "20260317-11";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -1852,6 +1853,105 @@ async function getMyPermissions(user) {
   return getUserPermissions(user);
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function sanitizeWarehouseRolePermissions(permissions) {
+  const normalized = permissionsConfig.normalizePermissions(
+    (permissions && typeof permissions === "object") ? permissions : {}
+  );
+  return {
+    warehouse: cloneJson(normalized.warehouse || permissionsConfig.createPermissionDefaults().warehouse)
+  };
+}
+
+function isRestrictedCustomerAdminUser(user) {
+  return Boolean(user?.is_app_admin || user?.is_warehouse_user);
+}
+
+async function getScopedRoleRecord(roleId, customerId) {
+  const normalizedRoleId = toPositiveInt(roleId);
+  const normalizedCustomerId = toPositiveInt(customerId);
+  if (!normalizedRoleId || !normalizedCustomerId) return null;
+  const result = await q(
+    `
+    SELECT id, name, permissions, COALESCE(is_warehouse_role, FALSE) AS is_warehouse_role
+    FROM roles
+    WHERE id = $1
+      AND app_customer_id = $2
+    `,
+    [normalizedRoleId, normalizedCustomerId]
+  );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+async function getScopedUserRecord(userId, customerId) {
+  const normalizedUserId = toPositiveInt(userId);
+  const normalizedCustomerId = toPositiveInt(customerId);
+  if (!normalizedUserId || !normalizedCustomerId) return null;
+  const result = await q(
+    `
+    SELECT
+      u.id,
+      u.username,
+      u.email,
+      u.role,
+      u.role_id,
+      u.location_id,
+      u.fixed_department_id,
+      u.is_active,
+      u.is_app_admin,
+      u.is_warehouse_user,
+      u.app_customer_id,
+      ro.name AS business_role_name,
+      COALESCE(ro.is_warehouse_role, FALSE) AS is_warehouse_role
+    FROM users u
+    LEFT JOIN roles ro ON ro.id = u.role_id
+    WHERE u.id = $1
+      AND u.app_customer_id = $2
+    `,
+    [normalizedUserId, normalizedCustomerId]
+  );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+async function listScopedUsers(customerId, predicateSql, extraParams = []) {
+  const normalizedCustomerId = toPositiveInt(customerId);
+  if (!normalizedCustomerId) return [];
+  const result = await q(
+    `
+    SELECT
+      u.id,
+      u.username,
+      u.email,
+      u.role,
+      u.role_id,
+      u.location_id,
+      u.fixed_department_id,
+      u.is_active,
+      u.is_app_admin,
+      u.is_warehouse_user,
+      u.app_customer_id,
+      c.name AS customer_name,
+      ro.name AS business_role_name,
+      COALESCE(ro.is_warehouse_role, FALSE) AS is_warehouse_role,
+      l.name AS location_name,
+      d.name AS fixed_department_name
+    FROM users u
+    LEFT JOIN app_customers c ON c.id = u.app_customer_id
+    LEFT JOIN roles ro ON ro.id = u.role_id
+    LEFT JOIN locations l ON l.id = u.location_id
+    LEFT JOIN departments d ON d.id = u.fixed_department_id
+    WHERE u.app_customer_id = $1
+      AND ${predicateSql}
+    ORDER BY u.username
+    `,
+    [normalizedCustomerId, ...extraParams]
+  );
+  return result.rows;
+}
+
 // ---------- AUTH ----------
 async function loginHandler(req, res) {
   const clientIp = req.clientIp || "unknown";
@@ -1893,11 +1993,12 @@ async function loginHandler(req, res) {
       username: userContext.username,
       role: userContext.role,
       location_id: userContext.location_id,
-      role_id: userContext.role_id || null,
-      app_customer_id: userContext.app_customer_id,
-      fixed_department_id: userContext.fixed_department_id || null,
-      is_app_admin: Boolean(userContext.is_app_admin)
-    },
+        role_id: userContext.role_id || null,
+        app_customer_id: userContext.app_customer_id,
+        fixed_department_id: userContext.fixed_department_id || null,
+        is_app_admin: Boolean(userContext.is_app_admin),
+        is_warehouse_user: Boolean(userContext.is_warehouse_user)
+      },
     JWT_SECRET,
     { expiresIn: "12h" }
   );
@@ -1977,11 +2078,12 @@ async function exchangeSsoToken(req, res) {
       username: userContext.username,
       role: tokenRole,
       location_id: userContext.location_id,
-      role_id: userContext.role_id || null,
-      app_customer_id: userContext.app_customer_id,
-      fixed_department_id: userContext.fixed_department_id || null,
-      is_app_admin: Boolean(userContext.is_app_admin)
-    },
+        role_id: userContext.role_id || null,
+        app_customer_id: userContext.app_customer_id,
+        fixed_department_id: userContext.fixed_department_id || null,
+        is_app_admin: Boolean(userContext.is_app_admin),
+        is_warehouse_user: Boolean(userContext.is_warehouse_user)
+      },
     JWT_SECRET,
     { expiresIn: "12h" }
   );
@@ -1995,12 +2097,13 @@ async function exchangeSsoToken(req, res) {
       username: userContext.username,
       role: tokenRole,
       location_id: userContext.location_id,
-      role_id: userContext.role_id || null,
-      app_customer_id: userContext.app_customer_id,
-      fixed_department_id: userContext.fixed_department_id || null,
-      is_app_admin: Boolean(userContext.is_app_admin)
-    }
-  });
+       role_id: userContext.role_id || null,
+       app_customer_id: userContext.app_customer_id,
+       fixed_department_id: userContext.fixed_department_id || null,
+       is_app_admin: Boolean(userContext.is_app_admin),
+       is_warehouse_user: Boolean(userContext.is_warehouse_user)
+     }
+   });
 }
 
 app.post("/api/auth/sso-exchange", exchangeSsoToken);
@@ -2164,7 +2267,7 @@ async function loadInstallationOptions(customerId) {
     getEnabledModuleKeysForCustomer(customerId),
     q(
       `
-      SELECT id, name
+      SELECT id, name, COALESCE(is_warehouse_role, FALSE) AS is_warehouse_role
       FROM roles
       WHERE app_customer_id = $1
       ORDER BY name
@@ -2191,10 +2294,13 @@ async function loadInstallationOptions(customerId) {
     )
   ]);
 
+  const roleRows = rolesResult.rows || [];
+
   return {
     installation,
     active_modules: activeModules,
-    roles: rolesResult.rows,
+    roles: roleRows.filter((role) => !role.is_warehouse_role),
+    warehouse_roles: roleRows.filter((role) => role.is_warehouse_role),
     locations: locationsResult.rows,
     departments: departmentsResult.rows
   };
@@ -2365,34 +2471,14 @@ app.get("/api/app-admin/customer-options/:customerId", authRequired, requireAppA
 
 app.get("/api/app-admin/users", authRequired, requireAppAdminArea, async (req, res) => {
   const installationCustomerId = await getInstallationCustomerId(req.user);
-  const result = await q(
-    `
-    SELECT
-      u.id,
-      u.username,
-      u.email,
-      u.role,
-      u.role_id,
-      u.location_id,
-      u.fixed_department_id,
-      u.is_active,
-      u.is_app_admin,
-      u.app_customer_id,
-      c.name AS customer_name,
-      ro.name AS business_role_name,
-      l.name AS location_name,
-      d.name AS fixed_department_name
-    FROM users u
-    LEFT JOIN app_customers c ON c.id = u.app_customer_id
-    LEFT JOIN roles ro ON ro.id = u.role_id
-    LEFT JOIN locations l ON l.id = u.location_id
-    LEFT JOIN departments d ON d.id = u.fixed_department_id
-    WHERE u.app_customer_id = $1
-    ORDER BY c.name, u.username
-    `,
-    [installationCustomerId]
-  );
-  res.json(result.rows);
+  const [appAdmins, warehouseUsers] = await Promise.all([
+    listScopedUsers(installationCustomerId, "u.is_app_admin = TRUE"),
+    listScopedUsers(installationCustomerId, "u.is_warehouse_user = TRUE AND u.is_app_admin = FALSE")
+  ]);
+  res.json({
+    app_admins: appAdmins,
+    warehouse_users: warehouseUsers
+  });
 });
 
 app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (req, res) => {
@@ -2510,6 +2596,404 @@ app.put("/api/app-admin/users/:id", authRequired, requireAppAdminArea, async (re
   if (!updated.rowCount) return res.status(404).json({ error: "user not found" });
   const userContext = await getUserContext(userId);
   res.json(userContext);
+});
+
+app.get("/api/app-admin/warehouse-roles", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const rows = (await q(
+    `
+    SELECT id, name, permissions, created_at, COALESCE(is_warehouse_role, FALSE) AS is_warehouse_role
+    FROM roles
+    WHERE app_customer_id = $1
+      AND COALESCE(is_warehouse_role, FALSE) = TRUE
+    ORDER BY name
+    `,
+    [installationCustomerId]
+  )).rows;
+  res.json(rows.map((row) => ({
+    ...row,
+    permissions: sanitizeWarehouseRolePermissions(row.permissions)
+  })));
+});
+
+app.post("/api/app-admin/warehouse-roles", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const roleName = String(req.body?.name || "").trim();
+  if (!roleName) return res.status(400).json({ error: "Rollenname erforderlich." });
+  const permissions = sanitizeWarehouseRolePermissions(req.body?.permissions);
+
+  try {
+    const created = await q(
+      `
+      INSERT INTO roles (name, permissions, app_customer_id, is_warehouse_role)
+      VALUES ($1, $2::jsonb, $3, TRUE)
+      RETURNING id, name, permissions, created_at, COALESCE(is_warehouse_role, FALSE) AS is_warehouse_role
+      `,
+      [roleName, JSON.stringify(permissions), installationCustomerId]
+    );
+    res.json(created.rows[0]);
+  } catch (error) {
+    if (error && error.code === "23505") {
+      return res.status(400).json({ error: "Rollenname bereits vorhanden." });
+    }
+    throw error;
+  }
+});
+
+app.put("/api/app-admin/warehouse-roles/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const roleId = toPositiveInt(req.params.id);
+  if (!roleId) return res.status(400).json({ error: "Ungültige Rollen-ID." });
+
+  const existingRole = await getScopedRoleRecord(roleId, installationCustomerId);
+  if (!existingRole || !existingRole.is_warehouse_role) {
+    return res.status(404).json({ error: "Warehouse-Rolle nicht gefunden." });
+  }
+
+  const updates = [];
+  const values = [];
+  const roleName = String(req.body?.name || "").trim();
+  if (roleName) {
+    values.push(roleName);
+    updates.push(`name = $${values.length}`);
+  }
+  if (req.body?.permissions && typeof req.body.permissions === "object") {
+    values.push(JSON.stringify(sanitizeWarehouseRolePermissions(req.body.permissions)));
+    updates.push(`permissions = $${values.length}::jsonb`);
+  }
+  if (!updates.length) {
+    return res.status(400).json({ error: "Keine Änderungen für die Warehouse-Rolle übergeben." });
+  }
+
+  values.push(roleId);
+  values.push(installationCustomerId);
+  const updated = await q(
+    `
+    UPDATE roles
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length - 1}
+      AND app_customer_id = $${values.length}
+      AND COALESCE(is_warehouse_role, FALSE) = TRUE
+    RETURNING id, name, permissions, created_at, COALESCE(is_warehouse_role, FALSE) AS is_warehouse_role
+    `,
+    values
+  );
+  if (!updated.rowCount) return res.status(404).json({ error: "Warehouse-Rolle nicht gefunden." });
+  res.json({
+    ...updated.rows[0],
+    permissions: sanitizeWarehouseRolePermissions(updated.rows[0].permissions)
+  });
+});
+
+app.delete("/api/app-admin/warehouse-roles/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const roleId = toPositiveInt(req.params.id);
+  if (!roleId) return res.status(400).json({ error: "Ungültige Rollen-ID." });
+
+  const used = await q(
+    `
+    SELECT 1
+    FROM users
+    WHERE role_id = $1
+      AND app_customer_id = $2
+      AND COALESCE(is_warehouse_user, FALSE) = TRUE
+    LIMIT 1
+    `,
+    [roleId, installationCustomerId]
+  );
+  if (used.rowCount) {
+    return res.status(400).json({ error: "Warehouse-Rolle ist Benutzern zugeordnet." });
+  }
+
+  await q(
+    `
+    DELETE FROM roles
+    WHERE id = $1
+      AND app_customer_id = $2
+      AND COALESCE(is_warehouse_role, FALSE) = TRUE
+    `,
+    [roleId, installationCustomerId]
+  );
+  res.json({ ok: true });
+});
+
+app.post("/api/app-admin/app-admins", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "").trim();
+  const emailCheck = normalizeEmail(req.body?.email);
+  const isActive = req.body?.is_active === undefined ? true : Boolean(req.body.is_active);
+
+  if (username.length < 3) return res.status(400).json({ error: "Benutzername zu kurz." });
+  if (!password) return res.status(400).json({ error: "Passwort erforderlich." });
+  if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const inserted = await q(
+      `
+      INSERT INTO users (
+        username,
+        password_hash,
+        role,
+        location_id,
+        role_id,
+        is_active,
+        email,
+        fixed_department_id,
+        app_customer_id,
+        is_app_admin,
+        is_warehouse_user
+      )
+      VALUES ($1, $2, 'admin', NULL, NULL, $3, $4, NULL, $5, TRUE, FALSE)
+      RETURNING id
+      `,
+      [username, passwordHash, isActive, emailCheck?.email || null, installationCustomerId]
+    );
+    const created = await getScopedUserRecord(inserted.rows[0].id, installationCustomerId);
+    res.status(201).json(created);
+  } catch (error) {
+    if (error && error.code === "23505") {
+      return res.status(400).json({ error: "Benutzername bereits vorhanden." });
+    }
+    throw error;
+  }
+});
+
+app.put("/api/app-admin/app-admins/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+
+  const existingUser = await getScopedUserRecord(userId, installationCustomerId);
+  if (!existingUser || !existingUser.is_app_admin) {
+    return res.status(404).json({ error: "App-Admin nicht gefunden." });
+  }
+
+  const updates = [];
+  const values = [];
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "email")) {
+    const emailCheck = normalizeEmail(req.body?.email);
+    if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+    values.push(emailCheck?.email || null);
+    updates.push(`email = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "is_active")) {
+    if (typeof req.body.is_active !== "boolean") return res.status(400).json({ error: "Ungültiger Status." });
+    values.push(Boolean(req.body.is_active));
+    updates.push(`is_active = $${values.length}`);
+  }
+  if (!updates.length) {
+    return res.status(400).json({ error: "Keine Änderungen für den App-Admin übergeben." });
+  }
+
+  values.push(userId);
+  values.push(installationCustomerId);
+  await q(
+    `
+    UPDATE users
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length - 1}
+      AND app_customer_id = $${values.length}
+      AND is_app_admin = TRUE
+    `,
+    values
+  );
+  const updated = await getScopedUserRecord(userId, installationCustomerId);
+  res.json(updated);
+});
+
+app.delete("/api/app-admin/app-admins/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+  if (userId === Number(req.user?.id)) return res.status(400).json({ error: "Eigenes Konto kann nicht gelöscht werden." });
+
+  await q(
+    `
+    DELETE FROM users
+    WHERE id = $1
+      AND app_customer_id = $2
+      AND is_app_admin = TRUE
+    `,
+    [userId, installationCustomerId]
+  );
+  res.json({ ok: true });
+});
+
+app.post("/api/app-admin/app-admins/:id/reset-password", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  const password = String(req.body?.password || "").trim();
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+  if (!password) return res.status(400).json({ error: "Passwort erforderlich." });
+
+  const existingUser = await getScopedUserRecord(userId, installationCustomerId);
+  if (!existingUser || !existingUser.is_app_admin) {
+    return res.status(404).json({ error: "App-Admin nicht gefunden." });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await q(
+    `
+    UPDATE users
+    SET password_hash = $1
+    WHERE id = $2
+      AND app_customer_id = $3
+      AND is_app_admin = TRUE
+    `,
+    [passwordHash, userId, installationCustomerId]
+  );
+  res.json({ ok: true });
+});
+
+app.post("/api/app-admin/warehouse-users", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "").trim();
+  const roleId = toPositiveInt(req.body?.role_id);
+  const emailCheck = normalizeEmail(req.body?.email);
+  const isActive = req.body?.is_active === undefined ? true : Boolean(req.body.is_active);
+
+  if (username.length < 3) return res.status(400).json({ error: "Benutzername zu kurz." });
+  if (!password) return res.status(400).json({ error: "Passwort erforderlich." });
+  if (!roleId) return res.status(400).json({ error: "Warehouse-Rolle erforderlich." });
+  if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+
+  const roleRecord = await getScopedRoleRecord(roleId, installationCustomerId);
+  if (!roleRecord || !roleRecord.is_warehouse_role) {
+    return res.status(400).json({ error: "Warehouse-Rolle nicht gefunden." });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const inserted = await q(
+      `
+      INSERT INTO users (
+        username,
+        password_hash,
+        role,
+        location_id,
+        role_id,
+        is_active,
+        email,
+        fixed_department_id,
+        app_customer_id,
+        is_app_admin,
+        is_warehouse_user
+      )
+      VALUES ($1, $2, 'lager', NULL, $3, $4, $5, NULL, $6, FALSE, TRUE)
+      RETURNING id
+      `,
+      [username, passwordHash, roleId, isActive, emailCheck?.email || null, installationCustomerId]
+    );
+    const created = await getScopedUserRecord(inserted.rows[0].id, installationCustomerId);
+    res.status(201).json(created);
+  } catch (error) {
+    if (error && error.code === "23505") {
+      return res.status(400).json({ error: "Benutzername bereits vorhanden." });
+    }
+    throw error;
+  }
+});
+
+app.put("/api/app-admin/warehouse-users/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+
+  const existingUser = await getScopedUserRecord(userId, installationCustomerId);
+  if (!existingUser || !isWarehouseUser(existingUser) || existingUser.is_app_admin) {
+    return res.status(404).json({ error: "Warehouse-Benutzer nicht gefunden." });
+  }
+
+  const updates = [];
+  const values = [];
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "email")) {
+    const emailCheck = normalizeEmail(req.body?.email);
+    if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
+    values.push(emailCheck?.email || null);
+    updates.push(`email = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "is_active")) {
+    if (typeof req.body.is_active !== "boolean") return res.status(400).json({ error: "Ungültiger Status." });
+    values.push(Boolean(req.body.is_active));
+    updates.push(`is_active = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "role_id")) {
+    const roleId = req.body.role_id === null || req.body.role_id === "" ? null : toPositiveInt(req.body.role_id);
+    if (!roleId) return res.status(400).json({ error: "Warehouse-Rolle erforderlich." });
+    const roleRecord = await getScopedRoleRecord(roleId, installationCustomerId);
+    if (!roleRecord || !roleRecord.is_warehouse_role) {
+      return res.status(400).json({ error: "Warehouse-Rolle nicht gefunden." });
+    }
+    values.push(roleId);
+    updates.push(`role_id = $${values.length}`);
+  }
+  if (!updates.length) {
+    return res.status(400).json({ error: "Keine Änderungen für den Warehouse-Benutzer übergeben." });
+  }
+
+  values.push(userId);
+  values.push(installationCustomerId);
+  await q(
+    `
+    UPDATE users
+    SET ${updates.join(", ")}
+    WHERE id = $${values.length - 1}
+      AND app_customer_id = $${values.length}
+      AND is_warehouse_user = TRUE
+      AND is_app_admin = FALSE
+    `,
+    values
+  );
+  const updated = await getScopedUserRecord(userId, installationCustomerId);
+  res.json(updated);
+});
+
+app.delete("/api/app-admin/warehouse-users/:id", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+
+  await q(
+    `
+    DELETE FROM users
+    WHERE id = $1
+      AND app_customer_id = $2
+      AND is_warehouse_user = TRUE
+      AND is_app_admin = FALSE
+    `,
+    [userId, installationCustomerId]
+  );
+  res.json({ ok: true });
+});
+
+app.post("/api/app-admin/warehouse-users/:id/reset-password", authRequired, requireAppAdminArea, async (req, res) => {
+  const installationCustomerId = await getInstallationCustomerId(req.user);
+  const userId = toPositiveInt(req.params.id);
+  const password = String(req.body?.password || "").trim();
+  if (!userId) return res.status(400).json({ error: "Ungültige Benutzer-ID." });
+  if (!password) return res.status(400).json({ error: "Passwort erforderlich." });
+
+  const existingUser = await getScopedUserRecord(userId, installationCustomerId);
+  if (!existingUser || !isWarehouseUser(existingUser) || existingUser.is_app_admin) {
+    return res.status(404).json({ error: "Warehouse-Benutzer nicht gefunden." });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await q(
+    `
+    UPDATE users
+    SET password_hash = $1
+    WHERE id = $2
+      AND app_customer_id = $3
+      AND is_warehouse_user = TRUE
+      AND is_app_admin = FALSE
+    `,
+    [passwordHash, userId, installationCustomerId]
+  );
+  res.json({ ok: true });
 });
 
 app.use("/api/warehouse", createWarehouseRouter({ authRequired, requirePermission }));
@@ -5340,6 +5824,9 @@ function sanitizeManagedRolePermissions(permissions, activeModuleKeys) {
   if (filtered?.admin?.full_access) {
     filtered.admin.full_access = false;
   }
+  if (filtered?.warehouse) {
+    delete filtered.warehouse;
+  }
   return filtered;
 }
 
@@ -5353,6 +5840,7 @@ app.get("/api/admin/roles", authRequired, requireCustomerAdminAccess, async (req
     `SELECT id, name, permissions, created_at
      FROM roles
      WHERE app_customer_id = $1
+       AND COALESCE(is_warehouse_role, FALSE) = FALSE
      ORDER BY name`,
     [req.managedCustomerId]
   )).rows;
@@ -5375,7 +5863,7 @@ app.post("/api/admin/roles", authRequired, requireCustomerAdminAccess, async (re
 
   try {
       const r = await q(
-        `INSERT INTO roles (name, permissions, app_customer_id) VALUES ($1, $2::jsonb, $3)
+        `INSERT INTO roles (name, permissions, app_customer_id, is_warehouse_role) VALUES ($1, $2::jsonb, $3, FALSE)
          RETURNING id, name, permissions`,
         [roleName, JSON.stringify(perms), req.managedCustomerId]
       );
@@ -5408,7 +5896,8 @@ app.put("/api/admin/roles/:id", authRequired, requireCustomerAdminAccess, async 
      SET name = COALESCE($1, name),
          permissions = COALESCE($2::jsonb, permissions)
      WHERE id=$3
-       AND app_customer_id = $4`,
+       AND app_customer_id = $4
+       AND COALESCE(is_warehouse_role, FALSE) = FALSE`,
     [roleName, perms ? JSON.stringify(perms) : null, id, req.managedCustomerId]
   );
 
@@ -5423,10 +5912,16 @@ app.delete("/api/admin/roles/:id", authRequired, requireCustomerAdminAccess, asy
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const used = await q(`SELECT 1 FROM users WHERE role_id=$1 AND app_customer_id=$2 LIMIT 1`, [id, req.managedCustomerId]);
+  const used = await q(
+    `SELECT 1 FROM users WHERE role_id=$1 AND app_customer_id=$2 AND COALESCE(is_warehouse_user, FALSE) = FALSE LIMIT 1`,
+    [id, req.managedCustomerId]
+  );
   if (used.rowCount > 0) return res.status(400).json({ error: "role is assigned to users" });
 
-  await q(`DELETE FROM roles WHERE id=$1 AND app_customer_id=$2`, [id, req.managedCustomerId]);
+  await q(
+    `DELETE FROM roles WHERE id=$1 AND app_customer_id=$2 AND COALESCE(is_warehouse_role, FALSE) = FALSE`,
+    [id, req.managedCustomerId]
+  );
   res.json({ ok: true });
 });
 
@@ -5440,14 +5935,16 @@ app.get("/api/admin/users", authRequired, requireCustomerAdminAccess, async (req
     const fixedDepartmentId = req.user.fixed_department_id;
     if (!fixedDepartmentId) return res.status(400).json({ error: "Kein fixe Abteilung gesetzt" });
 
-    const rows = (await q(
-      `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id, app_customer_id
-       FROM users
-       WHERE app_customer_id = $1
-         AND fixed_department_id = $2
-       ORDER BY username`,
-      [req.managedCustomerId, fixedDepartmentId]
-    )).rows;
+     const rows = (await q(
+       `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id, app_customer_id
+        FROM users
+        WHERE app_customer_id = $1
+          AND fixed_department_id = $2
+          AND COALESCE(is_app_admin, FALSE) = FALSE
+          AND COALESCE(is_warehouse_user, FALSE) = FALSE
+        ORDER BY username`,
+       [req.managedCustomerId, fixedDepartmentId]
+     )).rows;
     return res.json(rows);
   }
 
@@ -5455,6 +5952,8 @@ app.get("/api/admin/users", authRequired, requireCustomerAdminAccess, async (req
     `SELECT id, username, role, location_id, role_id, is_active, created_at, email, fixed_department_id, app_customer_id
      FROM users
      WHERE app_customer_id = $1
+       AND COALESCE(is_app_admin, FALSE) = FALSE
+       AND COALESCE(is_warehouse_user, FALSE) = FALSE
      ORDER BY username`,
     [req.managedCustomerId]
   )).rows;
@@ -5484,7 +5983,10 @@ app.post("/api/admin/users", authRequired, requireCustomerAdminAccess, async (re
   if (emailCheck && emailCheck.ok === false) return res.status(400).json({ error: emailCheck.msg });
   const roleId = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
   if (!roleId) return res.status(400).json({ error: "business role required" });
-  const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2`, [roleId, req.managedCustomerId]);
+  const roleExists = await q(
+    `SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2 AND COALESCE(is_warehouse_role, FALSE) = FALSE`,
+    [roleId, req.managedCustomerId]
+  );
   if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
 
   const locationId = (location_id === null || location_id === undefined || location_id === "") ? null : Number(location_id);
@@ -5534,6 +6036,10 @@ app.put("/api/admin/users/:id", authRequired, requireCustomerAdminAccess, async 
   if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
     return res.status(404).json({ error: "Benutzer nicht gefunden" });
   }
+  const managedUser = await getScopedUserRecord(id, req.managedCustomerId);
+  if (!managedUser || isRestrictedCustomerAdminUser(managedUser)) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
 
   const { location_id, is_active, role_id, email, fixed_department_id } = req.body || {};
 
@@ -5561,7 +6067,10 @@ app.put("/api/admin/users/:id", authRequired, requireCustomerAdminAccess, async 
   if (Object.prototype.hasOwnProperty.call(req.body || {}, "role_id")) {
     const roleValue = (role_id === null || role_id === undefined || role_id === "") ? null : Number(role_id);
     if (!roleValue) return res.status(400).json({ error: "business role required" });
-    const roleExists = await q(`SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2`, [roleValue, req.managedCustomerId]);
+    const roleExists = await q(
+      `SELECT 1 FROM roles WHERE id=$1 AND app_customer_id=$2 AND COALESCE(is_warehouse_role, FALSE) = FALSE`,
+      [roleValue, req.managedCustomerId]
+    );
     if (roleExists.rowCount === 0) return res.status(400).json({ error: "Business-Rolle nicht gefunden" });
     updates.push(`role_id=$${idx++}`);
     values.push(roleValue);
@@ -5608,6 +6117,10 @@ app.delete("/api/admin/users/:id", authRequired, requireCustomerAdminAccess, asy
   if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
     return res.status(404).json({ error: "Benutzer nicht gefunden" });
   }
+  const managedUser = await getScopedUserRecord(id, req.managedCustomerId);
+  if (!managedUser || isRestrictedCustomerAdminUser(managedUser)) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
 
   await q(`DELETE FROM users WHERE id=$1 AND app_customer_id=$2`, [id, req.managedCustomerId]);
   res.json({ ok: true });
@@ -5623,6 +6136,10 @@ app.post("/api/admin/users/:id/reset-password", authRequired, requireCustomerAdm
   if (!id) return res.status(400).json({ error: "invalid id" });
   if (!password) return res.status(400).json({ error: "password required" });
   if (!(await assertRecordBelongsToCustomer("users", id, req.managedCustomerId))) {
+    return res.status(404).json({ error: "Benutzer nicht gefunden" });
+  }
+  const managedUser = await getScopedUserRecord(id, req.managedCustomerId);
+  if (!managedUser || isRestrictedCustomerAdminUser(managedUser)) {
     return res.status(404).json({ error: "Benutzer nicht gefunden" });
   }
 
@@ -7012,6 +7529,30 @@ async function ensureRuntimeTables() {
   await q(`CREATE INDEX IF NOT EXISTS idx_user_notifications_user_created ON user_notifications(user_id, created_at DESC);`);
 
   await q(`ALTER TABLE booking_cases ADD COLUMN IF NOT EXISTS non_exchangeable_qty INTEGER NOT NULL DEFAULT 0;`);
+  await q(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_warehouse_role BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_warehouse_user BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await q(`
+    UPDATE roles
+    SET is_warehouse_role = TRUE
+    WHERE COALESCE(is_warehouse_role, FALSE) = FALSE
+      AND (
+        LOWER(name) LIKE 'warehouse %'
+        OR COALESCE((permissions -> 'warehouse')::text, '{}') LIKE '%true%'
+      );
+  `);
+  await q(`
+    UPDATE users
+    SET is_warehouse_user = TRUE
+    WHERE COALESCE(is_warehouse_user, FALSE) = FALSE
+      AND role_id IN (
+        SELECT id
+        FROM roles
+        WHERE COALESCE(is_warehouse_role, FALSE) = TRUE
+      );
+  `);
+  await q(`UPDATE users SET is_warehouse_user = FALSE WHERE COALESCE(is_app_admin, FALSE) = TRUE;`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_roles_customer_warehouse_scope ON roles (app_customer_id, is_warehouse_role, name);`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_users_customer_admin_scope ON users (app_customer_id, is_app_admin, is_warehouse_user, username);`);
 
   await q(`
     CREATE TABLE IF NOT EXISTS booking_case_history (
