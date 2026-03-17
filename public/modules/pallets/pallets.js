@@ -303,13 +303,17 @@ const OPEN_PALLET_STATUS_LABELS = {
   completed_waiting_document: "Erledigt - warten auf Beleg",
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
+const OPEN_PALLET_TITLE_LABELS = {
+  abholung: "Abholung",
+  rueckfuehrung: "R\u00fcckf\u00fchrung"
+};
 const OPEN_PALLET_URGENCY_LABELS = {
   low: "Niedrig",
   medium: "Mittel",
   high: "Hoch",
   critical: "Kritisch"
 };
-const PALLET_ASSET_VERSION = "20260316-5";
+const PALLET_ASSET_VERSION = "20260317-2";
 
 const socket = io();
 function joinLocationRoom() {
@@ -611,6 +615,10 @@ function openPalletStatusLabel(status) {
   return OPEN_PALLET_STATUS_LABELS[status] || status || "-";
 }
 
+function openPalletTitleLabel(title) {
+  return OPEN_PALLET_TITLE_LABELS[title] || title || "-";
+}
+
 function openPalletUrgencyLabel(level) {
   return OPEN_PALLET_URGENCY_LABELS[level] || OPEN_PALLET_URGENCY_LABELS.medium;
 }
@@ -661,7 +669,7 @@ async function loadOpenPalletsFeed() {
   wrap.innerHTML = items.map((item) => `
     <article class="pallet-open-feed__item pallet-open-feed__item--urgency-${escapeHtml(item.urgency_level || "medium")}">
       <div class="pallet-open-feed__item-top">
-        <strong>${escapeHtml(item.title || "-")}</strong>
+        <strong>${escapeHtml(openPalletTitleLabel(item.title))}</strong>
         <div class="pallet-open-feed__badges">
           <span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(item.urgency_level || "medium")}">
             ${escapeHtml(openPalletUrgencyLabel(item.urgency_level))}

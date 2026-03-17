@@ -4068,3 +4068,324 @@ body.darkmode .module-checklist__item {
   border-color: #334155;
   background: rgba(15, 23, 42, 0.7);
 }
+
+.pallet-open-page-subtitle {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: #475569;
+}
+
+.pallet-open-hero-actions--stacked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.pallet-open-link-button {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  color: #0f4c81;
+  border: none;
+  font-weight: 800;
+  text-align: left;
+}
+
+.pallet-open-link-button:hover {
+  text-decoration: underline;
+}
+
+.pallet-booking-detail-modal {
+  width: min(1280px, 100%);
+  max-width: 1280px;
+  padding: 22px;
+}
+
+.pallet-booking-modal-head {
+  align-items: flex-start;
+}
+
+.pallet-booking-modal-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.pallet-booking-modal-head__actions button {
+  width: auto;
+  min-width: 150px;
+}
+
+.pallet-customer-modal {
+  width: min(1180px, 100%);
+  max-width: 1180px;
+}
+
+.pallet-customer-modal__layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.pallet-customer-modal__list,
+.pallet-customer-modal__form,
+.pallet-booking-panel,
+.pallet-booking-sidebar-card,
+.pallet-detail-main-card,
+.pallet-detail-side-card {
+  border: 1px solid #dbe3f0;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.pallet-customer-modal__list,
+.pallet-customer-modal__form {
+  padding: 18px;
+}
+
+.pallet-customer-modal__list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pallet-customer-modal__list-head button {
+  width: auto;
+}
+
+.pallet-customer-list {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.pallet-customer-list__item {
+  width: 100%;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #d7e2ef;
+  background: #ffffff;
+  color: #0f172a;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.pallet-customer-list__item.is-active {
+  border-color: #0f766e;
+  box-shadow: inset 0 0 0 1px #0f766e;
+}
+
+.pallet-customer-list__item span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pallet-booking-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.pallet-booking-panel {
+  padding: 22px;
+}
+
+.pallet-booking-panel__head,
+.pallet-detail-main-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.pallet-booking-panel__head h4,
+.pallet-detail-main-card__head h2 {
+  margin: 6px 0 0;
+}
+
+.pallet-booking-panel__badges,
+.pallet-detail-main-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pallet-booking-grid,
+.pallet-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.pallet-booking-field,
+.pallet-detail-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pallet-booking-field--wide,
+.pallet-detail-field--wide {
+  grid-column: 1 / -1;
+}
+
+.pallet-booking-field label,
+.pallet-detail-field label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.pallet-detail-field div {
+  min-height: 52px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.pallet-booking-field textarea {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+}
+
+.pallet-booking-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.pallet-booking-form-actions button {
+  width: auto;
+  min-width: 180px;
+}
+
+.pallet-booking-sidebar-card,
+.pallet-detail-side-card {
+  overflow: hidden;
+}
+
+.pallet-booking-sidebar-card__head,
+.pallet-detail-side-card__head {
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #0f766e 0%, #0f9d8a 100%);
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.pallet-booking-sidebar-card__body,
+.pallet-detail-side-card__body {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.pallet-booking-meta,
+.pallet-detail-side-item {
+  display: grid;
+  gap: 4px;
+}
+
+.pallet-booking-meta span,
+.pallet-detail-side-item span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pallet-booking-meta strong,
+.pallet-detail-side-item strong {
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.pallet-detail-page {
+  display: grid;
+  gap: 18px;
+}
+
+.pallet-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.pallet-detail-main-card {
+  padding: 24px;
+}
+
+body.darkmode .pallet-customer-modal__list,
+body.darkmode .pallet-customer-modal__form,
+body.darkmode .pallet-booking-panel,
+body.darkmode .pallet-booking-sidebar-card,
+body.darkmode .pallet-detail-main-card,
+body.darkmode .pallet-detail-side-card,
+body.darkmode .pallet-customer-list__item,
+body.darkmode .pallet-detail-field div {
+  border-color: #334155;
+  background: rgba(15, 23, 42, 0.82);
+  color: #e5e7eb;
+}
+
+body.darkmode .pallet-open-page-subtitle,
+body.darkmode .pallet-customer-list__item span,
+body.darkmode .pallet-booking-meta span,
+body.darkmode .pallet-detail-side-item span,
+body.darkmode .pallet-booking-field label,
+body.darkmode .pallet-detail-field label {
+  color: #94a3b8;
+}
+
+body.darkmode .pallet-open-link-button {
+  color: #93c5fd;
+}
+
+@media (max-width: 980px) {
+  .pallet-open-hero-actions--stacked {
+    justify-content: flex-start;
+  }
+
+  .pallet-customer-modal__layout,
+  .pallet-booking-shell,
+  .pallet-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .pallet-booking-grid,
+  .pallet-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pallet-booking-field--wide,
+  .pallet-detail-field--wide {
+    grid-column: auto;
+  }
+
+  .pallet-booking-detail-modal,
+  .pallet-customer-modal,
+  .pallet-detail-main-card {
+    padding: 16px;
+  }
+}

@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Offene Paletten</title>
-  <link rel="stylesheet" href="/public/styles.css?v=20260316-5">
+  <link rel="stylesheet" href="/public/styles.css?v=20260317-2">
 </head>
 <body>
 <header class="topbar topbar-modern admin-topbar">
   <div class="system-logo-wrap pallet-topbar-logo">
     <img src="/public/logo.png" alt="Systemlogo" class="system-logo">
-    <a href="/modules/pallets/index.html?v=20260316-5" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
+    <a href="/modules/pallets/index.html?v=20260317-2" class="system-logo-home" aria-label="Zum Palettenmodul"></a>
   </div>
   <div></div>
   <div class="row topbar-actions" style="align-items:center;">
@@ -29,7 +29,8 @@
         <span class="pill" id="me">-</span>
       </div>
     </div>
-    <div class="pallet-open-hero-actions">
+    <div class="pallet-open-hero-actions pallet-open-hero-actions--stacked">
+      <button class="secondary pallet-open-create-button" id="openCustomerModalBtn" type="button">Kunden + Adressen</button>
       <button class="secondary pallet-open-create-button" id="openCreateBookingModalBtn" type="button">Neue Buchung</button>
     </div>
   </section>
@@ -38,7 +39,7 @@
     <article class="card module-dashboard-card pallet-form-card">
       <div class="module-dashboard-card__head">
         <div>
-          <span class="module-section-kicker">Filter</span>
+          <span class="module-section-kicker">Übersicht</span>
           <h2>Buchungen</h2>
         </div>
       </div>
@@ -54,10 +55,14 @@
       <div class="row">
         <div>
           <label for="filterTitle">Titel</label>
-          <input id="filterTitle" placeholder="Titel filtern">
+          <select id="filterTitle">
+            <option value="">Alle</option>
+            <option value="abholung">Abholung</option>
+            <option value="rueckfuehrung">R&uuml;ckf&uuml;hrung</option>
+          </select>
         </div>
         <div>
-          <label for="filterCompany">Firma</label>
+          <label for="filterCompany">Kunde / Firma</label>
           <input id="filterCompany" placeholder="Firma filtern">
         </div>
         <div>
@@ -86,96 +91,88 @@
 
       <div class="pallet-open-toolbar" style="margin-top:16px;">
         <button class="secondary" id="reloadOpenPalletsBtn" type="button">Neu laden</button>
-        <button class="secondary" id="resetOpenPalletFiltersBtn" type="button">Filter zurücksetzen</button>
+        <button class="secondary" id="resetOpenPalletFiltersBtn" type="button">Filter zur&uuml;cksetzen</button>
       </div>
 
       <div class="pallet-section-table" style="margin-top:16px;">
         <div id="openPalletsTableWrap" style="overflow:auto;"></div>
       </div>
       <div class="pallet-open-toolbar pallet-open-toolbar--pagination" id="openPalletPagination" style="margin-top:16px;">
-        <button class="secondary" id="openPalletPrevBtn" type="button">Zurück</button>
+        <button class="secondary" id="openPalletPrevBtn" type="button">Zur&uuml;ck</button>
         <button class="secondary" id="openPalletNextBtn" type="button">Weiter</button>
       </div>
     </article>
   </section>
 </main>
 
-<div class="modalBack" id="openPalletModalBack" aria-hidden="true">
-  <div class="modal password-modal pallet-booking-modal" role="dialog" aria-modal="true" aria-labelledby="openPalletModalTitle" style="max-width:920px;">
-    <div class="password-modal-head">
-      <h3 id="openPalletModalTitle">Neue Buchung</h3>
-      <button class="secondary" id="closeOpenPalletModalBtn" type="button">Schließen</button>
-    </div>
-    <div class="row" style="margin-top:10px;">
+<div class="modalBack" id="bookingModalBack" aria-hidden="true">
+  <div class="modal password-modal pallet-booking-modal pallet-booking-detail-modal" role="dialog" aria-modal="true" aria-labelledby="bookingModalTitle">
+    <div class="password-modal-head pallet-booking-modal-head">
       <div>
-        <label for="openPalletTitle">Titel (Pflicht)</label>
-        <input id="openPalletTitle" placeholder="z.B. Rückholung Kunde Nord">
+        <span class="module-section-kicker">Offene Paletten</span>
+        <h3 id="bookingModalTitle">Buchung</h3>
       </div>
-      <div>
-        <label for="openPalletCompany">Firma</label>
-        <input id="openPalletCompany" placeholder="z.B. Muster GmbH">
-      </div>
-      <div>
-        <label for="openPalletCity">Ort</label>
-        <input id="openPalletCity" placeholder="z.B. Hamburg">
-      </div>
-      <div>
-        <label for="openPalletPostalCode">Postleitzahl</label>
-        <input id="openPalletPostalCode" placeholder="z.B. 20095">
+      <div class="pallet-booking-modal-head__actions">
+        <button class="secondary" id="bookingModalEditBtn" type="button" style="display:none;">Bearbeiten</button>
+        <button class="secondary" id="bookingModalTabBtn" type="button" style="display:none;">Neuer Tab</button>
+        <button class="secondary" id="closeBookingModalBtn" type="button">Schlie&szlig;en</button>
       </div>
     </div>
-    <div class="row" style="margin-top:14px;">
-      <div>
-        <label for="openPalletOrderNo">Auftragsnummer</label>
-        <input id="openPalletOrderNo" placeholder="z.B. A-2026-015">
-      </div>
-      <div>
-        <label for="openPalletCount">Anzahl der Paletten (Pflicht)</label>
-        <input id="openPalletCount" type="number" min="1" value="1">
-      </div>
-      <div>
-        <label for="openPalletUrgency">Dringlichkeit</label>
-        <select id="openPalletUrgency">
-          <option value="low">Niedrig</option>
-          <option value="medium" selected>Mittel</option>
-          <option value="high">Hoch</option>
-          <option value="critical">Kritisch</option>
-        </select>
-      </div>
-      <div style="flex:1; min-width:280px;">
-        <label for="openPalletNote">Notiz</label>
-        <input id="openPalletNote" placeholder="z.B. Beleg folgt per Mail">
-      </div>
-    </div>
-    <p id="openPalletCreateMsg" class="pallet-message"></p>
-    <div class="row" style="justify-content:flex-end; margin-top:8px;">
-      <button class="secondary" id="cancelOpenPalletModalBtn" type="button">Abbrechen</button>
-      <button class="primary" id="createOpenPalletBtn" type="button">Buchung speichern</button>
-    </div>
+    <p id="bookingModalMsg" class="pallet-message"></p>
+    <div id="bookingModalBody"></div>
   </div>
 </div>
 
-<div class="modalBack" id="truckPlanningModalBack" aria-hidden="true">
-  <div class="modal password-modal pallet-booking-modal pallet-truck-modal" role="dialog" aria-modal="true" aria-labelledby="truckPlanningModalTitle" style="max-width:620px;">
+<div class="modalBack" id="customerModalBack" aria-hidden="true">
+  <div class="modal password-modal pallet-booking-modal pallet-customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
     <div class="password-modal-head">
-      <h3 id="truckPlanningModalTitle">LKW eingeplant</h3>
-      <button class="secondary" id="closeTruckPlanningModalBtn" type="button">Schlie&szlig;en</button>
-    </div>
-    <p class="pallet-status-note pallet-status-note--compact">Bitte Kennzeichen und Datum f&uuml;r die Einplanung erfassen.</p>
-    <div class="row" style="margin-top:14px;">
       <div>
-        <label for="truckPlanningPlate">Kennzeichen</label>
-        <input id="truckPlanningPlate" placeholder="z.B. BGLP123">
+        <span class="module-section-kicker">Stammdaten</span>
+        <h3 id="customerModalTitle">Kunden + Adressen</h3>
       </div>
-      <div>
-        <label for="truckPlanningDate">Datum</label>
-        <input id="truckPlanningDate" type="date">
-      </div>
+      <button class="secondary" id="closeCustomerModalBtn" type="button">Schlie&szlig;en</button>
     </div>
-    <p id="truckPlanningModalMsg" class="pallet-message"></p>
-    <div class="row" style="justify-content:flex-end; margin-top:8px;">
-      <button class="secondary" id="cancelTruckPlanningBtn" type="button">Abbrechen</button>
-      <button class="primary" id="saveTruckPlanningBtn" type="button">Speichern</button>
+    <div class="pallet-customer-modal__layout">
+      <div class="pallet-customer-modal__list">
+        <div class="pallet-customer-modal__list-head">
+          <strong>Gespeicherte Kunden</strong>
+          <button class="secondary" id="newCustomerBtn" type="button">Neu</button>
+        </div>
+        <div id="customerListWrap" class="pallet-customer-list"></div>
+      </div>
+      <div class="pallet-customer-modal__form">
+        <div class="row">
+          <div>
+            <label for="customerName">Kundenname</label>
+            <input id="customerName" placeholder="z.B. Muster GmbH">
+          </div>
+          <div>
+            <label for="customerStreet">Stra&szlig;e / Hausnummer</label>
+            <input id="customerStreet" placeholder="z.B. Musterstra&szlig;e 1">
+          </div>
+          <div>
+            <label for="customerAddressExtra">Adresszusatz</label>
+            <input id="customerAddressExtra" placeholder="z.B. Tor 2 / Lager Nord">
+          </div>
+          <div>
+            <label for="customerPostalCode">Postleitzahl</label>
+            <input id="customerPostalCode" placeholder="z.B. 20095">
+          </div>
+          <div>
+            <label for="customerCity">Ort</label>
+            <input id="customerCity" placeholder="z.B. Hamburg">
+          </div>
+          <div>
+            <label for="customerCountry">Land</label>
+            <input id="customerCountry" placeholder="z.B. Deutschland">
+          </div>
+        </div>
+        <p id="customerModalMsg" class="pallet-message"></p>
+        <div class="row" style="justify-content:flex-end; margin-top:10px;">
+          <button class="secondary" id="cancelCustomerModalBtn" type="button">Abbrechen</button>
+          <button class="primary" id="saveCustomerBtn" type="button">Kunde speichern</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -183,6 +180,6 @@
 <footer class="site-copyright">&copy; 2026 / CTSH Systems</footer>
 <script src="/theme.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/public/modules/pallets/open-pallets.js?v=20260316-5"></script>
+<script src="/public/modules/pallets/open-pallets.js?v=20260317-2"></script>
 </body>
 </html>
