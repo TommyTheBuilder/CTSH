@@ -4469,47 +4469,76 @@ body.darkmode .module-checklist__item {
   padding: 24px;
 }
 
+body.dark .pallet-customer-modal__list,
 body.darkmode .pallet-customer-modal__list,
+body.dark .pallet-customer-modal__form,
 body.darkmode .pallet-customer-modal__form,
+body.dark .pallet-booking-panel,
 body.darkmode .pallet-booking-panel,
+body.dark .pallet-booking-sidebar-card,
 body.darkmode .pallet-booking-sidebar-card,
+body.dark .pallet-detail-main-card,
 body.darkmode .pallet-detail-main-card,
+body.dark .pallet-detail-side-card,
 body.darkmode .pallet-detail-side-card,
+body.dark .pallet-detail-type-hero,
 body.darkmode .pallet-detail-type-hero,
+body.dark .pallet-detail-route-card,
 body.darkmode .pallet-detail-route-card,
+body.dark .pallet-customer-list__item,
 body.darkmode .pallet-customer-list__item,
+body.dark .pallet-detail-field div,
 body.darkmode .pallet-detail-field div {
   border-color: #334155;
   background: rgba(15, 23, 42, 0.82);
   color: #e5e7eb;
 }
 
+body.dark .pallet-open-page-subtitle,
 body.darkmode .pallet-open-page-subtitle,
+body.dark .pallet-customer-list__item span,
 body.darkmode .pallet-customer-list__item span,
+body.dark .pallet-booking-meta span,
 body.darkmode .pallet-booking-meta span,
+body.dark .pallet-detail-side-item span,
 body.darkmode .pallet-detail-side-item span,
+body.dark .pallet-booking-field label,
 body.darkmode .pallet-booking-field label,
+body.dark .pallet-detail-field label,
 body.darkmode .pallet-detail-field label,
+body.dark .pallet-detail-route-row span,
 body.darkmode .pallet-detail-route-row span {
   color: #94a3b8;
 }
 
+body.dark .pallet-booking-form-actions,
 body.darkmode .pallet-booking-form-actions {
   background: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.92) 28%, rgba(15, 23, 42, 0.98) 100%);
 }
 
+body.dark .pallet-open-link-button,
 body.darkmode .pallet-open-link-button {
   color: #93c5fd;
 }
 
+body.dark .pallet-detail-type-hero__icon,
 body.darkmode .pallet-detail-type-hero__icon,
+body.dark .pallet-detail-route-card__icon,
 body.darkmode .pallet-detail-route-card__icon {
   color: #5eead4;
   background: linear-gradient(135deg, rgba(13, 148, 136, 0.24), rgba(37, 99, 235, 0.18));
 }
 
+body.dark .pallet-detail-route-card__head,
 body.darkmode .pallet-detail-route-card__head,
-body.darkmode .pallet-detail-route-row strong {
+body.dark .pallet-detail-route-row strong,
+body.darkmode .pallet-detail-route-row strong,
+body.dark .pallet-detail-side-item strong,
+body.darkmode .pallet-detail-side-item strong,
+body.dark .pallet-detail-type-hero__copy h2,
+body.darkmode .pallet-detail-type-hero__copy h2,
+body.dark .pallet-detail-main-card__head,
+body.darkmode .pallet-detail-main-card__head {
   color: #e5e7eb;
 }
 

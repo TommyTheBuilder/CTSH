@@ -57,7 +57,7 @@ const URGENCY_LABELS = {
   critical: "Kritisch"
 };
 
-const PALLET_ASSET_VERSION = "20260317-6";
+const PALLET_ASSET_VERSION = "20260317-7";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 function titleLabel(value) {
@@ -225,7 +225,6 @@ async function init() {
     window.location.href = `/modules/pallets/open-pallets.html?v=${PALLET_ASSET_VERSION}&booking=${encodeURIComponent(booking.id)}`;
   });
   $("downloadPdfBtn").addEventListener("click", () => downloadPdf(booking.id));
-  $("printDetailBtn").addEventListener("click", () => window.print());
   $("logoutBtn").addEventListener("click", () => {
     localStorage.removeItem("token");
     window.location.href = "/login.html";
