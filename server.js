@@ -1042,32 +1042,6 @@ function createPdfDocument() {
   };
 }
 
-function getOpenPalletPdfStatusColor(status) {
-  switch (String(status || "")) {
-    case "truck_planned":
-      return [0.93, 0.70, 0.24];
-    case "completed_waiting_document":
-      return [0.12, 0.60, 0.56];
-    case "document_booked_scanned":
-      return [0.18, 0.58, 0.35];
-    default:
-      return [0.20, 0.43, 0.82];
-  }
-}
-
-function getOpenPalletPdfUrgencyColor(level) {
-  switch (String(level || "")) {
-    case "low":
-      return [0.20, 0.58, 0.38];
-    case "high":
-      return [0.84, 0.42, 0.19];
-    case "critical":
-      return [0.73, 0.17, 0.20];
-    default:
-      return [0.84, 0.62, 0.20];
-  }
-}
-
 function getOpenPalletPdfRouteSummary(booking) {
   const start = booking?.customer_name || booking?.company || "-";
   if (isOpenPalletTransferTitle(booking?.title)) {
@@ -1188,90 +1162,6 @@ function drawOpenPalletPdfInfoCard(doc, x, y, width, title, rows, options = {}) 
   return cardHeight;
 }
 
-function measureOpenPalletPdfDetailCard(fields, width) {
-  const padding = 18;
-  const columnGap = 12;
-  const gridGap = 10;
-  const tileWidth = Math.max(((Number(width || 0) - (padding * 2) - columnGap) / 2), 80);
-  const measuredFields = fields.map((field) => {
-    const measurement = measurePdfWrappedText(field?.value || "-", tileWidth - 20, 11.1, {
-      lineHeight: 14,
-      charFactor: 0.52
-    });
-    return {
-      label: String(field?.label || "-"),
-      lines: measurement.lines,
-      boxHeight: Math.max(54, 18 + measurement.height + 14)
-    };
-  });
-
-  const rowHeights = [];
-  for (let index = 0; index < measuredFields.length; index += 2) {
-    rowHeights.push(Math.max(
-      measuredFields[index]?.boxHeight || 0,
-      measuredFields[index + 1]?.boxHeight || 0
-    ));
-  }
-
-  const gridHeight = rowHeights.reduce((sum, value) => sum + value, 0) + (Math.max(rowHeights.length - 1, 0) * gridGap);
-  return {
-    measuredFields,
-    tileWidth,
-    rowHeights,
-    padding,
-    columnGap,
-    gridGap,
-    height: 30 + 18 + gridHeight + 18
-  };
-}
-
-function drawOpenPalletPdfDetailCard(doc, x, y, width, fields) {
-  const measurement = measureOpenPalletPdfDetailCard(fields, width);
-  doc.drawRect(x, y, width, measurement.height, {
-    fillColor: [0.99, 0.99, 1],
-    strokeColor: [0.86, 0.89, 0.93],
-    lineWidth: 1
-  });
-  doc.drawRect(x, y, width, 30, {
-    fillColor: [0.07, 0.16, 0.29]
-  });
-  doc.drawText(x + 16, y + 20, "Buchungsdaten", {
-    size: 10.6,
-    font: "F2",
-    color: [1, 1, 1]
-  });
-
-  let currentY = y + 48;
-  let fieldIndex = 0;
-  for (const rowHeight of measurement.rowHeights) {
-    for (let column = 0; column < 2; column += 1) {
-      const field = measurement.measuredFields[fieldIndex++];
-      if (!field) continue;
-
-      const tileX = x + measurement.padding + (column * (measurement.tileWidth + measurement.columnGap));
-      doc.drawRect(tileX, currentY, measurement.tileWidth, rowHeight, {
-        fillColor: [1, 1, 1],
-        strokeColor: [0.90, 0.92, 0.95],
-        lineWidth: 1
-      });
-      doc.drawText(tileX + 10, currentY + 17, field.label.toUpperCase(), {
-        size: 7.1,
-        font: "F2",
-        color: [0.45, 0.50, 0.58]
-      });
-      doc.drawWrappedText(tileX + 10, currentY + 35, measurement.tileWidth - 20, field.lines, {
-        size: 11.1,
-        lineHeight: 14,
-        font: "F1",
-        color: [0.09, 0.13, 0.18]
-      });
-    }
-    currentY += rowHeight + measurement.gridGap;
-  }
-
-  return measurement.height;
-}
-
 function drawOpenPalletPdfNoteCard(doc, x, y, width, title, lines) {
   const measurement = measurePdfWrappedText(lines, width - 36, 10.6, {
     lineHeight: 14.2,
@@ -1338,11 +1228,7 @@ function buildOpenPalletPdfBuffer(booking) {
   const contentBottom = doc.pageHeight - 78;
   const footerText = `Buchung #${booking?.id || "-"} | PDF erstellt ${formatOpenPalletPdfDateTime(new Date())}`;
   const titleText = OPEN_PALLET_TITLES[booking?.title] || booking?.title || "-";
-  const statusText = OPEN_PALLET_STATUSES[booking?.status] || booking?.status || "-";
-  const urgencyText = OPEN_PALLET_URGENCY_LEVELS[booking?.urgency_level] || booking?.urgency_level || "-";
   const routeText = getOpenPalletPdfRouteSummary(booking);
-  const statusColor = getOpenPalletPdfStatusColor(booking?.status);
-  const urgencyColor = getOpenPalletPdfUrgencyColor(booking?.urgency_level);
   const sections = getOpenPalletAddressSections(booking);
   const addressRows = sections.map((section) => ({
     title: section.title,
@@ -1356,15 +1242,6 @@ function buildOpenPalletPdfBuffer(booking) {
       { label: section.referenceLabel, value: section.reference }
     ]
   }));
-  const detailFields = [
-    { label: "Buchungs-ID", value: `#${booking?.id || "-"}` },
-    { label: "Auftragsnummer", value: booking?.order_no || "-" },
-    { label: "Paletten", value: String(booking?.pallet_count ?? "-") },
-    { label: "Abteilung", value: booking?.department_name || "-" }
-  ];
-  if (booking?.truck_license_plate) {
-    detailFields.push({ label: "LKW Kennzeichen", value: booking.truck_license_plate });
-  }
 
   let cursorY = margin;
   let pageStarted = false;
@@ -1445,13 +1322,9 @@ function buildOpenPalletPdfBuffer(booking) {
       font: "F2",
       color: [0.07, 0.16, 0.29]
     });
-    drawOpenPalletPdfBadge(doc, infoX, cursorY + 54, statusText, {
+    drawOpenPalletPdfBadge(doc, infoX, cursorY + 60, `Paletten ${String(booking?.pallet_count ?? "-")}`, {
       width: 128,
-      fillColor: statusColor
-    });
-    drawOpenPalletPdfBadge(doc, infoX, cursorY + 84, urgencyText, {
-      width: 128,
-      fillColor: urgencyColor
+      fillColor: [0.10, 0.60, 0.53]
     });
 
     cursorY += 136;
@@ -1466,18 +1339,8 @@ function buildOpenPalletPdfBuffer(booking) {
 
   beginPage(false);
 
-  const summaryCards = [
-    { label: "Status", value: statusText, accentColor: statusColor },
-    { label: "Dringlichkeit", value: urgencyText, accentColor: urgencyColor },
-    { label: "Paletten", value: String(booking?.pallet_count ?? "-"), accentColor: [0.09, 0.21, 0.39] },
-    { label: "Auftragsnummer", value: booking?.order_no || "-", accentColor: [0.10, 0.60, 0.53] }
-  ];
-  const summaryGap = 12;
-  const summaryWidth = (contentWidth - (summaryGap * (summaryCards.length - 1))) / summaryCards.length;
   ensureSpace(68);
-  summaryCards.forEach((item, index) => {
-    drawOpenPalletPdfMetricCard(doc, margin + (index * (summaryWidth + summaryGap)), cursorY, summaryWidth, item.label, item.value, item.accentColor);
-  });
+  drawOpenPalletPdfMetricCard(doc, margin, cursorY, 168, "Palettenanzahl", String(booking?.pallet_count ?? "-"), [0.10, 0.60, 0.53]);
   cursorY += 82;
 
   ensureSpace(28);
@@ -1524,14 +1387,6 @@ function buildOpenPalletPdfBuffer(booking) {
     });
     cursorY += cardHeight + 20;
   }
-
-  ensureSpace(28);
-  cursorY += drawOpenPalletPdfSectionHeading(doc, margin, cursorY, contentWidth, "Buchungsdaten");
-
-  const detailCardHeight = measureOpenPalletPdfDetailCard(detailFields, contentWidth).height;
-  ensureSpace(detailCardHeight);
-  drawOpenPalletPdfDetailCard(doc, margin, cursorY, contentWidth, detailFields);
-  cursorY += detailCardHeight + 18;
 
   const noteLines = buildOpenPalletPdfNoteLines(booking?.note, contentWidth - 36);
   if (noteLines.length) {
