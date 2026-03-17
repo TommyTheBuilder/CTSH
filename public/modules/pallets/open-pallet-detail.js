@@ -57,7 +57,8 @@ const URGENCY_LABELS = {
   critical: "Kritisch"
 };
 
-const PALLET_ASSET_VERSION = "20260317-4";
+const PALLET_ASSET_VERSION = "20260317-5";
+const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 function titleLabel(value) {
   return TITLE_LABELS[value] || value || "-";
@@ -172,23 +173,33 @@ function detailAddressCards(booking) {
   return cards;
 }
 
-async function downloadPdf(bookingId) {
-  const response = await api(`/api/modules/pallets/open-pallets/${bookingId}/pdf`, { method: "GET", headers: {} });
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    alert(data?.error || "PDF konnte nicht geladen werden.");
-    return;
+function getSelectedPdfLanguage() {
+  const selected = $("pdfLanguageSelect")?.value || "";
+  if (["de", "en", "hr", "ru"].includes(selected)) {
+    return selected;
   }
+  return "de";
+}
 
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = extractFilename(response, `offene-paletten-${bookingId}.pdf`);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+function initializePdfLanguageSelect() {
+  const select = $("pdfLanguageSelect");
+  if (!select) return;
+
+  const stored = localStorage.getItem(PDF_LANGUAGE_STORAGE_KEY) || "de";
+  select.value = ["de", "en", "hr", "ru"].includes(stored) ? stored : "de";
+  select.addEventListener("change", () => {
+    localStorage.setItem(PDF_LANGUAGE_STORAGE_KEY, getSelectedPdfLanguage());
+  });
+}
+
+function downloadPdf(bookingId) {
+  const language = getSelectedPdfLanguage();
+  localStorage.setItem(PDF_LANGUAGE_STORAGE_KEY, language);
+  const url = `/modules/pallets/open-pallet-print.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}&lang=${encodeURIComponent(language)}&autoprint=1`;
+  const tab = window.open(url, "_blank");
+  if (!tab) {
+    window.location.href = url;
+  }
 }
 
 async function init() {
@@ -208,6 +219,7 @@ async function init() {
 
   $("detailPageTitle").textContent = `Details f\u00fcr ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
   $("detailPageBadge").textContent = statusLabel(booking.status);
+  initializePdfLanguageSelect();
   $("openInModuleBtn").textContent = booking.can_edit ? "Im Modul bearbeiten" : "Im Modul \u00f6ffnen";
   $("openInModuleBtn").addEventListener("click", () => {
     window.location.href = `/modules/pallets/open-pallets.html?v=${PALLET_ASSET_VERSION}&booking=${encodeURIComponent(booking.id)}`;

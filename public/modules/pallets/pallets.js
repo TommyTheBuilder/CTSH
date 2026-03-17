@@ -313,7 +313,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
   high: "Hoch",
   critical: "Kritisch"
 };
-const PALLET_ASSET_VERSION = "20260317-4";
+const PALLET_ASSET_VERSION = "20260317-5";
 
 const socket = io();
 function joinLocationRoom() {
