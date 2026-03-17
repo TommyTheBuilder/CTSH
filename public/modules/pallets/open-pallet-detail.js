@@ -57,7 +57,7 @@ const URGENCY_LABELS = {
   critical: "Kritisch"
 };
 
-const PALLET_ASSET_VERSION = "20260317-9";
+const PALLET_ASSET_VERSION = "20260317-10";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 function titleLabel(value) {
