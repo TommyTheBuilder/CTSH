@@ -5,6 +5,11 @@ let departments = [];
 let entrepreneurs = [];
 let editingEntrepreneurId = null;
 let adminHistory = [];
+let bookingHistory = [];
+let bookingHistoryOffset = 0;
+let bookingHistoryHasMore = false;
+
+const BOOKING_HISTORY_PAGE_SIZE = 25;
 
 function $(id) {
   return document.getElementById(id);
@@ -20,6 +25,10 @@ function api(path, opts = {}) {
       ...(opts.headers || {})
     }
   });
+}
+
+async function readJsonSafe(response) {
+  return response.json().catch(() => ({}));
 }
 
 function setMsg(id, text, ok = false) {
@@ -68,6 +77,17 @@ function showPasswordModal(show) {
   back.setAttribute("aria-hidden", show ? "false" : "true");
 }
 
+function showBookingHistoryModal(show) {
+  const back = $("bookingHistoryModalBack");
+  if (!back) return;
+  back.style.display = show ? "flex" : "none";
+  back.setAttribute("aria-hidden", show ? "false" : "true");
+  if (show) {
+    closeSettingsMenu();
+    window.requestAnimationFrame(() => $("closeBookingHistoryModalBtn")?.focus());
+  }
+}
+
 function bindSettingsMenu() {
   const trigger = $("settingsTriggerBtn");
   const wrap = $("settingsMenuWrap");
@@ -87,6 +107,7 @@ function bindSettingsMenu() {
     if (event.key === "Escape") {
       closeSettingsMenu();
       showPasswordModal(false);
+      showBookingHistoryModal(false);
     }
   });
 
@@ -132,25 +153,32 @@ function bindPasswordModal() {
     const confirm_password = String($("confirmPassword").value || "").trim();
 
     if (!current_password || !new_password || !confirm_password) {
-      return setMsg("passwordModalMsg", "Bitte alle Felder ausfüllen.");
+      return setMsg("passwordModalMsg", "Bitte alle Felder ausf\u00fcllen.");
     }
     if (new_password.length < 8) {
       return setMsg("passwordModalMsg", "Das neue Passwort muss mindestens 8 Zeichen lang sein.");
     }
     if (new_password !== confirm_password) {
-      return setMsg("passwordModalMsg", "Die Passwörter stimmen nicht überein.");
+      return setMsg("passwordModalMsg", "Die Passw\u00f6rter stimmen nicht \u00fcberein.");
     }
 
     const response = await api("/api/change-password", {
       method: "POST",
       body: JSON.stringify({ current_password, new_password })
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await readJsonSafe(response);
     if (!response.ok) {
       return setMsg("passwordModalMsg", data?.error || "Passwort konnte nicht gespeichert werden.");
     }
     setMsg("passwordModalMsg", "Passwort gespeichert.", true);
     window.setTimeout(() => showPasswordModal(false), 700);
+  });
+}
+
+function bindBookingHistoryModal() {
+  $("closeBookingHistoryModalBtn")?.addEventListener("click", () => showBookingHistoryModal(false));
+  $("bookingHistoryModalBack")?.addEventListener("click", (event) => {
+    if (event.target === $("bookingHistoryModalBack")) showBookingHistoryModal(false);
   });
 }
 
@@ -169,8 +197,8 @@ async function loadContext() {
       window.location.href = "/login.html";
       return false;
     }
-    const data = await response.json().catch(() => ({}));
-    alert(data?.error || "Modul-Administration konnte nicht geladen werden.");
+    const data = await readJsonSafe(response);
+    window.alert(data?.error || "Modul-Administration konnte nicht geladen werden.");
     window.location.href = "/dashboard.html";
     return false;
   }
@@ -183,20 +211,20 @@ async function loadContext() {
 function renderLocations() {
   $("locationsBody").innerHTML = locations.map((entry) => `
     <tr>
-      <td>${entry.name}</td>
-      <td><button class="secondary" type="button" data-delete-location="${entry.id}" style="width:auto;">Löschen</button></td>
+      <td>${escapeHtml(entry.name)}</td>
+      <td><button class="secondary" type="button" data-delete-location="${entry.id}" style="width:auto;">L\u00f6schen</button></td>
     </tr>
   `).join("");
 
   document.querySelectorAll("[data-delete-location]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Standort wirklich löschen?")) return;
+      if (!window.confirm("Standort wirklich l\u00f6schen?")) return;
       const response = await api(`/api/modules/pallets/admin/locations/${encodeURIComponent(button.dataset.deleteLocation)}`, {
         method: "DELETE"
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("locationMsg", data?.error || "Löschen fehlgeschlagen.");
-      setMsg("locationMsg", "Standort gelöscht.", true);
+      const data = await readJsonSafe(response);
+      if (!response.ok) return setMsg("locationMsg", data?.error || "L\u00f6schen fehlgeschlagen.");
+      setMsg("locationMsg", "Standort gel\u00f6scht.", true);
       await loadLocations();
       await loadAdminHistory();
     });
@@ -206,20 +234,20 @@ function renderLocations() {
 function renderDepartments() {
   $("departmentsBody").innerHTML = departments.map((entry) => `
     <tr>
-      <td>${entry.name}</td>
-      <td><button class="secondary" type="button" data-delete-department="${entry.id}" style="width:auto;">Löschen</button></td>
+      <td>${escapeHtml(entry.name)}</td>
+      <td><button class="secondary" type="button" data-delete-department="${entry.id}" style="width:auto;">L\u00f6schen</button></td>
     </tr>
   `).join("");
 
   document.querySelectorAll("[data-delete-department]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Abteilung wirklich löschen?")) return;
+      if (!window.confirm("Abteilung wirklich l\u00f6schen?")) return;
       const response = await api(`/api/modules/pallets/admin/departments/${encodeURIComponent(button.dataset.deleteDepartment)}`, {
         method: "DELETE"
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("departmentMsg", data?.error || "Löschen fehlgeschlagen.");
-      setMsg("departmentMsg", "Abteilung gelöscht.", true);
+      const data = await readJsonSafe(response);
+      if (!response.ok) return setMsg("departmentMsg", data?.error || "L\u00f6schen fehlgeschlagen.");
+      setMsg("departmentMsg", "Abteilung gel\u00f6scht.", true);
       await loadDepartments();
       await loadAdminHistory();
     });
@@ -233,12 +261,12 @@ function entrepreneurAddress(entry) {
 function renderEntrepreneurs() {
   $("entrepreneursBody").innerHTML = entrepreneurs.map((entry) => `
     <tr>
-      <td>${entry.name}</td>
-      <td>${entrepreneurAddress(entry)}</td>
+      <td>${escapeHtml(entry.name)}</td>
+      <td>${escapeHtml(entrepreneurAddress(entry))}</td>
       <td>
         <div class="module-admin-inline-actions">
           <button class="secondary" type="button" data-edit-entrepreneur="${entry.id}" style="width:auto;">Bearbeiten</button>
-          <button class="secondary" type="button" data-delete-entrepreneur="${entry.id}" style="width:auto;">Löschen</button>
+          <button class="secondary" type="button" data-delete-entrepreneur="${entry.id}" style="width:auto;">L\u00f6schen</button>
         </div>
       </td>
     </tr>
@@ -259,14 +287,14 @@ function renderEntrepreneurs() {
 
   document.querySelectorAll("[data-delete-entrepreneur]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Frachtführer wirklich löschen?")) return;
+      if (!window.confirm("Frachtf\u00fchrer wirklich l\u00f6schen?")) return;
       const response = await api(`/api/modules/pallets/admin/entrepreneurs/${encodeURIComponent(button.dataset.deleteEntrepreneur)}`, {
         method: "DELETE"
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "Löschen fehlgeschlagen.");
+      const data = await readJsonSafe(response);
+      if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "L\u00f6schen fehlgeschlagen.");
       if (String(editingEntrepreneurId) === String(button.dataset.deleteEntrepreneur)) resetEntrepreneurForm();
-      setMsg("entrepreneurMsg", "Frachtführer gelöscht.", true);
+      setMsg("entrepreneurMsg", "Frachtf\u00fchrer gel\u00f6scht.", true);
       await loadEntrepreneurs();
       await loadAdminHistory();
     });
@@ -302,8 +330,8 @@ async function loadEntrepreneurs() {
 function historyActionLabel(action) {
   return ({
     create: "Angelegt",
-    update: "Geändert",
-    delete: "Gelöscht"
+    update: "Ge\u00e4ndert",
+    delete: "Gel\u00f6scht"
   })[action] || action || "-";
 }
 
@@ -311,7 +339,7 @@ function historyEntityLabel(entityType) {
   return ({
     location: "Standort",
     department: "Abteilung",
-    entrepreneur: "Frachtführer"
+    entrepreneur: "Frachtf\u00fchrer"
   })[entityType] || entityType || "-";
 }
 
@@ -322,7 +350,7 @@ function summarizeHistoryDetails(entry) {
 
   const fields = [
     { key: "name", label: "Name" },
-    { key: "street", label: "Straße" },
+    { key: "street", label: "Stra\u00dfe" },
     { key: "postal_code", label: "PLZ" },
     { key: "city", label: "Ort" }
   ];
@@ -339,7 +367,7 @@ function renderAdminHistory() {
   if (!body) return;
 
   if (!adminHistory.length) {
-    body.innerHTML = `<tr><td colspan="6">Keine Einträge</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6">Keine Eintr\u00e4ge</td></tr>`;
     return;
   }
 
@@ -361,6 +389,353 @@ async function loadAdminHistory() {
   renderAdminHistory();
 }
 
+function caseStatusLabel(status) {
+  return ({
+    0: "Storniert",
+    1: "Aviso",
+    2: "In Bearbeitung",
+    3: "In Pr\u00fcfung",
+    4: "Gebucht"
+  })[Number(status)] || String(status ?? "-");
+}
+
+function caseStatusClass(status) {
+  return ({
+    0: "cancelled",
+    1: "aviso",
+    2: "processing",
+    3: "review",
+    4: "booked"
+  })[Number(status)] || "neutral";
+}
+
+function productTypeLabel(value) {
+  return ({
+    euro: "Euro-Paletten",
+    h1: "H1-Paletten",
+    gitterbox: "Gitterboxen"
+  })[String(value || "").trim().toLowerCase()] || value || "-";
+}
+
+function caseActionLabel(action) {
+  return ({
+    create: "Angelegt",
+    edit: "Bearbeitet",
+    claim: "\u00dcbernommen",
+    submit: "Zur Pr\u00fcfung",
+    approve: "Gebucht",
+    set_translogica: "Translogica",
+    cancel: "Storniert",
+    delete: "Gel\u00f6scht"
+  })[action] || action || "-";
+}
+
+function caseHistoryFieldLabel(field) {
+  return ({
+    department_id: "Abteilung",
+    license_plate: "Kennzeichen",
+    entrepreneur: "Frachtf\u00fchrer",
+    note: "Notiz",
+    qty_in: "Eingang",
+    qty_out: "Ausgang",
+    non_exchangeable_qty: "Nicht tauschf\u00e4hig",
+    employee_code: "Lagermitarbeiter",
+    product_type: "Produkt",
+    status: "Status",
+    receipt_no: "Belegnummer",
+    translogica_transferred: "Translogica"
+  })[field] || field || "-";
+}
+
+function departmentNameById(id) {
+  const numericId = Number(id || 0);
+  if (!numericId) return "-";
+  const match = departments.find((entry) => Number(entry.id) === numericId);
+  return match?.name || `#${numericId}`;
+}
+
+function formatCaseHistoryValue(field, value) {
+  if (value === undefined || value === null || value === "") return "-";
+  switch (field) {
+    case "status":
+      return caseStatusLabel(value);
+    case "product_type":
+      return productTypeLabel(value);
+    case "translogica_transferred":
+      return value ? "Ja" : "Nein";
+    case "department_id":
+      return departmentNameById(value);
+    default:
+      return String(value);
+  }
+}
+
+function summarizeCaseHistoryChanges(changes) {
+  const entries = Array.isArray(changes) ? changes : [];
+  if (!entries.length) return "-";
+
+  const summary = entries.slice(0, 2).map((change) => {
+    const label = caseHistoryFieldLabel(change?.field);
+    const from = formatCaseHistoryValue(change?.field, change?.from);
+    const to = formatCaseHistoryValue(change?.field, change?.to);
+    return `${label}: ${from} \u2192 ${to}`;
+  });
+
+  if (entries.length > 2) {
+    summary.push(`+${entries.length - 2} weitere`);
+  }
+
+  return summary.join(" | ");
+}
+
+function updateBookingHistoryPagination() {
+  $("bookingHistoryPrevBtn").disabled = bookingHistoryOffset === 0;
+  $("bookingHistoryNextBtn").disabled = !bookingHistoryHasMore;
+  const page = Math.floor(bookingHistoryOffset / BOOKING_HISTORY_PAGE_SIZE) + 1;
+  $("bookingHistoryPageLabel").textContent = `Seite ${page}`;
+}
+
+function renderBookingHistory() {
+  const body = $("bookingHistoryBody");
+  if (!body) return;
+
+  updateBookingHistoryPagination();
+
+  if (!bookingHistory.length) {
+    body.innerHTML = `<tr><td colspan="8">Keine Buchungs\u00e4nderungen</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = bookingHistory.map((entry) => `
+    <tr>
+      <td>${escapeHtml(formatDateTime(entry.last_changed_at))}</td>
+      <td>
+        <div class="admin-booking-history__cell-title">#${escapeHtml(entry.case_id)}</div>
+        <div class="admin-booking-history__meta">
+          <span>Kennzeichen: ${escapeHtml(entry.license_plate || "-")}</span>
+          <span>Beleg: ${escapeHtml(entry.current_receipt_no || entry.receipt_no || "-")}</span>
+          <span>Frachtf\u00fchrer: ${escapeHtml(entry.entrepreneur || "-")}</span>
+          <span>${escapeHtml(productTypeLabel(entry.product_type))}</span>
+          <span>${escapeHtml(`${entry.history_count || 0} \u00c4nderungen`)}</span>
+        </div>
+      </td>
+      <td>${escapeHtml(entry.location_name || "-")}</td>
+      <td>${escapeHtml(entry.department_name || "-")}</td>
+      <td>
+        <span class="pallet-status-badge pallet-status-badge--${escapeHtml(caseStatusClass(entry.status))}">
+          ${escapeHtml(caseStatusLabel(entry.status))}
+        </span>
+      </td>
+      <td>
+        <div class="admin-booking-history__cell-title">${escapeHtml(caseActionLabel(entry.action))}</div>
+        <div class="admin-booking-history__meta admin-booking-history__meta--compact">
+          <span>${escapeHtml(summarizeCaseHistoryChanges(entry.changes))}</span>
+        </div>
+      </td>
+      <td>${escapeHtml(entry.changed_by || "-")}</td>
+      <td><button class="secondary" type="button" data-open-booking-history="${entry.case_id}" style="width:auto;">\u00d6ffnen</button></td>
+    </tr>
+  `).join("");
+
+  document.querySelectorAll("[data-open-booking-history]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const caseId = Number(button.dataset.openBookingHistory || 0);
+      if (!caseId) return;
+      void openBookingHistoryDetail(caseId);
+    });
+  });
+}
+
+async function loadBookingHistory({ resetPage = false } = {}) {
+  if (resetPage) bookingHistoryOffset = 0;
+
+  const params = new URLSearchParams({
+    limit: String(BOOKING_HISTORY_PAGE_SIZE),
+    offset: String(bookingHistoryOffset)
+  });
+
+  const response = await api(`/api/modules/pallets/admin/booking-history?${params.toString()}`, { method: "GET", headers: {} });
+  if (!response.ok) {
+    bookingHistory = [];
+    bookingHistoryHasMore = false;
+    const data = await readJsonSafe(response);
+    const body = $("bookingHistoryBody");
+    if (body) {
+      body.innerHTML = `<tr><td colspan="8">${escapeHtml(data?.error || "Buchungshistorie konnte nicht geladen werden.")}</td></tr>`;
+    }
+    updateBookingHistoryPagination();
+    return;
+  }
+
+  const data = await response.json();
+  bookingHistory = Array.isArray(data?.items) ? data.items : [];
+  bookingHistoryHasMore = Boolean(data?.has_more);
+
+  if (bookingHistoryOffset > 0 && bookingHistory.length === 0) {
+    bookingHistoryOffset = Math.max(0, bookingHistoryOffset - BOOKING_HISTORY_PAGE_SIZE);
+    await loadBookingHistory();
+    return;
+  }
+
+  renderBookingHistory();
+}
+
+function renderBookingDetailField(label, value) {
+  return `
+    <div class="admin-booking-detail__field">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderBookingHistoryChanges(changes) {
+  const entries = Array.isArray(changes) ? changes : [];
+  if (!entries.length) {
+    return `<div class="admin-booking-detail__empty">Keine Detail\u00e4nderungen gespeichert.</div>`;
+  }
+
+  return `
+    <div class="change-grid">
+      ${entries.map((change) => `
+        <div class="change-row">
+          <div class="change-field">${escapeHtml(caseHistoryFieldLabel(change?.field))}</div>
+          <div class="change-values">
+            <span class="change-old">${escapeHtml(formatCaseHistoryValue(change?.field, change?.from))}</span>
+            <span class="change-arrow">\u2192</span>
+            <span class="change-new">${escapeHtml(formatCaseHistoryValue(change?.field, change?.to))}</span>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderBookingHistoryTimelineEntry(entry) {
+  return `
+    <article class="rollcard change-history-card">
+      <div class="admin-booking-detail__timeline-head">
+        <strong>${escapeHtml(caseActionLabel(entry?.action))}</strong>
+        <span>${escapeHtml(formatDateTime(entry?.created_at))}</span>
+      </div>
+      <div class="admin-booking-detail__timeline-meta">
+        <span>Benutzer: ${escapeHtml(entry?.changed_by || "-")}</span>
+        <span>Beleg: ${escapeHtml(entry?.receipt_no || "-")}</span>
+      </div>
+      ${renderBookingHistoryChanges(entry?.changes)}
+    </article>
+  `;
+}
+
+function renderBookingHistoryDetail(booking, history) {
+  $("bookingHistoryModalTitle").textContent = `Buchung #${booking?.id || "-"}`;
+  $("bookingHistoryModalMeta").textContent = [
+    booking?.location || "-",
+    booking?.department || "-",
+    booking?.license_plate ? `Kennzeichen ${booking.license_plate}` : "Kennzeichen -"
+  ].join(" | ");
+
+  $("bookingHistoryModalBody").innerHTML = `
+    <section class="admin-booking-detail">
+      <article class="admin-booking-detail__hero">
+        <div>
+          <span class="module-section-kicker">Paletten-Buchung</span>
+          <h4>#${escapeHtml(booking?.id || "-")}</h4>
+          <div class="admin-booking-detail__hero-meta">
+            <span>Erstellt: ${escapeHtml(formatDateTime(booking?.created_at))}</span>
+            <span>Aktualisiert: ${escapeHtml(formatDateTime(booking?.updated_at))}</span>
+          </div>
+        </div>
+        <div class="admin-booking-detail__badges">
+          <span class="pallet-status-badge pallet-status-badge--${escapeHtml(caseStatusClass(booking?.status))}">
+            ${escapeHtml(caseStatusLabel(booking?.status))}
+          </span>
+          <span class="badge">${escapeHtml(productTypeLabel(booking?.product_type))}</span>
+        </div>
+      </article>
+
+      <section class="admin-booking-detail__grid">
+        <article class="admin-booking-detail__card">
+          <div class="admin-booking-detail__card-head">
+            <div>
+              <span class="module-section-kicker">Basis</span>
+              <h4>Stammdaten</h4>
+            </div>
+          </div>
+          <div class="admin-booking-detail__fields">
+            ${renderBookingDetailField("Standort", booking?.location || "-")}
+            ${renderBookingDetailField("Abteilung", booking?.department || "-")}
+            ${renderBookingDetailField("Kennzeichen", booking?.license_plate || "-")}
+            ${renderBookingDetailField("Frachtf\u00fchrer", booking?.entrepreneur || "-")}
+            ${renderBookingDetailField("Belegnummer", booking?.receipt_no || "-")}
+            ${renderBookingDetailField("Produkt", productTypeLabel(booking?.product_type))}
+          </div>
+        </article>
+
+        <article class="admin-booking-detail__card">
+          <div class="admin-booking-detail__card-head">
+            <div>
+              <span class="module-section-kicker">Mengen</span>
+              <h4>Buchungsdaten</h4>
+            </div>
+          </div>
+          <div class="admin-booking-detail__fields">
+            ${renderBookingDetailField("Status", caseStatusLabel(booking?.status))}
+            ${renderBookingDetailField("Eingang", booking?.qty_in ?? 0)}
+            ${renderBookingDetailField("Ausgang", booking?.qty_out ?? 0)}
+            ${renderBookingDetailField("Nicht tauschf\u00e4hig", booking?.non_exchangeable_qty ?? 0)}
+            ${renderBookingDetailField("Lagermitarbeiter", booking?.employee_code || "-")}
+            ${renderBookingDetailField("Translogica", booking?.translogica_transferred ? "Ja" : "Nein")}
+          </div>
+        </article>
+
+        <article class="admin-booking-detail__card">
+          <div class="admin-booking-detail__card-head">
+            <div>
+              <span class="module-section-kicker">Bearbeitung</span>
+              <h4>Benutzer</h4>
+            </div>
+          </div>
+          <div class="admin-booking-detail__fields">
+            ${renderBookingDetailField("Erstellt von", booking?.created_by_name || "-")}
+            ${renderBookingDetailField("\u00dcbernommen von", booking?.claimed_by_name || "-")}
+            ${renderBookingDetailField("Eingereicht von", booking?.submitted_by_name || "-")}
+            ${renderBookingDetailField("Gebucht von", booking?.approved_by_name || "-")}
+            ${renderBookingDetailField("Gebucht am", formatDateTime(booking?.approved_at))}
+            ${renderBookingDetailField("Notiz", booking?.note || "-")}
+          </div>
+        </article>
+      </section>
+
+      <article class="admin-booking-detail__card">
+        <div class="admin-booking-detail__card-head">
+          <div>
+            <span class="module-section-kicker">Verlauf</span>
+            <h4>\u00c4nderungsverlauf</h4>
+          </div>
+        </div>
+        <div class="rollcard-list change-history-list">
+          ${(Array.isArray(history) && history.length)
+            ? history.map((entry) => renderBookingHistoryTimelineEntry(entry)).join("")
+            : `<div class="admin-booking-detail__empty">Keine \u00c4nderungen vorhanden.</div>`}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+async function openBookingHistoryDetail(caseId) {
+  const response = await api(`/api/modules/pallets/admin/booking-history/${encodeURIComponent(caseId)}`, { method: "GET", headers: {} });
+  const data = await readJsonSafe(response);
+  if (!response.ok) {
+    window.alert(data?.error || "Buchungsdetails konnten nicht geladen werden.");
+    return;
+  }
+
+  renderBookingHistoryDetail(data?.booking || {}, Array.isArray(data?.history) ? data.history : []);
+  showBookingHistoryModal(true);
+}
+
 function bindActions() {
   $("saveLocationBtn")?.addEventListener("click", async () => {
     const name = String($("locationName").value || "").trim();
@@ -369,7 +744,7 @@ function bindActions() {
       method: "POST",
       body: JSON.stringify({ name })
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await readJsonSafe(response);
     if (!response.ok) return setMsg("locationMsg", data?.error || "Speichern fehlgeschlagen.");
     $("locationName").value = "";
     setMsg("locationMsg", "Standort gespeichert.", true);
@@ -384,7 +759,7 @@ function bindActions() {
       method: "POST",
       body: JSON.stringify({ name })
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await readJsonSafe(response);
     if (!response.ok) return setMsg("departmentMsg", data?.error || "Speichern fehlgeschlagen.");
     $("departmentName").value = "";
     setMsg("departmentMsg", "Abteilung gespeichert.", true);
@@ -410,11 +785,11 @@ function bindActions() {
         body: JSON.stringify(payload)
       }
     );
-    const data = await response.json().catch(() => ({}));
+    const data = await readJsonSafe(response);
     if (!response.ok) return setMsg("entrepreneurMsg", data?.error || "Speichern fehlgeschlagen.");
     const wasEditing = Boolean(editingEntrepreneurId);
     resetEntrepreneurForm();
-    setMsg("entrepreneurMsg", wasEditing ? "Frachtführer aktualisiert." : "Frachtführer gespeichert.", true);
+    setMsg("entrepreneurMsg", wasEditing ? "Frachtf\u00fchrer aktualisiert." : "Frachtf\u00fchrer gespeichert.", true);
     await loadEntrepreneurs();
     await loadAdminHistory();
   });
@@ -423,13 +798,32 @@ function bindActions() {
     resetEntrepreneurForm();
     setMsg("entrepreneurMsg", "");
   });
+
+  $("bookingHistoryPrevBtn")?.addEventListener("click", () => {
+    if (bookingHistoryOffset === 0) return;
+    bookingHistoryOffset = Math.max(0, bookingHistoryOffset - BOOKING_HISTORY_PAGE_SIZE);
+    void loadBookingHistory();
+  });
+
+  $("bookingHistoryNextBtn")?.addEventListener("click", () => {
+    if (!bookingHistoryHasMore) return;
+    bookingHistoryOffset += BOOKING_HISTORY_PAGE_SIZE;
+    void loadBookingHistory();
+  });
 }
 
 (async function init() {
   bindSettingsMenu();
   bindPasswordModal();
+  bindBookingHistoryModal();
   bindActions();
   const ok = await loadContext();
   if (!ok) return;
-  await Promise.all([loadLocations(), loadDepartments(), loadEntrepreneurs(), loadAdminHistory()]);
+  await Promise.all([
+    loadLocations(),
+    loadDepartments(),
+    loadEntrepreneurs(),
+    loadAdminHistory(),
+    loadBookingHistory()
+  ]);
 })();

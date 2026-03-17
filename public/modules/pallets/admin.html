@@ -142,20 +142,59 @@
         <h3>&Auml;nderungshistorie</h3>
       </div>
     </div>
-    <div class="admin-history-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Zeit</th>
-            <th>Bereich</th>
-            <th>Aktion</th>
-            <th>Eintrag</th>
-            <th>Details</th>
-            <th>Benutzer</th>
-          </tr>
-        </thead>
-        <tbody id="adminHistoryBody"></tbody>
-      </table>
+    <div class="admin-history-section">
+      <div class="admin-history-section__head">
+        <div>
+          <span class="section-eyebrow">Stammdaten</span>
+          <h4>Administration</h4>
+        </div>
+      </div>
+      <div class="admin-history-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Bereich</th>
+              <th>Aktion</th>
+              <th>Eintrag</th>
+              <th>Details</th>
+              <th>Benutzer</th>
+            </tr>
+          </thead>
+          <tbody id="adminHistoryBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="admin-history-section">
+      <div class="admin-history-section__head">
+        <div>
+          <span class="section-eyebrow">Paletten-Buchungen</span>
+          <h4>Buchungs&auml;nderungen</h4>
+        </div>
+      </div>
+      <div class="admin-history-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zuletzt ge&auml;ndert</th>
+              <th>Buchung</th>
+              <th>Standort</th>
+              <th>Abteilung</th>
+              <th>Status</th>
+              <th>Letzte &Auml;nderung</th>
+              <th>Benutzer</th>
+              <th>Fenster</th>
+            </tr>
+          </thead>
+          <tbody id="bookingHistoryBody"></tbody>
+        </table>
+      </div>
+      <div class="pallet-open-toolbar pallet-open-toolbar--pagination admin-history-pagination">
+        <button class="secondary" id="bookingHistoryPrevBtn" type="button">Zur&uuml;ck</button>
+        <span class="admin-history-page-label" id="bookingHistoryPageLabel">Seite 1</span>
+        <button class="secondary" id="bookingHistoryNextBtn" type="button">Weiter</button>
+      </div>
     </div>
   </section>
 </main>
@@ -185,6 +224,20 @@
       <button class="secondary" id="cancelPasswordBtn" type="button">Abbrechen</button>
       <button class="primary" id="savePasswordBtn" type="button">Speichern</button>
     </div>
+  </div>
+</div>
+
+<div class="modalBack" id="bookingHistoryModalBack" aria-hidden="true">
+  <div class="modal password-modal admin-booking-history-modal" role="dialog" aria-modal="true" aria-labelledby="bookingHistoryModalTitle">
+    <div class="password-modal-head admin-booking-history-modal__head">
+      <div>
+        <span class="module-section-kicker">Paletten-Buchung</span>
+        <h3 id="bookingHistoryModalTitle">Buchung</h3>
+        <p class="admin-booking-history-modal__meta" id="bookingHistoryModalMeta"></p>
+      </div>
+      <button class="secondary" id="closeBookingHistoryModalBtn" type="button">Schlie&szlig;en</button>
+    </div>
+    <div id="bookingHistoryModalBody"></div>
   </div>
 </div>
 

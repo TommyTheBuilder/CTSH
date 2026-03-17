@@ -874,6 +874,60 @@ async function getOpenPalletBookingRecord(appCustomerId, bookingId) {
   return result.rowCount ? normalizeOpenPalletBookingRow(result.rows[0]) : null;
 }
 
+async function getBookingCaseRecord(appCustomerId, caseId) {
+  const normalizedCaseId = Number(caseId || 0);
+  if (!normalizedCaseId) return null;
+
+  const result = await q(
+    `
+    SELECT
+      c.id,
+      c.app_customer_id,
+      c.location_id,
+      c.department_id,
+      c.created_by,
+      c.claimed_by,
+      c.submitted_by,
+      c.approved_by,
+      c.status,
+      c.receipt_no,
+      c.license_plate,
+      c.entrepreneur,
+      c.note,
+      c.qty_in,
+      c.qty_out,
+      c.non_exchangeable_qty,
+      c.employee_code,
+      c.product_type,
+      c.translogica_transferred,
+      c.created_at,
+      c.updated_at,
+      c.claimed_at,
+      c.submitted_at,
+      c.approved_at,
+      COALESCE(d.name, '(gel\u00f6schte Abteilung)') AS department,
+      l.name AS location,
+      COALESCE(u.username, '(gel\u00f6scht)') AS created_by_name,
+      COALESCE(cu.username, '(gel\u00f6scht)') AS claimed_by_name,
+      COALESCE(su.username, '(gel\u00f6scht)') AS submitted_by_name,
+      COALESCE(au.username, '(gel\u00f6scht)') AS approved_by_name
+    FROM booking_cases c
+    LEFT JOIN departments d ON d.id = c.department_id
+    JOIN locations l ON l.id = c.location_id
+    LEFT JOIN users u ON u.id = c.created_by
+    LEFT JOIN users cu ON cu.id = c.claimed_by
+    LEFT JOIN users su ON su.id = c.submitted_by
+    LEFT JOIN users au ON au.id = c.approved_by
+    WHERE c.id = $1
+      AND c.app_customer_id = $2
+    LIMIT 1
+    `,
+    [normalizedCaseId, appCustomerId]
+  );
+
+  return result.rowCount ? result.rows[0] : null;
+}
+
 function escapePdfText(value) {
   return String(value ?? "")
     .replace(/\r\n/g, "\n")
@@ -3507,6 +3561,105 @@ app.get("/api/modules/pallets/admin/history", authRequired, requirePalletModuleA
     [req.moduleCustomerId]
   )).rows;
   res.json(rows);
+});
+
+app.get("/api/modules/pallets/admin/booking-history", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const limitRaw = Number(req.query?.limit || 25);
+  const offsetRaw = Number(req.query?.offset || 0);
+  const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 25;
+  const offset = Number.isInteger(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+
+  const rows = (await q(
+    `
+    WITH ranked_history AS (
+      SELECT
+        h.id,
+        h.case_id,
+        h.receipt_no,
+        h.action,
+        h.changes,
+        h.changed_by,
+        h.created_at,
+        COUNT(*) OVER (PARTITION BY h.case_id) AS history_count,
+        ROW_NUMBER() OVER (PARTITION BY h.case_id ORDER BY h.created_at DESC, h.id DESC) AS rn
+      FROM booking_case_history h
+      WHERE h.app_customer_id = $1
+    )
+    SELECT
+      rh.id AS history_id,
+      rh.case_id,
+      rh.receipt_no,
+      rh.action,
+      rh.changes,
+      rh.created_at AS last_changed_at,
+      rh.history_count,
+      COALESCE(u.username, '(gel\u00f6scht)') AS changed_by,
+      c.status,
+      c.receipt_no AS current_receipt_no,
+      c.license_plate,
+      c.entrepreneur,
+      c.note,
+      c.qty_in,
+      c.qty_out,
+      c.non_exchangeable_qty,
+      c.product_type,
+      c.created_at AS case_created_at,
+      l.name AS location_name,
+      COALESCE(d.name, '(gel\u00f6schte Abteilung)') AS department_name
+    FROM ranked_history rh
+    JOIN booking_cases c
+      ON c.id = rh.case_id
+     AND c.app_customer_id = $1
+    JOIN locations l ON l.id = c.location_id
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN users u ON u.id = rh.changed_by
+    WHERE rh.rn = 1
+    ORDER BY rh.created_at DESC, rh.id DESC
+    LIMIT $2
+    OFFSET $3
+    `,
+    [req.moduleCustomerId, limit + 1, offset]
+  )).rows;
+
+  const hasMore = rows.length > limit;
+  res.json({
+    items: hasMore ? rows.slice(0, limit) : rows,
+    has_more: hasMore,
+    limit,
+    offset
+  });
+});
+
+app.get("/api/modules/pallets/admin/booking-history/:caseId", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
+  const caseId = Number(req.params.caseId || 0);
+  if (!caseId) return res.status(400).json({ error: "invalid id" });
+
+  const caseRow = await getBookingCaseRecord(req.moduleCustomerId, caseId);
+  if (!caseRow) return res.status(404).json({ error: "Nicht gefunden" });
+
+  const historyRows = (await q(
+    `
+    SELECT
+      h.id,
+      h.case_id,
+      h.receipt_no,
+      h.action,
+      h.changes,
+      h.created_at,
+      COALESCE(u.username, '(gel\u00f6scht)') AS changed_by
+    FROM booking_case_history h
+    LEFT JOIN users u ON u.id = h.changed_by
+    WHERE h.case_id = $1
+      AND h.app_customer_id = $2
+    ORDER BY h.created_at DESC, h.id DESC
+    `,
+    [caseId, req.moduleCustomerId]
+  )).rows;
+
+  res.json({
+    booking: caseRow,
+    history: historyRows
+  });
 });
 
 app.get("/api/modules/pallets/admin/locations", authRequired, requirePalletModuleAdminAccess, async (req, res) => {
