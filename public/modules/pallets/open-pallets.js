@@ -86,7 +86,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-8";
+const PALLET_ASSET_VERSION = "20260317-9";
 const OPEN_PALLET_COUNTRY_DATA = globalThis.OPEN_PALLET_COUNTRIES || {};
 const OPEN_PALLET_COUNTRY_OPTIONS = Array.isArray(OPEN_PALLET_COUNTRY_DATA.list) ? OPEN_PALLET_COUNTRY_DATA.list : [];
 
@@ -113,20 +113,45 @@ function urgencyLabel(value) {
   return OPEN_PALLET_URGENCY_LABELS[value] || OPEN_PALLET_URGENCY_LABELS.medium;
 }
 
-function formatStreetLine(street, addressExtra) {
-  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+function joinTextParts(parts, separator = ", ") {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(separator);
 }
 
-function formatPostalCityLine(postalCode, city) {
-  return [postalCode, city].filter(Boolean).join(" ") || "-";
+function formatStreetLine(street, addressExtra) {
+  return joinTextParts([street, addressExtra]);
+}
+
+function formatPostalCityLine(postalCode, city, country) {
+  const locality = joinTextParts([postalCode, city], " ");
+  const countryCode = normalizeCountryCode(country) || String(country ?? "").trim();
+  if (countryCode && locality) return `${countryCode}-${locality}`;
+  return locality || countryCode;
 }
 
 function buildAddressSummary(company, street, addressExtra, postalCode, city, country) {
-  return [company || "-", formatStreetLine(street, addressExtra), formatPostalCityLine(postalCode, city), country || "-"].filter(Boolean).join(" | ");
+  return joinTextParts([
+    company,
+    formatStreetLine(street, addressExtra),
+    formatPostalCityLine(postalCode, city, country)
+  ]) || "-";
 }
 
 function fullAddress(item) {
-  return [formatStreetLine(item?.street, item?.address_extra), formatPostalCityLine(item?.postal_code, item?.city), item?.country].filter(Boolean).join(" | ") || "-";
+  return joinTextParts([
+    formatStreetLine(item?.street, item?.address_extra),
+    formatPostalCityLine(item?.postal_code, item?.city, item?.country)
+  ]) || "-";
+}
+
+function isTruckPlannedStatus(value) {
+  return String(value || "").trim() === "truck_planned";
+}
+
+function requiredLabel(baseLabel, required) {
+  return required ? `${baseLabel} *` : baseLabel;
 }
 
 function normalizeCountryCode(value) {
@@ -531,17 +556,39 @@ function toggleBookingTypeFields() {
   $("bookingReferenceLabel") && ($("bookingReferenceLabel").textContent = transfer ? "Referenz Start" : "Referenz");
 }
 
+function syncBookingStatusFields() {
+  const editable = BOOKING_MODAL_STATE?.mode === "create" || !!BOOKING_MODAL_STATE?.editMode;
+  const requiresTruckFields = isTruckPlannedStatus($("bookingStatus")?.value || "");
+  const fields = [
+    { labelId: "bookingTruckPlateLabel", inputId: "bookingTruckPlate", baseLabel: "LKW Kennzeichen" },
+    { labelId: "bookingTruckDateLabel", inputId: "bookingTruckDate", baseLabel: "Einplanung f\u00fcr" }
+  ];
+
+  fields.forEach(({ labelId, inputId, baseLabel }) => {
+    const label = $(labelId);
+    if (label) label.textContent = requiredLabel(baseLabel, requiresTruckFields);
+
+    const input = $(inputId);
+    if (!input) return;
+    input.required = requiresTruckFields;
+    input.disabled = !editable || !requiresTruckFields;
+    input.setAttribute("aria-required", requiresTruckFields ? "true" : "false");
+  });
+}
+
 function renderBookingModal() {
   const booking = BOOKING_MODAL_STATE?.booking || {};
   const isCreate = BOOKING_MODAL_STATE?.mode === "create";
   const isEditing = isCreate || !!BOOKING_MODAL_STATE?.editMode;
   const editable = isCreate ? canCreateBookings() : canEditBooking(booking);
   const disabled = isEditing ? "" : "disabled";
-  const workflowDisabled = isCreate ? "disabled" : disabled;
+  const workflowDisabled = disabled;
   const transfer = isTransferTitle(booking.title || "abholung");
-  const showTruckFields = !isCreate;
-  const startSummary = buildAddressSummary(booking.customer_name || booking.company || "-", booking.street, booking.address_extra, booking.postal_code, booking.city, booking.country);
-  const destinationSummary = buildAddressSummary(booking.destination_customer_name || booking.destination_company || "-", booking.destination_street, booking.destination_address_extra, booking.destination_postal_code, booking.destination_city, booking.destination_country);
+  const requiresTruckFields = isTruckPlannedStatus(booking.status || "open");
+  const showTruckFields = isEditing || !!booking.truck_license_plate || !!booking.truck_planned_for || requiresTruckFields;
+  const truckFieldDisabled = isEditing && requiresTruckFields ? "" : "disabled";
+  const startSummary = buildAddressSummary(booking.customer_name || booking.company || "", booking.street, booking.address_extra, booking.postal_code, booking.city, booking.country);
+  const destinationSummary = buildAddressSummary(booking.destination_customer_name || booking.destination_company || "", booking.destination_street, booking.destination_address_extra, booking.destination_postal_code, booking.destination_city, booking.destination_country);
 
   $("bookingModalTitle").textContent = isCreate ? "Neue Buchung" : `Details f\u00fcr ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
   $("bookingModalEditBtn").style.display = !isCreate && editable && !isEditing ? "" : "none";
@@ -584,8 +631,8 @@ function renderBookingModal() {
             <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCountry">Ziel-Land</label><select id="bookingDestinationCountry" ${disabled}>${countryOptionsHtml(booking.destination_country || "")}</select></div>
 
             ${showTruckFields ? `
-            <div class="pallet-booking-field"><label for="bookingTruckPlate">LKW Kennzeichen</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${workflowDisabled}></div>
-            <div class="pallet-booking-field"><label for="bookingTruckDate">Einplanung f\u00fcr</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${workflowDisabled}></div>
+            <div class="pallet-booking-field"><label id="bookingTruckPlateLabel" for="bookingTruckPlate">${escapeHtml(requiredLabel("LKW Kennzeichen", requiresTruckFields))}</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${truckFieldDisabled}></div>
+            <div class="pallet-booking-field"><label id="bookingTruckDateLabel" for="bookingTruckDate">${escapeHtml(requiredLabel("Einplanung f\u00fcr", requiresTruckFields))}</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${truckFieldDisabled}></div>
             ` : ""}
             <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingNote">Notiz</label><textarea id="bookingNote" rows="4" ${disabled}>${escapeHtml(booking.note || "")}</textarea></div>
           </div>
@@ -611,6 +658,7 @@ function renderBookingModal() {
 
   bindBookingModalEvents();
   toggleBookingTypeFields();
+  syncBookingStatusFields();
 }
 
 function bindBookingModalEvents() {
@@ -627,6 +675,7 @@ function bindBookingModalEvents() {
   });
   $("saveBookingBtn")?.addEventListener("click", saveBookingFromModal);
   $("bookingTitle")?.addEventListener("change", toggleBookingTypeFields);
+  $("bookingStatus")?.addEventListener("change", syncBookingStatusFields);
   $("bookingCustomer")?.addEventListener("change", () => {
     if (!(BOOKING_MODAL_STATE?.mode === "create" || BOOKING_MODAL_STATE?.editMode)) return;
     const customer = OPEN_PALLET_CUSTOMERS.find((entry) => Number(entry.id) === Number($("bookingCustomer").value || 0));
@@ -701,7 +750,7 @@ function collectBookingFormPayload() {
     payload.destination_country = null;
     payload.destination_reference_no = null;
   }
-  if (payload.status === "truck_planned") {
+  if (isTruckPlannedStatus(payload.status)) {
     payload.truck_license_plate = $("bookingTruckPlate")?.value.trim() || "";
     payload.truck_planned_for = $("bookingTruckDate")?.value || "";
   }
@@ -721,7 +770,7 @@ async function saveBookingFromModal() {
   if (isTransferTitle(payload.title) && !payload.destination_company) {
     return setMsg("bookingModalMsg", "Bitte eine Zieladresse angeben.");
   }
-  if (payload.status === "truck_planned" && (!payload.truck_license_plate || !payload.truck_planned_for)) {
+  if (isTruckPlannedStatus(payload.status) && (!payload.truck_license_plate || !payload.truck_planned_for)) {
     return setMsg("bookingModalMsg", "Bei Status LKW eingeplant sind Kennzeichen und Datum Pflicht.");
   }
 
