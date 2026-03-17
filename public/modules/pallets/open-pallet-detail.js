@@ -30,31 +30,34 @@ function formatDate(value) {
   if (!value) return "-";
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
+    year: "numeric"
   }).format(date);
 }
 
-const TITLE_LABELS = { abholung: "Abholung", rueckfuehrung: "R\u00fcckf\u00fchrung" };
+const TITLE_LABELS = {
+  abholung: "Abholung",
+  rueckfuehrung: "R\u00fcckf\u00fchrung",
+  firma_zu_firma: "Firma zu Firma"
+};
+
 const STATUS_LABELS = {
   open: "Offen",
   truck_planned: "LKW eingeplant",
   completed_waiting_document: "Erledigt - warten auf Beleg",
   document_booked_scanned: "Beleg gebucht und gescannt"
 };
-const URGENCY_LABELS = { low: "Niedrig", medium: "Mittel", high: "Hoch", critical: "Kritisch" };
-const PALLET_ASSET_VERSION = "20260317-3";
+
+const URGENCY_LABELS = {
+  low: "Niedrig",
+  medium: "Mittel",
+  high: "Hoch",
+  critical: "Kritisch"
+};
+
+const PALLET_ASSET_VERSION = "20260317-4";
 
 function titleLabel(value) {
   return TITLE_LABELS[value] || value || "-";
@@ -68,10 +71,124 @@ function urgencyLabel(value) {
   return URGENCY_LABELS[value] || URGENCY_LABELS.medium;
 }
 
-function fullAddress(item) {
-  const lineOne = [item?.street, item?.address_extra].filter(Boolean).join(", ");
-  const lineTwo = [item?.postal_code, item?.city].filter(Boolean).join(" ");
-  return [lineOne, lineTwo, item?.country].filter(Boolean).join(" | ") || "-";
+function isTransferTitle(value) {
+  return String(value || "") === "firma_zu_firma";
+}
+
+function streetLine(street, addressExtra) {
+  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+}
+
+function postalCityLine(postalCode, city) {
+  return [postalCode, city].filter(Boolean).join(" ") || "-";
+}
+
+function extractFilename(response, fallback) {
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+function typeHeroIcon(title) {
+  switch (title) {
+    case "rueckfuehrung":
+      return `
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M48 18H22l8-8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M22 18l8 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="14" y="38" width="36" height="10" rx="3" fill="currentColor" opacity=".88"/>
+          <rect x="24" y="30" width="16" height="8" rx="2" fill="currentColor" opacity=".55"/>
+        </svg>
+      `;
+    case "firma_zu_firma":
+      return `
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="10" y="22" width="16" height="28" rx="2" fill="currentColor" opacity=".75"/>
+          <rect x="38" y="18" width="16" height="32" rx="2" fill="currentColor" opacity=".95"/>
+          <path d="M24 34h16" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <path d="M34 26l8 8-8 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    default:
+      return `
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M16 18h26" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <path d="M34 10l8 8-8 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="14" y="38" width="36" height="10" rx="3" fill="currentColor" opacity=".88"/>
+          <rect x="24" y="30" width="16" height="8" rx="2" fill="currentColor" opacity=".55"/>
+        </svg>
+      `;
+  }
+}
+
+function addressCardIcon(kind) {
+  if (kind === "destination") {
+    return `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="18" y="16" width="26" height="34" rx="3" fill="currentColor" opacity=".9"/>
+        <path d="M10 32h18" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+        <path d="M22 24l8 8-8 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M16 18h26" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <path d="M34 10l8 8-8 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="14" y="38" width="36" height="10" rx="3" fill="currentColor" opacity=".88"/>
+    </svg>
+  `;
+}
+
+function detailAddressCards(booking) {
+  const cards = [
+    {
+      kind: "pickup",
+      title: isTransferTitle(booking.title) ? "Startadresse" : titleLabel(booking.title),
+      customer: booking.customer_name || booking.company || "-",
+      company: booking.company || "-",
+      street: streetLine(booking.street, booking.address_extra),
+      postalCity: postalCityLine(booking.postal_code, booking.city),
+      country: booking.country || "-",
+      referenceLabel: isTransferTitle(booking.title) ? "Referenz Start" : "Referenz",
+      reference: booking.reference_no || "-"
+    }
+  ];
+
+  if (isTransferTitle(booking.title)) {
+    cards.push({
+      kind: "destination",
+      title: "Zieladresse",
+      customer: booking.destination_customer_name || booking.destination_company || "-",
+      company: booking.destination_company || "-",
+      street: streetLine(booking.destination_street, booking.destination_address_extra),
+      postalCity: postalCityLine(booking.destination_postal_code, booking.destination_city),
+      country: booking.destination_country || "-",
+      referenceLabel: "Referenz Ziel",
+      reference: booking.destination_reference_no || "-"
+    });
+  }
+
+  return cards;
+}
+
+async function downloadPdf(bookingId) {
+  const response = await api(`/api/modules/pallets/open-pallets/${bookingId}/pdf`, { method: "GET", headers: {} });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    alert(data?.error || "PDF konnte nicht geladen werden.");
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = extractFilename(response, `offene-paletten-${bookingId}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function init() {
@@ -95,6 +212,7 @@ async function init() {
   $("openInModuleBtn").addEventListener("click", () => {
     window.location.href = `/modules/pallets/open-pallets.html?v=${PALLET_ASSET_VERSION}&booking=${encodeURIComponent(booking.id)}`;
   });
+  $("downloadPdfBtn").addEventListener("click", () => downloadPdf(booking.id));
   $("printDetailBtn").addEventListener("click", () => window.print());
   $("logoutBtn").addEventListener("click", () => {
     localStorage.removeItem("token");
@@ -103,42 +221,61 @@ async function init() {
 
   $("detailContent").innerHTML = `
     <section class="pallet-detail-layout">
-      <article class="pallet-detail-main-card">
-        <div class="pallet-detail-main-card__head">
-          <div>
-            <span class="module-section-kicker">Buchung</span>
+      <div class="pallet-detail-stack">
+        <article class="pallet-detail-type-hero">
+          <div class="pallet-detail-type-hero__icon">${typeHeroIcon(booking.title)}</div>
+          <div class="pallet-detail-type-hero__copy">
+            <span class="module-section-kicker">Buchungstyp</span>
             <h2>${escapeHtml(titleLabel(booking.title))}</h2>
           </div>
           <div class="pallet-detail-main-card__badges">
             <span class="pallet-status-badge pallet-status-badge--${escapeHtml(booking.status || "open")}">${escapeHtml(statusLabel(booking.status))}</span>
             <span class="pallet-urgency-badge pallet-urgency-badge--${escapeHtml(booking.urgency_level || "medium")}">${escapeHtml(urgencyLabel(booking.urgency_level))}</span>
           </div>
-        </div>
+        </article>
 
-        <div class="pallet-detail-grid">
-          <div class="pallet-detail-field"><label>Kunde</label><div>${escapeHtml(booking.customer_name || booking.company || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Firma</label><div>${escapeHtml(booking.company || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Auftragsnummer</label><div>${escapeHtml(booking.order_no || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Paletten</label><div>${escapeHtml(booking.pallet_count)}</div></div>
-          <div class="pallet-detail-field pallet-detail-field--wide"><label>Adresse</label><div>${escapeHtml(fullAddress(booking))}</div></div>
-          <div class="pallet-detail-field"><label>Abteilung</label><div>${escapeHtml(booking.department_name || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Erstellt von</label><div>${escapeHtml(booking.created_by_name || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Aktualisiert von</label><div>${escapeHtml(booking.updated_by_name || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Aktualisiert am</label><div>${escapeHtml(formatDateTime(booking.updated_at))}</div></div>
-          <div class="pallet-detail-field"><label>LKW Kennzeichen</label><div>${escapeHtml(booking.truck_license_plate || "-")}</div></div>
-          <div class="pallet-detail-field"><label>Einplanung f\u00fcr</label><div>${escapeHtml(formatDate(booking.truck_planned_for))}</div></div>
-          <div class="pallet-detail-field"><label>Disponent Status 2</label><div>${escapeHtml(booking.truck_planned_by_name || "-")}</div></div>
-          <div class="pallet-detail-field pallet-detail-field--wide"><label>Notiz</label><div>${escapeHtml(booking.note || "-")}</div></div>
-        </div>
-      </article>
+        <section class="pallet-detail-route-grid">
+          ${detailAddressCards(booking).map((card) => `
+            <article class="pallet-detail-route-card">
+              <div class="pallet-detail-route-card__icon">${addressCardIcon(card.kind)}</div>
+              <div class="pallet-detail-route-card__body">
+                <div class="pallet-detail-route-card__head">${escapeHtml(card.title)}</div>
+                <div class="pallet-detail-route-row"><span>Kunde</span><strong>${escapeHtml(card.customer)}</strong></div>
+                <div class="pallet-detail-route-row"><span>Firma</span><strong>${escapeHtml(card.company)}</strong></div>
+                <div class="pallet-detail-route-row"><span>Stra\u00dfe</span><strong>${escapeHtml(card.street)}</strong></div>
+                <div class="pallet-detail-route-row"><span>PLZ + Ort</span><strong>${escapeHtml(card.postalCity)}</strong></div>
+                <div class="pallet-detail-route-row"><span>Land</span><strong>${escapeHtml(card.country)}</strong></div>
+                <div class="pallet-detail-route-row"><span>${escapeHtml(card.referenceLabel)}</span><strong>${escapeHtml(card.reference)}</strong></div>
+              </div>
+            </article>
+          `).join("")}
+        </section>
+
+        <article class="pallet-detail-main-card">
+          <div class="pallet-detail-main-card__head">
+            <div><span class="module-section-kicker">Buchungsdaten</span></div>
+          </div>
+          <div class="pallet-detail-grid">
+            <div class="pallet-detail-field"><label>Auftragsnummer</label><div>${escapeHtml(booking.order_no || "-")}</div></div>
+            <div class="pallet-detail-field"><label>Paletten</label><div>${escapeHtml(booking.pallet_count)}</div></div>
+            ${booking.truck_license_plate ? `<div class="pallet-detail-field"><label>LKW Kennzeichen</label><div>${escapeHtml(booking.truck_license_plate)}</div></div>` : ""}
+            <div class="pallet-detail-field"><label>Abteilung</label><div>${escapeHtml(booking.department_name || "-")}</div></div>
+            <div class="pallet-detail-field pallet-detail-field--wide"><label>Notiz</label><div>${escapeHtml(booking.note || "-")}</div></div>
+          </div>
+        </article>
+      </div>
 
       <aside class="pallet-detail-side-card">
         <div class="pallet-detail-side-card__head">\u00dcbersicht</div>
         <div class="pallet-detail-side-card__body">
+          <div class="pallet-detail-side-item"><span>Typ</span><strong>${escapeHtml(titleLabel(booking.title))}</strong></div>
           <div class="pallet-detail-side-item"><span>Status</span><strong>${escapeHtml(statusLabel(booking.status))}</strong></div>
           <div class="pallet-detail-side-item"><span>Dringlichkeit</span><strong>${escapeHtml(urgencyLabel(booking.urgency_level))}</strong></div>
-          <div class="pallet-detail-side-item"><span>Erstellt</span><strong>${escapeHtml(formatDateTime(booking.created_at))}</strong></div>
-          <div class="pallet-detail-side-item"><span>Letztes Update</span><strong>${escapeHtml(formatDateTime(booking.updated_at))}</strong></div>
+          <div class="pallet-detail-side-item"><span>Auftragsnummer</span><strong>${escapeHtml(booking.order_no || "-")}</strong></div>
+          <div class="pallet-detail-side-item"><span>Paletten</span><strong>${escapeHtml(booking.pallet_count)}</strong></div>
+          ${booking.reference_no ? `<div class="pallet-detail-side-item"><span>Referenz</span><strong>${escapeHtml(booking.reference_no)}</strong></div>` : ""}
+          ${booking.destination_reference_no ? `<div class="pallet-detail-side-item"><span>Referenz Ziel</span><strong>${escapeHtml(booking.destination_reference_no)}</strong></div>` : ""}
+          ${booking.truck_license_plate ? `<div class="pallet-detail-side-item"><span>LKW Kennzeichen</span><strong>${escapeHtml(booking.truck_license_plate)}</strong></div>` : ""}
         </div>
       </aside>
     </section>

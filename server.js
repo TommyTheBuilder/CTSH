@@ -39,7 +39,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-3";
+const PALLET_ASSET_VERSION = "20260317-4";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -524,7 +524,8 @@ const OPEN_PALLET_STATUSES = {
 
 const OPEN_PALLET_TITLES = {
   abholung: "Abholung",
-  rueckfuehrung: "R\u00fcckf\u00fchrung"
+  rueckfuehrung: "R\u00fcckf\u00fchrung",
+  firma_zu_firma: "Firma zu Firma"
 };
 
 const OPEN_PALLET_URGENCY_LEVELS = {
@@ -573,15 +574,16 @@ function normalizeOpenPalletTitle(titleRaw, { allowEmpty = false, allowLegacy = 
     .replaceAll("\u00df", "ss")
     .replace(/[^a-z]/g, "");
 
-  if (Object.prototype.hasOwnProperty.call(OPEN_PALLET_TITLES, normalized)) {
-    return { ok: true, title: normalized };
+  const normalizedEntry = Object.keys(OPEN_PALLET_TITLES).find((key) => key.replaceAll("_", "") === normalized);
+  if (normalizedEntry) {
+    return { ok: true, title: normalizedEntry };
   }
 
   if (allowLegacy) {
     return { ok: true, title: rawTitle };
   }
 
-  return { ok: false, msg: "Titel ist ungültig. Erlaubt: Abholung oder Rückführung" };
+  return { ok: false, msg: "Titel ist ung\u00fcltig. Erlaubt: Abholung, R\u00fcckf\u00fchrung oder Firma zu Firma" };
 }
 
 function normalizeOpenPalletCustomerId(customerIdRaw, { allowEmpty = true } = {}) {
@@ -691,6 +693,298 @@ async function getOpenPalletCustomerRecord(appCustomerId, customerId) {
     [normalizedCustomerId, appCustomerId]
   );
   return result.rowCount ? result.rows[0] : null;
+}
+
+function isOpenPalletTransferTitle(title) {
+  return String(title || "").trim().toLowerCase() === "firma_zu_firma";
+}
+
+function formatOpenPalletStreetLine(street, addressExtra) {
+  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+}
+
+function formatOpenPalletPostalCityLine(postalCode, city) {
+  return [postalCode, city].filter(Boolean).join(" ") || "-";
+}
+
+function formatOpenPalletPdfDate(value) {
+  if (!value) return "-";
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(date);
+}
+
+function getOpenPalletAddressSections(booking) {
+  const sections = [
+    {
+      title: isOpenPalletTransferTitle(booking?.title) ? "Startadresse" : (OPEN_PALLET_TITLES[booking?.title] || "Adresse"),
+      customer: booking?.customer_name || booking?.company || "-",
+      company: booking?.company || "-",
+      street: formatOpenPalletStreetLine(booking?.street, booking?.address_extra),
+      postalCity: formatOpenPalletPostalCityLine(booking?.postal_code, booking?.city),
+      country: booking?.country || "-",
+      referenceLabel: isOpenPalletTransferTitle(booking?.title) ? "Referenz Start" : "Referenz",
+      reference: booking?.reference_no || "-"
+    }
+  ];
+
+  if (isOpenPalletTransferTitle(booking?.title)) {
+    sections.push({
+      title: "Zieladresse",
+      customer: booking?.destination_customer_name || booking?.destination_company || "-",
+      company: booking?.destination_company || "-",
+      street: formatOpenPalletStreetLine(booking?.destination_street, booking?.destination_address_extra),
+      postalCity: formatOpenPalletPostalCityLine(booking?.destination_postal_code, booking?.destination_city),
+      country: booking?.destination_country || "-",
+      referenceLabel: "Referenz Ziel",
+      reference: booking?.destination_reference_no || "-"
+    });
+  }
+
+  return sections;
+}
+
+async function getOpenPalletBookingRecord(appCustomerId, bookingId) {
+  const normalizedBookingId = Number(bookingId || 0);
+  if (!normalizedBookingId) return null;
+
+  const result = await q(
+    `
+    SELECT
+      op.id,
+      op.app_customer_id,
+      op.department_id,
+      op.created_by,
+      op.updated_by,
+      op.customer_id,
+      op.destination_customer_id,
+      op.title,
+      op.company,
+      op.street,
+      op.address_extra,
+      op.city,
+      op.postal_code,
+      op.country,
+      op.destination_company,
+      op.destination_street,
+      op.destination_address_extra,
+      op.destination_city,
+      op.destination_postal_code,
+      op.destination_country,
+      op.order_no,
+      op.reference_no,
+      op.destination_reference_no,
+      op.pallet_count,
+      op.note,
+      op.status,
+      op.urgency_level,
+      op.truck_license_plate,
+      op.truck_planned_for,
+      op.truck_planned_by,
+      op.truck_planned_at,
+      op.created_at,
+      op.updated_at,
+      COALESCE(c.name, op.company, '-') AS customer_name,
+      COALESCE(dc.name, op.destination_company, '-') AS destination_customer_name,
+      COALESCE(d.name, 'Abteilung') AS department_name,
+      COALESCE(uc.username, '(gelöscht)') AS created_by_name,
+      COALESCE(uu.username, '(gelöscht)') AS updated_by_name,
+      COALESCE(tp.username, '-') AS truck_planned_by_name
+    FROM open_pallet_bookings op
+    LEFT JOIN departments d
+      ON d.id = op.department_id
+     AND d.app_customer_id = op.app_customer_id
+    LEFT JOIN open_pallet_customers c
+      ON c.id = op.customer_id
+     AND c.app_customer_id = op.app_customer_id
+    LEFT JOIN open_pallet_customers dc
+      ON dc.id = op.destination_customer_id
+     AND dc.app_customer_id = op.app_customer_id
+    LEFT JOIN users uc ON uc.id = op.created_by
+    LEFT JOIN users uu ON uu.id = op.updated_by
+    LEFT JOIN users tp ON tp.id = op.truck_planned_by
+    WHERE op.id = $1
+      AND op.app_customer_id = $2
+    LIMIT 1
+    `,
+    [normalizedBookingId, appCustomerId]
+  );
+
+  return result.rowCount ? result.rows[0] : null;
+}
+
+function escapePdfText(value) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function wrapPdfText(text, maxChars = 86) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return [""];
+
+  const words = raw.split(/\s+/);
+  const lines = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    if (word.length <= maxChars) {
+      current = word;
+      continue;
+    }
+    let remaining = word;
+    while (remaining.length > maxChars) {
+      lines.push(remaining.slice(0, maxChars));
+      remaining = remaining.slice(maxChars);
+    }
+    current = remaining;
+  }
+
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function buildSimplePdfBuffer(lines = []) {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const left = 48;
+  const top = 794;
+  const bottom = 48;
+  const pages = [];
+  let commands = [];
+  let y = top;
+
+  const flushPage = () => {
+    pages.push(commands.join("\n"));
+    commands = [];
+    y = top;
+  };
+
+  for (const line of lines) {
+    const text = String(line?.text ?? "");
+    const size = Number(line?.size || 11);
+    const lineHeight = size + (line?.gap ?? 6);
+    const wrapped = text ? wrapPdfText(text, size >= 16 ? 54 : 86) : [""];
+
+    for (const wrappedLine of wrapped) {
+      if (y < bottom) flushPage();
+      if (wrappedLine) {
+        commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${left} ${y} Tm (${escapePdfText(wrappedLine)}) Tj ET`);
+      }
+      y -= lineHeight;
+    }
+  }
+
+  if (!pages.length || commands.length) flushPage();
+
+  const objects = new Map();
+  const fontObjectId = 3;
+  const pageObjectIds = [];
+  let nextObjectId = 4;
+
+  objects.set(1, Buffer.from("<< /Type /Catalog /Pages 2 0 R >>", "latin1"));
+  objects.set(fontObjectId, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "latin1"));
+
+  for (const pageContent of pages) {
+    const pageObjectId = nextObjectId++;
+    const contentObjectId = nextObjectId++;
+    pageObjectIds.push(pageObjectId);
+
+    objects.set(
+      pageObjectId,
+      Buffer.from(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
+        "latin1"
+      )
+    );
+
+    const streamBuffer = Buffer.from(pageContent, "latin1");
+    objects.set(
+      contentObjectId,
+      Buffer.concat([
+        Buffer.from(`<< /Length ${streamBuffer.length} >>\nstream\n`, "latin1"),
+        streamBuffer,
+        Buffer.from("\nendstream", "latin1")
+      ])
+    );
+  }
+
+  objects.set(2, Buffer.from(`<< /Type /Pages /Count ${pageObjectIds.length} /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] >>`, "latin1"));
+
+  const maxObjectId = nextObjectId - 1;
+  const buffers = [Buffer.from("%PDF-1.4\n%\u00ff\u00ff\u00ff\u00ff\n", "latin1")];
+  const offsets = new Array(maxObjectId + 1).fill(0);
+  let offset = buffers[0].length;
+
+  for (let id = 1; id <= maxObjectId; id += 1) {
+    const objectBody = objects.get(id);
+    const objectBuffer = Buffer.concat([
+      Buffer.from(`${id} 0 obj\n`, "latin1"),
+      objectBody,
+      Buffer.from("\nendobj\n", "latin1")
+    ]);
+    offsets[id] = offset;
+    buffers.push(objectBuffer);
+    offset += objectBuffer.length;
+  }
+
+  const xrefOffset = offset;
+  const xrefLines = [`xref`, `0 ${maxObjectId + 1}`, "0000000000 65535 f "];
+  for (let id = 1; id <= maxObjectId; id += 1) {
+    xrefLines.push(`${String(offsets[id]).padStart(10, "0")} 00000 n `);
+  }
+
+  buffers.push(Buffer.from(`${xrefLines.join("\n")}\ntrailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`, "latin1"));
+  return Buffer.concat(buffers);
+}
+
+function buildOpenPalletPdfBuffer(booking) {
+  const lines = [
+    { text: "Offene Paletten", size: 19, gap: 10 },
+    { text: `${OPEN_PALLET_TITLES[booking?.title] || booking?.title || "-"}`, size: 14, gap: 8 },
+    { text: `Status: ${OPEN_PALLET_STATUSES[booking?.status] || booking?.status || "-"}` },
+    { text: `Dringlichkeit: ${OPEN_PALLET_URGENCY_LEVELS[booking?.urgency_level] || booking?.urgency_level || "-"}` },
+    { text: `Auftragsnummer: ${booking?.order_no || "-"}` },
+    { text: `Paletten: ${booking?.pallet_count ?? "-"}` },
+    { text: "" }
+  ];
+
+  for (const section of getOpenPalletAddressSections(booking)) {
+    lines.push({ text: section.title, size: 13, gap: 8 });
+    lines.push({ text: `Kunde: ${section.customer}` });
+    lines.push({ text: `Firma: ${section.company}` });
+    lines.push({ text: `Stra\u00dfe: ${section.street}` });
+    lines.push({ text: `PLZ + Ort: ${section.postalCity}` });
+    lines.push({ text: `Land: ${section.country}` });
+    lines.push({ text: `${section.referenceLabel}: ${section.reference}` });
+    lines.push({ text: "" });
+  }
+
+  if (booking?.truck_license_plate) {
+    lines.push({ text: `LKW Kennzeichen: ${booking.truck_license_plate}` });
+  }
+  if (booking?.note) {
+    lines.push({ text: "" });
+    lines.push({ text: "Notiz", size: 13, gap: 8 });
+    for (const noteLine of wrapPdfText(booking.note, 86)) {
+      lines.push({ text: noteLine });
+    }
+  }
+
+  return buildSimplePdfBuffer(lines);
 }
 
 function flattenPermissionRoles(perms, prefix = "") {
@@ -3145,57 +3439,8 @@ app.get("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnab
   const id = Number(req.params.id || 0);
   if (!id) return res.status(400).json({ error: "invalid id" });
 
-  const result = await q(
-    `
-    SELECT
-      op.id,
-      op.app_customer_id,
-      op.department_id,
-      op.created_by,
-      op.updated_by,
-      op.customer_id,
-      op.title,
-      op.company,
-      op.street,
-      op.address_extra,
-      op.city,
-      op.postal_code,
-      op.country,
-      op.order_no,
-      op.pallet_count,
-      op.note,
-      op.status,
-      op.urgency_level,
-      op.truck_license_plate,
-      op.truck_planned_for,
-      op.truck_planned_by,
-      op.truck_planned_at,
-      op.created_at,
-      op.updated_at,
-      COALESCE(c.name, op.company, '-') AS customer_name,
-      COALESCE(d.name, 'Abteilung') AS department_name,
-      COALESCE(uc.username, '(gelöscht)') AS created_by_name,
-      COALESCE(uu.username, '(gelöscht)') AS updated_by_name,
-      COALESCE(tp.username, '-') AS truck_planned_by_name
-    FROM open_pallet_bookings op
-    LEFT JOIN departments d
-      ON d.id = op.department_id
-     AND d.app_customer_id = op.app_customer_id
-    LEFT JOIN open_pallet_customers c
-      ON c.id = op.customer_id
-     AND c.app_customer_id = op.app_customer_id
-    LEFT JOIN users uc ON uc.id = op.created_by
-    LEFT JOIN users uu ON uu.id = op.updated_by
-    LEFT JOIN users tp ON tp.id = op.truck_planned_by
-    WHERE op.id = $1
-      AND op.app_customer_id = $2
-    LIMIT 1
-    `,
-    [id, req.user.app_customer_id]
-  );
-  if (!result.rowCount) return res.status(404).json({ error: "Nicht gefunden" });
-
-  const booking = result.rows[0];
+  const booking = await getOpenPalletBookingRecord(req.user.app_customer_id, id);
+  if (!booking) return res.status(404).json({ error: "Nicht gefunden" });
   const scope = getOpenPalletDepartmentScope(req.user, perms);
   if (scope.restrictedDepartmentId && Number(booking.department_id || 0) !== Number(scope.restrictedDepartmentId)) {
     return res.status(403).json({ error: "Forbidden" });
@@ -3206,6 +3451,35 @@ app.get("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnab
     can_edit: canEditOpenPalletBooking(perms, req.user, booking),
     can_delete: !!perms?.open_pallets?.delete
   });
+});
+
+app.get("/api/modules/pallets/open-pallets/:id/pdf", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
+  const perms = await getMyPermissions(req.user);
+  if (!perms?.open_pallets?.view) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: "invalid id" });
+
+  const booking = await getOpenPalletBookingRecord(req.user.app_customer_id, id);
+  if (!booking) return res.status(404).json({ error: "Nicht gefunden" });
+
+  const scope = getOpenPalletDepartmentScope(req.user, perms);
+  if (scope.restrictedDepartmentId && Number(booking.department_id || 0) !== Number(scope.restrictedDepartmentId)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const pdfBuffer = buildOpenPalletPdfBuffer(booking);
+  const safeType = String(booking.title || "offene-paletten")
+    .toLowerCase()
+    .replaceAll("_", "-")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9\-]/g, "");
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="offene-paletten-${safeType}-${booking.id}.pdf"`);
+  res.send(pdfBuffer);
 });
 
 app.get("/api/modules/pallets/open-pallet-customers", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
@@ -3429,19 +3703,30 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const titleCheckNew = normalizeOpenPalletTitle(bodyNew?.title);
   const urgencyCheckNew = normalizeOpenPalletUrgency(bodyNew?.urgency_level);
   const customerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.customer_id, { allowEmpty: true });
+  const destinationCustomerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.destination_customer_id, { allowEmpty: true });
   const palletCountNew = Number(bodyNew?.pallet_count || 0);
   if (!titleCheckNew.ok) return res.status(400).json({ error: titleCheckNew.msg });
   if (!urgencyCheckNew.ok) return res.status(400).json({ error: urgencyCheckNew.msg });
   if (!customerIdCheckNew.ok) return res.status(400).json({ error: customerIdCheckNew.msg });
+  if (!destinationCustomerIdCheckNew.ok) return res.status(400).json({ error: destinationCustomerIdCheckNew.msg });
   if (!Number.isInteger(palletCountNew) || palletCountNew <= 0) {
     return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
   }
 
+  const isTransferNew = titleCheckNew.title === "firma_zu_firma";
   let customerRecordNew = null;
   if (customerIdCheckNew.customerId) {
     customerRecordNew = await getOpenPalletCustomerRecord(req.user.app_customer_id, customerIdCheckNew.customerId);
     if (!customerRecordNew) {
       return res.status(400).json({ error: "Kunde nicht gefunden" });
+    }
+  }
+
+  let destinationCustomerRecordNew = null;
+  if (destinationCustomerIdCheckNew.customerId) {
+    destinationCustomerRecordNew = await getOpenPalletCustomerRecord(req.user.app_customer_id, destinationCustomerIdCheckNew.customerId);
+    if (!destinationCustomerRecordNew) {
+      return res.status(400).json({ error: "Zielkunde nicht gefunden" });
     }
   }
 
@@ -3463,8 +3748,44 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const countryNew = Object.prototype.hasOwnProperty.call(bodyNew, "country")
     ? safeTrim(bodyNew?.country)
     : (customerRecordNew?.country || null);
+  const destinationCompanyNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_company")
+      ? safeTrim(bodyNew?.destination_company)
+      : (destinationCustomerRecordNew?.name || null))
+    : null;
+  const destinationStreetNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_street")
+      ? safeTrim(bodyNew?.destination_street)
+      : (destinationCustomerRecordNew?.street || null))
+    : null;
+  const destinationAddressExtraNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_address_extra")
+      ? safeTrim(bodyNew?.destination_address_extra)
+      : (destinationCustomerRecordNew?.address_extra || null))
+    : null;
+  const destinationPostalCodeNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_postal_code")
+      ? safeTrim(bodyNew?.destination_postal_code)
+      : (destinationCustomerRecordNew?.postal_code || null))
+    : null;
+  const destinationCityNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_city")
+      ? safeTrim(bodyNew?.destination_city)
+      : (destinationCustomerRecordNew?.city || null))
+    : null;
+  const destinationCountryNew = isTransferNew
+    ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_country")
+      ? safeTrim(bodyNew?.destination_country)
+      : (destinationCustomerRecordNew?.country || null))
+    : null;
   const orderNoNew = safeTrim(bodyNew?.order_no);
+  const referenceNoNew = safeTrim(bodyNew?.reference_no);
+  const destinationReferenceNoNew = isTransferNew ? safeTrim(bodyNew?.destination_reference_no) : null;
   const noteNew = safeTrim(bodyNew?.note);
+
+  if (isTransferNew && !destinationCompanyNew) {
+    return res.status(400).json({ error: "Zieladresse ist Pflicht" });
+  }
 
   const resultNew = await q(
     `
@@ -3474,6 +3795,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       created_by,
       updated_by,
       customer_id,
+      destination_customer_id,
       title,
       company,
       street,
@@ -3481,13 +3803,21 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       city,
       postal_code,
       country,
+      destination_company,
+      destination_street,
+      destination_address_extra,
+      destination_city,
+      destination_postal_code,
+      destination_country,
       order_no,
+      reference_no,
+      destination_reference_no,
       pallet_count,
       note,
       urgency_level,
       status
     )
-    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'open')
+    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'open')
     RETURNING id
     `,
     [
@@ -3495,6 +3825,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       departmentId,
       req.user.id,
       customerIdCheckNew.customerId,
+      destinationCustomerIdCheckNew.customerId,
       titleCheckNew.title,
       companyNew,
       streetNew,
@@ -3502,7 +3833,15 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       cityNew,
       postalCodeNew,
       countryNew,
+      destinationCompanyNew,
+      destinationStreetNew,
+      destinationAddressExtraNew,
+      destinationCityNew,
+      destinationPostalCodeNew,
+      destinationCountryNew,
       orderNoNew,
+      referenceNoNew,
+      destinationReferenceNoNew,
       palletCountNew,
       noteNew,
       urgencyCheckNew.urgency
@@ -3614,14 +3953,24 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
       app_customer_id,
       department_id,
       created_by,
+      title,
       customer_id,
+      destination_customer_id,
       company,
       street,
       address_extra,
       city,
       postal_code,
       country,
+      destination_company,
+      destination_street,
+      destination_address_extra,
+      destination_city,
+      destination_postal_code,
+      destination_country,
       order_no,
+      reference_no,
+      destination_reference_no,
       note,
       pallet_count,
       status,
@@ -3641,13 +3990,22 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const editableFieldsNew = [
     "title",
     "customer_id",
+    "destination_customer_id",
     "company",
     "street",
     "address_extra",
     "city",
     "postal_code",
     "country",
+    "destination_company",
+    "destination_street",
+    "destination_address_extra",
+    "destination_city",
+    "destination_postal_code",
+    "destination_country",
     "order_no",
+    "reference_no",
+    "destination_reference_no",
     "note",
     "pallet_count",
     "status",
@@ -3667,8 +4025,12 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const updatesNew = [];
   const valuesNew = [];
   let nextStatusNew = String(currentFullNew.status || "open");
+  let nextTitleNew = String(currentFullNew.title || "abholung");
   let customerRecordNew = null;
   const customerChangedNew = Object.prototype.hasOwnProperty.call(bodyNew, "customer_id");
+  let destinationCustomerRecordNew = null;
+  const destinationCustomerChangedNew = Object.prototype.hasOwnProperty.call(bodyNew, "destination_customer_id");
+  let nextDestinationCustomerIdNew = Number(currentFullNew.destination_customer_id || 0) || null;
 
   if (customerChangedNew) {
     const customerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.customer_id, { allowEmpty: true });
@@ -3683,16 +4045,38 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
     updatesNew.push(`customer_id = $${valuesNew.length}`);
   }
 
+  if (destinationCustomerChangedNew) {
+    const destinationCustomerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.destination_customer_id, { allowEmpty: true });
+    if (!destinationCustomerIdCheckNew.ok) return res.status(400).json({ error: destinationCustomerIdCheckNew.msg });
+    if (destinationCustomerIdCheckNew.customerId) {
+      destinationCustomerRecordNew = await getOpenPalletCustomerRecord(req.user.app_customer_id, destinationCustomerIdCheckNew.customerId);
+      if (!destinationCustomerRecordNew) {
+        return res.status(400).json({ error: "Zielkunde nicht gefunden" });
+      }
+    }
+    nextDestinationCustomerIdNew = destinationCustomerIdCheckNew.customerId;
+  }
+
   if (Object.prototype.hasOwnProperty.call(bodyNew, "title")) {
     const titleCheckNew = normalizeOpenPalletTitle(bodyNew?.title);
     if (!titleCheckNew.ok) return res.status(400).json({ error: titleCheckNew.msg });
-    valuesNew.push(titleCheckNew.title);
+    nextTitleNew = titleCheckNew.title;
+    valuesNew.push(nextTitleNew);
     updatesNew.push(`title = $${valuesNew.length}`);
   }
 
+  const transferModeNew = nextTitleNew === "firma_zu_firma";
   const applySnapshotFieldNew = (fieldName, columnName, fallbackValue) => {
     const hasField = Object.prototype.hasOwnProperty.call(bodyNew, fieldName);
     if (!hasField && !(customerChangedNew && customerRecordNew)) return;
+    const value = hasField ? safeTrim(bodyNew?.[fieldName]) : fallbackValue;
+    valuesNew.push(value);
+    updatesNew.push(`${columnName} = $${valuesNew.length}`);
+  };
+
+  const applyDestinationSnapshotFieldNew = (fieldName, columnName, fallbackValue) => {
+    const hasField = Object.prototype.hasOwnProperty.call(bodyNew, fieldName);
+    if (!hasField && !(destinationCustomerChangedNew && destinationCustomerRecordNew) && String(currentFullNew.title || "") === "firma_zu_firma") return;
     const value = hasField ? safeTrim(bodyNew?.[fieldName]) : fallbackValue;
     valuesNew.push(value);
     updatesNew.push(`${columnName} = $${valuesNew.length}`);
@@ -3705,9 +4089,71 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   applySnapshotFieldNew("city", "city", customerRecordNew?.city || null);
   applySnapshotFieldNew("country", "country", customerRecordNew?.country || null);
 
+  if (transferModeNew) {
+    if (destinationCustomerChangedNew) {
+      valuesNew.push(nextDestinationCustomerIdNew);
+      updatesNew.push(`destination_customer_id = $${valuesNew.length}`);
+    }
+
+    const nextDestinationCompanyNew = Object.prototype.hasOwnProperty.call(bodyNew, "destination_company")
+      ? safeTrim(bodyNew?.destination_company)
+      : (destinationCustomerChangedNew
+        ? (destinationCustomerRecordNew?.name || null)
+        : (currentFullNew.destination_company || null));
+
+    if (!nextDestinationCompanyNew) {
+      return res.status(400).json({ error: "Zieladresse ist Pflicht" });
+    }
+
+    applyDestinationSnapshotFieldNew("destination_company", "destination_company", destinationCustomerRecordNew?.name || currentFullNew.destination_company || null);
+    applyDestinationSnapshotFieldNew("destination_street", "destination_street", destinationCustomerRecordNew?.street || currentFullNew.destination_street || null);
+    applyDestinationSnapshotFieldNew("destination_address_extra", "destination_address_extra", destinationCustomerRecordNew?.address_extra || currentFullNew.destination_address_extra || null);
+    applyDestinationSnapshotFieldNew("destination_postal_code", "destination_postal_code", destinationCustomerRecordNew?.postal_code || currentFullNew.destination_postal_code || null);
+    applyDestinationSnapshotFieldNew("destination_city", "destination_city", destinationCustomerRecordNew?.city || currentFullNew.destination_city || null);
+    applyDestinationSnapshotFieldNew("destination_country", "destination_country", destinationCustomerRecordNew?.country || currentFullNew.destination_country || null);
+
+    if (Object.prototype.hasOwnProperty.call(bodyNew, "destination_reference_no")) {
+      valuesNew.push(safeTrim(bodyNew?.destination_reference_no));
+      updatesNew.push(`destination_reference_no = $${valuesNew.length}`);
+    }
+  } else {
+    const shouldClearDestinationNew = String(currentFullNew.title || "") === "firma_zu_firma"
+      || destinationCustomerChangedNew
+      || [
+        "destination_company",
+        "destination_street",
+        "destination_address_extra",
+        "destination_postal_code",
+        "destination_city",
+        "destination_country",
+        "destination_reference_no"
+      ].some((field) => Object.prototype.hasOwnProperty.call(bodyNew, field));
+
+    if (shouldClearDestinationNew) {
+      const destinationColumnsNew = [
+        "destination_customer_id",
+        "destination_company",
+        "destination_street",
+        "destination_address_extra",
+        "destination_postal_code",
+        "destination_city",
+        "destination_country",
+        "destination_reference_no"
+      ];
+      for (const columnName of destinationColumnsNew) {
+        valuesNew.push(null);
+        updatesNew.push(`${columnName} = $${valuesNew.length}`);
+      }
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(bodyNew, "order_no")) {
     valuesNew.push(safeTrim(bodyNew?.order_no));
     updatesNew.push(`order_no = $${valuesNew.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(bodyNew, "reference_no")) {
+    valuesNew.push(safeTrim(bodyNew?.reference_no));
+    updatesNew.push(`reference_no = $${valuesNew.length}`);
   }
   if (Object.prototype.hasOwnProperty.call(bodyNew, "note")) {
     valuesNew.push(safeTrim(bodyNew?.note));
