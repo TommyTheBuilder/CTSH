@@ -57,7 +57,7 @@ const URGENCY_LABELS = {
   critical: "Kritisch"
 };
 
-const PALLET_ASSET_VERSION = "20260317-8";
+const PALLET_ASSET_VERSION = "20260317-9";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 function titleLabel(value) {
@@ -76,12 +76,22 @@ function isTransferTitle(value) {
   return String(value || "") === "firma_zu_firma";
 }
 
-function streetLine(street, addressExtra) {
-  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+function joinTextParts(parts, separator = ", ") {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(separator);
 }
 
-function postalCityLine(postalCode, city) {
-  return [postalCode, city].filter(Boolean).join(" ") || "-";
+function streetLine(street, addressExtra) {
+  return joinTextParts([street, addressExtra]) || "-";
+}
+
+function postalCityLine(postalCode, city, country) {
+  const locality = joinTextParts([postalCode, city], " ");
+  const countryCode = String(country ?? "").trim();
+  if (countryCode && locality) return `${countryCode}-${locality}`;
+  return locality || countryCode || "-";
 }
 
 function extractFilename(response, fallback) {
@@ -149,8 +159,7 @@ function detailAddressCards(booking) {
       customer: booking.customer_name || booking.company || "-",
       company: booking.company || "-",
       street: streetLine(booking.street, booking.address_extra),
-      postalCity: postalCityLine(booking.postal_code, booking.city),
-      country: booking.country || "-",
+      postalCity: postalCityLine(booking.postal_code, booking.city, booking.country),
       referenceLabel: isTransferTitle(booking.title) ? "Referenz Start" : "Referenz",
       reference: booking.reference_no || "-"
     }
@@ -163,8 +172,7 @@ function detailAddressCards(booking) {
       customer: booking.destination_customer_name || booking.destination_company || "-",
       company: booking.destination_company || "-",
       street: streetLine(booking.destination_street, booking.destination_address_extra),
-      postalCity: postalCityLine(booking.destination_postal_code, booking.destination_city),
-      country: booking.destination_country || "-",
+      postalCity: postalCityLine(booking.destination_postal_code, booking.destination_city, booking.destination_country),
       referenceLabel: "Referenz Ziel",
       reference: booking.destination_reference_no || "-"
     });
@@ -255,7 +263,6 @@ async function init() {
                 <div class="pallet-detail-route-row"><span>Firma</span><strong>${escapeHtml(card.company)}</strong></div>
                 <div class="pallet-detail-route-row"><span>Stra\u00dfe</span><strong>${escapeHtml(card.street)}</strong></div>
                 <div class="pallet-detail-route-row"><span>PLZ + Ort</span><strong>${escapeHtml(card.postalCity)}</strong></div>
-                <div class="pallet-detail-route-row"><span>Land</span><strong>${escapeHtml(card.country)}</strong></div>
                 <div class="pallet-detail-route-row"><span>${escapeHtml(card.referenceLabel)}</span><strong>${escapeHtml(card.reference)}</strong></div>
               </div>
             </article>

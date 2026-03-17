@@ -40,7 +40,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-8";
+const PALLET_ASSET_VERSION = "20260317-9";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -748,12 +748,22 @@ function isOpenPalletTransferTitle(title) {
   return String(title || "").trim().toLowerCase() === "firma_zu_firma";
 }
 
-function formatOpenPalletStreetLine(street, addressExtra) {
-  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+function formatOpenPalletParts(parts, separator = ", ") {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(separator);
 }
 
-function formatOpenPalletPostalCityLine(postalCode, city) {
-  return [postalCode, city].filter(Boolean).join(" ") || "-";
+function formatOpenPalletStreetLine(street, addressExtra) {
+  return formatOpenPalletParts([street, addressExtra]) || "-";
+}
+
+function formatOpenPalletPostalCityLine(postalCode, city, country) {
+  const locality = formatOpenPalletParts([postalCode, city], " ");
+  const countryCode = safeTrim(country);
+  if (countryCode && locality) return `${countryCode}-${locality}`;
+  return locality || countryCode || "-";
 }
 
 function formatOpenPalletPdfDate(value) {
@@ -774,8 +784,7 @@ function getOpenPalletAddressSections(booking) {
       customer: booking?.customer_name || booking?.company || "-",
       company: booking?.company || "-",
       street: formatOpenPalletStreetLine(booking?.street, booking?.address_extra),
-      postalCity: formatOpenPalletPostalCityLine(booking?.postal_code, booking?.city),
-      country: booking?.country || "-",
+      postalCity: formatOpenPalletPostalCityLine(booking?.postal_code, booking?.city, booking?.country),
       referenceLabel: isOpenPalletTransferTitle(booking?.title) ? "Referenz Start" : "Referenz",
       reference: booking?.reference_no || "-"
     }
@@ -787,8 +796,7 @@ function getOpenPalletAddressSections(booking) {
       customer: booking?.destination_customer_name || booking?.destination_company || "-",
       company: booking?.destination_company || "-",
       street: formatOpenPalletStreetLine(booking?.destination_street, booking?.destination_address_extra),
-      postalCity: formatOpenPalletPostalCityLine(booking?.destination_postal_code, booking?.destination_city),
-      country: booking?.destination_country || "-",
+      postalCity: formatOpenPalletPostalCityLine(booking?.destination_postal_code, booking?.destination_city, booking?.destination_country),
       referenceLabel: "Referenz Ziel",
       reference: booking?.destination_reference_no || "-"
     });
@@ -1287,7 +1295,6 @@ function buildOpenPalletPdfBuffer(booking) {
       { label: "Firma", value: section.company },
       { label: "Stra\u00dfe", value: section.street },
       { label: "PLZ + Ort", value: section.postalCity },
-      { label: "Land", value: section.country },
       { label: section.referenceLabel, value: section.reference }
     ]
   }));
@@ -4189,6 +4196,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
 
   const bodyNew = req.body || {};
   const titleCheckNew = normalizeOpenPalletTitle(bodyNew?.title);
+  const statusCheckNew = normalizeOpenPalletStatus(bodyNew?.status || "open");
   const urgencyCheckNew = normalizeOpenPalletUrgency(bodyNew?.urgency_level);
   const customerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.customer_id, { allowEmpty: true });
   const destinationCustomerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.destination_customer_id, { allowEmpty: true });
@@ -4196,6 +4204,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const destinationCountryCheckNew = normalizeOpenPalletCountry(bodyNew?.destination_country, { allowEmpty: true, fieldLabel: "Ziel-Land" });
   const palletCountNew = Number(bodyNew?.pallet_count || 0);
   if (!titleCheckNew.ok) return res.status(400).json({ error: titleCheckNew.msg });
+  if (!statusCheckNew.ok) return res.status(400).json({ error: statusCheckNew.msg });
   if (!urgencyCheckNew.ok) return res.status(400).json({ error: urgencyCheckNew.msg });
   if (!customerIdCheckNew.ok) return res.status(400).json({ error: customerIdCheckNew.msg });
   if (!destinationCustomerIdCheckNew.ok) return res.status(400).json({ error: destinationCustomerIdCheckNew.msg });
@@ -4274,6 +4283,19 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const referenceNoNew = safeTrim(bodyNew?.reference_no);
   const destinationReferenceNoNew = isTransferNew ? safeTrim(bodyNew?.destination_reference_no) : null;
   const noteNew = safeTrim(bodyNew?.note);
+  let truckLicensePlateNew = null;
+  let truckPlannedForNew = null;
+  let truckPlannedByNew = null;
+
+  if (statusCheckNew.status === "truck_planned") {
+    const truckPlateCheckNew = normalizeOpenPalletTruckLicensePlate(bodyNew?.truck_license_plate);
+    const truckDateCheckNew = normalizeOpenPalletTruckDate(bodyNew?.truck_planned_for);
+    if (!truckPlateCheckNew.ok) return res.status(400).json({ error: truckPlateCheckNew.msg });
+    if (!truckDateCheckNew.ok) return res.status(400).json({ error: truckDateCheckNew.msg });
+    truckLicensePlateNew = truckPlateCheckNew.plate;
+    truckPlannedForNew = truckDateCheckNew.date;
+    truckPlannedByNew = req.user.id;
+  }
 
   if (isTransferNew && !destinationCompanyNew) {
     return res.status(400).json({ error: "Zieladresse ist Pflicht" });
@@ -4307,9 +4329,13 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       pallet_count,
       note,
       urgency_level,
-      status
+      status,
+      truck_license_plate,
+      truck_planned_for,
+      truck_planned_by,
+      truck_planned_at
     )
-    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'open')
+    VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,CASE WHEN $28::int IS NOT NULL THEN now() ELSE NULL END)
     RETURNING id
     `,
     [
@@ -4336,7 +4362,11 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
       destinationReferenceNoNew,
       palletCountNew,
       noteNew,
-      urgencyCheckNew.urgency
+      urgencyCheckNew.urgency,
+      statusCheckNew.status,
+      truckLicensePlateNew,
+      truckPlannedForNew,
+      truckPlannedByNew
     ]
   );
 

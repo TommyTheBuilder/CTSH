@@ -1,7 +1,7 @@
 const token = localStorage.getItem("token");
 if (!token) window.location.href = "/login.html";
 
-const PALLET_ASSET_VERSION = "20260317-8";
+const PALLET_ASSET_VERSION = "20260317-9";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 const I18N = {
@@ -202,12 +202,22 @@ function isTransferTitle(value) {
   return String(value || "") === "firma_zu_firma";
 }
 
-function streetLine(street, addressExtra) {
-  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+function joinTextParts(parts, separator = ", ") {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(separator);
 }
 
-function postalCityLine(postalCode, city) {
-  return [postalCode, city].filter(Boolean).join(" ") || "-";
+function streetLine(street, addressExtra) {
+  return joinTextParts([street, addressExtra]) || "-";
+}
+
+function postalCityLine(postalCode, city, country) {
+  const locality = joinTextParts([postalCode, city], " ");
+  const countryCode = String(country ?? "").trim();
+  if (countryCode && locality) return `${countryCode}-${locality}`;
+  return locality || countryCode || "-";
 }
 
 function formatDateTime(value, lang) {
@@ -276,8 +286,7 @@ function buildAddressCards(booking, lang) {
         { label: dict.customer, value: booking.customer_name || booking.company || "-" },
         { label: dict.company, value: booking.company || "-" },
         { label: dict.street, value: streetLine(booking.street, booking.address_extra) },
-        { label: dict.postalCity, value: postalCityLine(booking.postal_code, booking.city) },
-        { label: dict.country, value: booking.country || "-" },
+        { label: dict.postalCity, value: postalCityLine(booking.postal_code, booking.city, booking.country) },
         { label: isTransferTitle(booking.title) ? dict.referenceStart : dict.reference, value: booking.reference_no || "-" }
       ]
     }
@@ -291,8 +300,7 @@ function buildAddressCards(booking, lang) {
         { label: dict.customer, value: booking.destination_customer_name || booking.destination_company || "-" },
         { label: dict.company, value: booking.destination_company || "-" },
         { label: dict.street, value: streetLine(booking.destination_street, booking.destination_address_extra) },
-        { label: dict.postalCity, value: postalCityLine(booking.destination_postal_code, booking.destination_city) },
-        { label: dict.country, value: booking.destination_country || "-" },
+        { label: dict.postalCity, value: postalCityLine(booking.destination_postal_code, booking.destination_city, booking.destination_country) },
         { label: dict.referenceDestination, value: booking.destination_reference_no || "-" }
       ]
     });
