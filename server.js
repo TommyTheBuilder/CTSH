@@ -857,46 +857,60 @@ function wrapPdfText(text, maxChars = 86) {
   return lines.length ? lines : [""];
 }
 
-function buildSimplePdfBuffer(lines = []) {
+function formatOpenPalletPdfDateTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return formatOpenPalletPdfDate(new Date());
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatPdfNumber(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0";
+  return numeric.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function estimatePdfCharactersPerLine(width, size, factor = 0.53) {
+  const safeWidth = Math.max(Number(width || 0), 40);
+  const safeSize = Math.max(Number(size || 0), 1);
+  return Math.max(8, Math.floor(safeWidth / (safeSize * factor)));
+}
+
+function measurePdfWrappedText(text, width, size, options = {}) {
+  const lineHeight = Number(options?.lineHeight || (size + 4));
+  const charFactor = Number(options?.charFactor || 0.53);
+  const lines = Array.isArray(text)
+    ? (text.length ? text.map((line) => String(line ?? "")) : [""])
+    : wrapPdfText(text, estimatePdfCharactersPerLine(width, size, charFactor));
+  const safeLines = lines.length ? lines : [""];
+  const height = safeLines.length === 1
+    ? Number(size || 0)
+    : ((safeLines.length - 1) * lineHeight) + Number(size || 0);
+
+  return {
+    lines: safeLines,
+    lineHeight,
+    height
+  };
+}
+
+function buildPdfBufferFromPages(pages = []) {
   const pageWidth = 595;
   const pageHeight = 842;
-  const left = 48;
-  const top = 794;
-  const bottom = 48;
-  const pages = [];
-  let commands = [];
-  let y = top;
-
-  const flushPage = () => {
-    pages.push(commands.join("\n"));
-    commands = [];
-    y = top;
-  };
-
-  for (const line of lines) {
-    const text = String(line?.text ?? "");
-    const size = Number(line?.size || 11);
-    const lineHeight = size + (line?.gap ?? 6);
-    const wrapped = text ? wrapPdfText(text, size >= 16 ? 54 : 86) : [""];
-
-    for (const wrappedLine of wrapped) {
-      if (y < bottom) flushPage();
-      if (wrappedLine) {
-        commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${left} ${y} Tm (${escapePdfText(wrappedLine)}) Tj ET`);
-      }
-      y -= lineHeight;
-    }
-  }
-
-  if (!pages.length || commands.length) flushPage();
-
   const objects = new Map();
-  const fontObjectId = 3;
+  const fontRegularObjectId = 3;
+  const fontBoldObjectId = 4;
   const pageObjectIds = [];
-  let nextObjectId = 4;
+  let nextObjectId = 5;
 
   objects.set(1, Buffer.from("<< /Type /Catalog /Pages 2 0 R >>", "latin1"));
-  objects.set(fontObjectId, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "latin1"));
+  objects.set(fontRegularObjectId, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "latin1"));
+  objects.set(fontBoldObjectId, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>", "latin1"));
 
   for (const pageContent of pages) {
     const pageObjectId = nextObjectId++;
@@ -906,7 +920,7 @@ function buildSimplePdfBuffer(lines = []) {
     objects.set(
       pageObjectId,
       Buffer.from(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontRegularObjectId} 0 R /F2 ${fontBoldObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
         "latin1"
       )
     );
@@ -951,40 +965,607 @@ function buildSimplePdfBuffer(lines = []) {
   return Buffer.concat(buffers);
 }
 
+function createPdfDocument() {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const pages = [];
+  let commands = [];
+
+  const colorString = (color = [0, 0, 0]) => color
+    .map((value) => formatPdfNumber(Math.min(Math.max(Number(value || 0), 0), 1)))
+    .join(" ");
+
+  const toBottomY = (topY) => formatPdfNumber(pageHeight - Number(topY || 0));
+  const toRectBottomY = (topY, height) => formatPdfNumber(pageHeight - Number(topY || 0) - Number(height || 0));
+
+  return {
+    pageWidth,
+    pageHeight,
+    hasContent() {
+      return commands.length > 0 || pages.length > 0;
+    },
+    newPage() {
+      pages.push(commands.join("\n"));
+      commands = [];
+    },
+    drawRect(x, y, width, height, options = {}) {
+      const fillColor = options?.fillColor || null;
+      const strokeColor = options?.strokeColor || null;
+      const lineWidth = formatPdfNumber(options?.lineWidth || 1);
+      if (!fillColor && !strokeColor) return;
+
+      const segments = [];
+      if (fillColor) segments.push(`${colorString(fillColor)} rg`);
+      if (strokeColor) {
+        segments.push(`${colorString(strokeColor)} RG`);
+        segments.push(`${lineWidth} w`);
+      }
+
+      let operator = "S";
+      if (fillColor && strokeColor) operator = "B";
+      else if (fillColor) operator = "f";
+
+      segments.push(`${formatPdfNumber(x)} ${toRectBottomY(y, height)} ${formatPdfNumber(width)} ${formatPdfNumber(height)} re ${operator}`);
+      commands.push(segments.join("\n"));
+    },
+    drawLine(x1, y1, x2, y2, options = {}) {
+      commands.push([
+        `${colorString(options?.color || [0, 0, 0])} RG`,
+        `${formatPdfNumber(options?.lineWidth || 1)} w`,
+        `${formatPdfNumber(x1)} ${toBottomY(y1)} m`,
+        `${formatPdfNumber(x2)} ${toBottomY(y2)} l S`
+      ].join("\n"));
+    },
+    drawText(x, y, text, options = {}) {
+      if (text === null || text === undefined) return;
+      const safeText = escapePdfText(text);
+      if (!safeText) return;
+      commands.push(`BT /${options?.font || "F1"} ${formatPdfNumber(options?.size || 11)} Tf ${colorString(options?.color || [0, 0, 0])} rg 1 0 0 1 ${formatPdfNumber(x)} ${toBottomY(y)} Tm (${safeText}) Tj ET`);
+    },
+    drawWrappedText(x, y, width, text, options = {}) {
+      const measure = measurePdfWrappedText(text, width, options?.size || 11, options);
+      let currentY = y;
+      for (const line of measure.lines) {
+        if (line) {
+          this.drawText(x, currentY, line, options);
+        }
+        currentY += measure.lineHeight;
+      }
+      return measure;
+    },
+    finish() {
+      if (!pages.length || commands.length) {
+        pages.push(commands.join("\n"));
+      }
+      return buildPdfBufferFromPages(pages);
+    }
+  };
+}
+
+function getOpenPalletPdfStatusColor(status) {
+  switch (String(status || "")) {
+    case "truck_planned":
+      return [0.93, 0.70, 0.24];
+    case "completed_waiting_document":
+      return [0.12, 0.60, 0.56];
+    case "document_booked_scanned":
+      return [0.18, 0.58, 0.35];
+    default:
+      return [0.20, 0.43, 0.82];
+  }
+}
+
+function getOpenPalletPdfUrgencyColor(level) {
+  switch (String(level || "")) {
+    case "low":
+      return [0.20, 0.58, 0.38];
+    case "high":
+      return [0.84, 0.42, 0.19];
+    case "critical":
+      return [0.73, 0.17, 0.20];
+    default:
+      return [0.84, 0.62, 0.20];
+  }
+}
+
+function getOpenPalletPdfRouteSummary(booking) {
+  const start = booking?.customer_name || booking?.company || "-";
+  if (isOpenPalletTransferTitle(booking?.title)) {
+    const destination = booking?.destination_customer_name || booking?.destination_company || "-";
+    return `${start} an ${destination}`;
+  }
+  return start;
+}
+
+function drawOpenPalletPdfBadge(doc, x, y, text, options = {}) {
+  const safeText = String(text || "-");
+  const height = Number(options?.height || 22);
+  const width = Number(options?.width || Math.max(92, Math.min(168, (safeText.length * 6.2) + 22)));
+  doc.drawRect(x, y, width, height, {
+    fillColor: options?.fillColor || [0.15, 0.32, 0.57]
+  });
+  doc.drawText(x + 10, y + 15, safeText, {
+    size: options?.size || 9,
+    font: "F2",
+    color: options?.textColor || [1, 1, 1]
+  });
+  return width;
+}
+
+function drawOpenPalletPdfSectionHeading(doc, x, y, width, title) {
+  doc.drawText(x, y + 12, String(title || ""), {
+    size: 11.2,
+    font: "F2",
+    color: [0.07, 0.16, 0.29]
+  });
+  doc.drawLine(x, y + 20, x + width, y + 20, {
+    color: [0.82, 0.86, 0.90],
+    lineWidth: 1
+  });
+  return 24;
+}
+
+function drawOpenPalletPdfMetricCard(doc, x, y, width, label, value, accentColor) {
+  const height = 64;
+  doc.drawRect(x, y, width, height, {
+    fillColor: [1, 1, 1],
+    strokeColor: [0.86, 0.89, 0.93],
+    lineWidth: 1
+  });
+  doc.drawRect(x, y, width, 4, {
+    fillColor: accentColor || [0.10, 0.60, 0.53]
+  });
+  doc.drawText(x + 12, y + 20, String(label || "").toUpperCase(), {
+    size: 7.1,
+    font: "F2",
+    color: [0.45, 0.50, 0.58]
+  });
+  doc.drawWrappedText(x + 12, y + 41, width - 24, String(value || "-"), {
+    size: 12.2,
+    lineHeight: 14.6,
+    charFactor: 0.51,
+    font: "F2",
+    color: [0.10, 0.14, 0.19]
+  });
+  return height;
+}
+
+function measureOpenPalletPdfInfoCard(rows, width) {
+  const innerWidth = Math.max(Number(width || 0) - 36, 60);
+  const measuredRows = rows.map((row) => {
+    const measurement = measurePdfWrappedText(row?.value || "-", innerWidth, 10.5, {
+      lineHeight: 13.8,
+      charFactor: 0.53
+    });
+    return {
+      label: String(row?.label || "-"),
+      lines: measurement.lines,
+      rowHeight: 12 + measurement.height + 12
+    };
+  });
+  const bodyHeight = measuredRows.reduce((sum, row) => sum + row.rowHeight, 0);
+  return {
+    measuredRows,
+    height: 30 + 18 + bodyHeight
+  };
+}
+
+function drawOpenPalletPdfInfoCard(doc, x, y, width, title, rows, options = {}) {
+  const measurement = measureOpenPalletPdfInfoCard(rows, width);
+  const cardHeight = Math.max(measurement.height, Number(options?.minHeight || 0));
+
+  doc.drawRect(x, y, width, cardHeight, {
+    fillColor: [0.99, 0.99, 1],
+    strokeColor: [0.86, 0.89, 0.93],
+    lineWidth: 1
+  });
+  doc.drawRect(x, y, width, 30, {
+    fillColor: options?.headerColor || [0.10, 0.60, 0.53]
+  });
+  doc.drawText(x + 16, y + 20, String(title || ""), {
+    size: 10.6,
+    font: "F2",
+    color: [1, 1, 1]
+  });
+
+  let currentY = y + 48;
+  for (const row of measurement.measuredRows) {
+    doc.drawText(x + 16, currentY, row.label.toUpperCase(), {
+      size: 7.1,
+      font: "F2",
+      color: [0.45, 0.50, 0.58]
+    });
+    currentY += 12;
+    const valueMeasure = doc.drawWrappedText(x + 16, currentY, width - 32, row.lines, {
+      size: 10.5,
+      lineHeight: 13.8,
+      font: "F1",
+      color: [0.09, 0.13, 0.18]
+    });
+    currentY += valueMeasure.height + 12;
+  }
+
+  return cardHeight;
+}
+
+function measureOpenPalletPdfDetailCard(fields, width) {
+  const padding = 18;
+  const columnGap = 12;
+  const gridGap = 10;
+  const tileWidth = Math.max(((Number(width || 0) - (padding * 2) - columnGap) / 2), 80);
+  const measuredFields = fields.map((field) => {
+    const measurement = measurePdfWrappedText(field?.value || "-", tileWidth - 20, 11.1, {
+      lineHeight: 14,
+      charFactor: 0.52
+    });
+    return {
+      label: String(field?.label || "-"),
+      lines: measurement.lines,
+      boxHeight: Math.max(54, 18 + measurement.height + 14)
+    };
+  });
+
+  const rowHeights = [];
+  for (let index = 0; index < measuredFields.length; index += 2) {
+    rowHeights.push(Math.max(
+      measuredFields[index]?.boxHeight || 0,
+      measuredFields[index + 1]?.boxHeight || 0
+    ));
+  }
+
+  const gridHeight = rowHeights.reduce((sum, value) => sum + value, 0) + (Math.max(rowHeights.length - 1, 0) * gridGap);
+  return {
+    measuredFields,
+    tileWidth,
+    rowHeights,
+    padding,
+    columnGap,
+    gridGap,
+    height: 30 + 18 + gridHeight + 18
+  };
+}
+
+function drawOpenPalletPdfDetailCard(doc, x, y, width, fields) {
+  const measurement = measureOpenPalletPdfDetailCard(fields, width);
+  doc.drawRect(x, y, width, measurement.height, {
+    fillColor: [0.99, 0.99, 1],
+    strokeColor: [0.86, 0.89, 0.93],
+    lineWidth: 1
+  });
+  doc.drawRect(x, y, width, 30, {
+    fillColor: [0.07, 0.16, 0.29]
+  });
+  doc.drawText(x + 16, y + 20, "Buchungsdaten", {
+    size: 10.6,
+    font: "F2",
+    color: [1, 1, 1]
+  });
+
+  let currentY = y + 48;
+  let fieldIndex = 0;
+  for (const rowHeight of measurement.rowHeights) {
+    for (let column = 0; column < 2; column += 1) {
+      const field = measurement.measuredFields[fieldIndex++];
+      if (!field) continue;
+
+      const tileX = x + measurement.padding + (column * (measurement.tileWidth + measurement.columnGap));
+      doc.drawRect(tileX, currentY, measurement.tileWidth, rowHeight, {
+        fillColor: [1, 1, 1],
+        strokeColor: [0.90, 0.92, 0.95],
+        lineWidth: 1
+      });
+      doc.drawText(tileX + 10, currentY + 17, field.label.toUpperCase(), {
+        size: 7.1,
+        font: "F2",
+        color: [0.45, 0.50, 0.58]
+      });
+      doc.drawWrappedText(tileX + 10, currentY + 35, measurement.tileWidth - 20, field.lines, {
+        size: 11.1,
+        lineHeight: 14,
+        font: "F1",
+        color: [0.09, 0.13, 0.18]
+      });
+    }
+    currentY += rowHeight + measurement.gridGap;
+  }
+
+  return measurement.height;
+}
+
+function drawOpenPalletPdfNoteCard(doc, x, y, width, title, lines) {
+  const measurement = measurePdfWrappedText(lines, width - 36, 10.6, {
+    lineHeight: 14.2,
+    charFactor: 0.53
+  });
+  const height = 30 + 18 + measurement.height + 18;
+
+  doc.drawRect(x, y, width, height, {
+    fillColor: [0.99, 0.99, 1],
+    strokeColor: [0.86, 0.89, 0.93],
+    lineWidth: 1
+  });
+  doc.drawRect(x, y, width, 30, {
+    fillColor: [0.10, 0.60, 0.53]
+  });
+  doc.drawText(x + 16, y + 20, String(title || "Notiz"), {
+    size: 10.6,
+    font: "F2",
+    color: [1, 1, 1]
+  });
+  doc.drawWrappedText(x + 18, y + 48, width - 36, measurement.lines, {
+    size: 10.6,
+    lineHeight: 14.2,
+    font: "F1",
+    color: [0.09, 0.13, 0.18]
+  });
+
+  return height;
+}
+
+function buildOpenPalletPdfNoteLines(note, width) {
+  const raw = String(note ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+  if (!raw) return [];
+
+  const paragraphs = raw.split("\n");
+  const lines = [];
+  const maxChars = estimatePdfCharactersPerLine(width, 10.6, 0.53);
+
+  paragraphs.forEach((paragraph, index) => {
+    if (!paragraph.trim()) {
+      lines.push("");
+    } else {
+      lines.push(...wrapPdfText(paragraph, maxChars));
+    }
+    if (index < paragraphs.length - 1) {
+      lines.push("");
+    }
+  });
+
+  while (lines.length && !lines[lines.length - 1]) {
+    lines.pop();
+  }
+
+  return lines;
+}
+
 function buildOpenPalletPdfBuffer(booking) {
-  const lines = [
-    { text: "Offene Paletten", size: 19, gap: 10 },
-    { text: `${OPEN_PALLET_TITLES[booking?.title] || booking?.title || "-"}`, size: 14, gap: 8 },
-    { text: `Status: ${OPEN_PALLET_STATUSES[booking?.status] || booking?.status || "-"}` },
-    { text: `Dringlichkeit: ${OPEN_PALLET_URGENCY_LEVELS[booking?.urgency_level] || booking?.urgency_level || "-"}` },
-    { text: `Auftragsnummer: ${booking?.order_no || "-"}` },
-    { text: `Paletten: ${booking?.pallet_count ?? "-"}` },
-    { text: "" }
+  const doc = createPdfDocument();
+  const margin = 36;
+  const contentWidth = doc.pageWidth - (margin * 2);
+  const contentBottom = doc.pageHeight - 78;
+  const footerText = `Buchung #${booking?.id || "-"} | PDF erstellt ${formatOpenPalletPdfDateTime(new Date())}`;
+  const titleText = OPEN_PALLET_TITLES[booking?.title] || booking?.title || "-";
+  const statusText = OPEN_PALLET_STATUSES[booking?.status] || booking?.status || "-";
+  const urgencyText = OPEN_PALLET_URGENCY_LEVELS[booking?.urgency_level] || booking?.urgency_level || "-";
+  const routeText = getOpenPalletPdfRouteSummary(booking);
+  const statusColor = getOpenPalletPdfStatusColor(booking?.status);
+  const urgencyColor = getOpenPalletPdfUrgencyColor(booking?.urgency_level);
+  const sections = getOpenPalletAddressSections(booking);
+  const addressRows = sections.map((section) => ({
+    title: section.title,
+    headerColor: section.title === "Zieladresse" ? [0.07, 0.16, 0.29] : [0.10, 0.60, 0.53],
+    rows: [
+      { label: "Kunde", value: section.customer },
+      { label: "Firma", value: section.company },
+      { label: "Stra\u00dfe", value: section.street },
+      { label: "PLZ + Ort", value: section.postalCity },
+      { label: "Land", value: section.country },
+      { label: section.referenceLabel, value: section.reference }
+    ]
+  }));
+  const detailFields = [
+    { label: "Buchungs-ID", value: `#${booking?.id || "-"}` },
+    { label: "Auftragsnummer", value: booking?.order_no || "-" },
+    { label: "Paletten", value: String(booking?.pallet_count ?? "-") },
+    { label: "Abteilung", value: booking?.department_name || "-" }
   ];
-
-  for (const section of getOpenPalletAddressSections(booking)) {
-    lines.push({ text: section.title, size: 13, gap: 8 });
-    lines.push({ text: `Kunde: ${section.customer}` });
-    lines.push({ text: `Firma: ${section.company}` });
-    lines.push({ text: `Stra\u00dfe: ${section.street}` });
-    lines.push({ text: `PLZ + Ort: ${section.postalCity}` });
-    lines.push({ text: `Land: ${section.country}` });
-    lines.push({ text: `${section.referenceLabel}: ${section.reference}` });
-    lines.push({ text: "" });
-  }
-
   if (booking?.truck_license_plate) {
-    lines.push({ text: `LKW Kennzeichen: ${booking.truck_license_plate}` });
+    detailFields.push({ label: "LKW Kennzeichen", value: booking.truck_license_plate });
   }
-  if (booking?.note) {
-    lines.push({ text: "" });
-    lines.push({ text: "Notiz", size: 13, gap: 8 });
-    for (const noteLine of wrapPdfText(booking.note, 86)) {
-      lines.push({ text: noteLine });
+
+  let cursorY = margin;
+  let pageStarted = false;
+
+  const drawFooter = () => {
+    doc.drawLine(margin, doc.pageHeight - 60, doc.pageWidth - margin, doc.pageHeight - 60, {
+      color: [0.82, 0.86, 0.90],
+      lineWidth: 1
+    });
+    doc.drawText(margin, doc.pageHeight - 42, footerText, {
+      size: 8.4,
+      color: [0.42, 0.47, 0.55]
+    });
+  };
+
+  const beginPage = (continuation = false) => {
+    if (pageStarted) {
+      drawFooter();
+      doc.newPage();
+    }
+    pageStarted = true;
+    cursorY = margin;
+
+    if (continuation) {
+      doc.drawRect(margin, cursorY, contentWidth, 54, {
+        fillColor: [0.97, 0.98, 0.99],
+        strokeColor: [0.86, 0.89, 0.93],
+        lineWidth: 1
+      });
+      doc.drawText(margin + 18, cursorY + 22, "Offene Paletten", {
+        size: 11,
+        font: "F2",
+        color: [0.07, 0.16, 0.29]
+      });
+      doc.drawText(margin + 18, cursorY + 39, `${titleText} | Buchung #${booking?.id || "-"}`, {
+        size: 9.2,
+        color: [0.42, 0.47, 0.55]
+      });
+      cursorY += 72;
+      return;
+    }
+
+    doc.drawRect(margin, cursorY, contentWidth, 118, {
+      fillColor: [0.07, 0.16, 0.29]
+    });
+    doc.drawRect(margin, cursorY, 8, 118, {
+      fillColor: [0.10, 0.60, 0.53]
+    });
+    doc.drawText(margin + 24, cursorY + 24, "OFFENE PALETTEN", {
+      size: 8.8,
+      font: "F2",
+      color: [0.66, 0.85, 0.84]
+    });
+    doc.drawWrappedText(margin + 24, cursorY + 54, 300, titleText, {
+      size: 22,
+      lineHeight: 24,
+      font: "F2",
+      color: [1, 1, 1],
+      charFactor: 0.51
+    });
+    doc.drawWrappedText(margin + 24, cursorY + 82, 310, routeText, {
+      size: 11,
+      lineHeight: 14,
+      font: "F1",
+      color: [0.88, 0.92, 0.96]
+    });
+    doc.drawText(margin + 24, cursorY + 104, `Stand ${formatOpenPalletPdfDateTime(booking?.updated_at || booking?.created_at || new Date())}`, {
+      size: 8.8,
+      color: [0.72, 0.79, 0.88]
+    });
+
+    const infoX = margin + contentWidth - 152;
+    doc.drawRect(infoX, cursorY + 16, 128, 28, {
+      fillColor: [1, 1, 1]
+    });
+    doc.drawText(infoX + 12, cursorY + 34, `Buchung #${booking?.id || "-"}`, {
+      size: 10.3,
+      font: "F2",
+      color: [0.07, 0.16, 0.29]
+    });
+    drawOpenPalletPdfBadge(doc, infoX, cursorY + 54, statusText, {
+      width: 128,
+      fillColor: statusColor
+    });
+    drawOpenPalletPdfBadge(doc, infoX, cursorY + 84, urgencyText, {
+      width: 128,
+      fillColor: urgencyColor
+    });
+
+    cursorY += 136;
+  };
+
+  const ensureSpace = (height) => {
+    if (!pageStarted) beginPage(false);
+    if ((cursorY + height) > contentBottom) {
+      beginPage(true);
+    }
+  };
+
+  beginPage(false);
+
+  const summaryCards = [
+    { label: "Status", value: statusText, accentColor: statusColor },
+    { label: "Dringlichkeit", value: urgencyText, accentColor: urgencyColor },
+    { label: "Paletten", value: String(booking?.pallet_count ?? "-"), accentColor: [0.09, 0.21, 0.39] },
+    { label: "Auftragsnummer", value: booking?.order_no || "-", accentColor: [0.10, 0.60, 0.53] }
+  ];
+  const summaryGap = 12;
+  const summaryWidth = (contentWidth - (summaryGap * (summaryCards.length - 1))) / summaryCards.length;
+  ensureSpace(68);
+  summaryCards.forEach((item, index) => {
+    drawOpenPalletPdfMetricCard(doc, margin + (index * (summaryWidth + summaryGap)), cursorY, summaryWidth, item.label, item.value, item.accentColor);
+  });
+  cursorY += 82;
+
+  ensureSpace(28);
+  cursorY += drawOpenPalletPdfSectionHeading(doc, margin, cursorY, contentWidth, "Adressdaten");
+
+  if (addressRows.length > 1) {
+    const cardGap = 16;
+    const cardWidth = (contentWidth - cardGap) / 2;
+    const leftCard = measureOpenPalletPdfInfoCard(addressRows[0].rows, cardWidth);
+    const rightCard = measureOpenPalletPdfInfoCard(addressRows[1].rows, cardWidth);
+    const cardHeight = Math.max(leftCard.height, rightCard.height);
+    ensureSpace(cardHeight);
+    drawOpenPalletPdfInfoCard(doc, margin, cursorY, cardWidth, addressRows[0].title, addressRows[0].rows, {
+      headerColor: addressRows[0].headerColor,
+      minHeight: cardHeight
+    });
+    drawOpenPalletPdfInfoCard(doc, margin + cardWidth + cardGap, cursorY, cardWidth, addressRows[1].title, addressRows[1].rows, {
+      headerColor: addressRows[1].headerColor,
+      minHeight: cardHeight
+    });
+
+    const arrowY = cursorY + (cardHeight / 2);
+    const arrowStart = margin + cardWidth + 5;
+    const arrowEnd = margin + cardWidth + cardGap - 5;
+    doc.drawLine(arrowStart, arrowY, arrowEnd, arrowY, {
+      color: [0.10, 0.60, 0.53],
+      lineWidth: 1.8
+    });
+    doc.drawLine(arrowEnd - 8, arrowY - 4, arrowEnd, arrowY, {
+      color: [0.10, 0.60, 0.53],
+      lineWidth: 1.8
+    });
+    doc.drawLine(arrowEnd - 8, arrowY + 4, arrowEnd, arrowY, {
+      color: [0.10, 0.60, 0.53],
+      lineWidth: 1.8
+    });
+
+    cursorY += cardHeight + 20;
+  } else {
+    const cardHeight = measureOpenPalletPdfInfoCard(addressRows[0].rows, contentWidth).height;
+    ensureSpace(cardHeight);
+    drawOpenPalletPdfInfoCard(doc, margin, cursorY, contentWidth, addressRows[0].title, addressRows[0].rows, {
+      headerColor: addressRows[0].headerColor
+    });
+    cursorY += cardHeight + 20;
+  }
+
+  ensureSpace(28);
+  cursorY += drawOpenPalletPdfSectionHeading(doc, margin, cursorY, contentWidth, "Buchungsdaten");
+
+  const detailCardHeight = measureOpenPalletPdfDetailCard(detailFields, contentWidth).height;
+  ensureSpace(detailCardHeight);
+  drawOpenPalletPdfDetailCard(doc, margin, cursorY, contentWidth, detailFields);
+  cursorY += detailCardHeight + 18;
+
+  const noteLines = buildOpenPalletPdfNoteLines(booking?.note, contentWidth - 36);
+  if (noteLines.length) {
+    const availableLabelHeight = 30 + 18 + 18;
+    const noteLineHeight = 14.2;
+    let chunkIndex = 0;
+    let remainingLines = [...noteLines];
+
+    while (remainingLines.length) {
+      let availableHeight = contentBottom - cursorY;
+      let maxLines = Math.floor((availableHeight - availableLabelHeight - 10.6) / noteLineHeight) + 1;
+
+      if (maxLines < 4) {
+        beginPage(true);
+        availableHeight = contentBottom - cursorY;
+        maxLines = Math.floor((availableHeight - availableLabelHeight - 10.6) / noteLineHeight) + 1;
+      }
+
+      const linesForPage = remainingLines.splice(0, Math.max(maxLines, 1));
+      const noteTitle = chunkIndex === 0 ? "Notiz" : "Notiz Fortsetzung";
+      const noteHeight = measurePdfWrappedText(linesForPage, contentWidth - 36, 10.6, {
+        lineHeight: noteLineHeight,
+        charFactor: 0.53
+      }).height + availableLabelHeight;
+
+      ensureSpace(noteHeight);
+      drawOpenPalletPdfNoteCard(doc, margin, cursorY, contentWidth, noteTitle, linesForPage);
+      cursorY += noteHeight + 16;
+      chunkIndex += 1;
     }
   }
 
-  return buildSimplePdfBuffer(lines);
+  drawFooter();
+  return doc.finish();
 }
 
 function flattenPermissionRoles(perms, prefix = "") {
