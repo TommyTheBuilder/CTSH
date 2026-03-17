@@ -1,7 +1,7 @@
 const token = localStorage.getItem("token");
 if (!token) window.location.href = "/login.html";
 
-const PALLET_ASSET_VERSION = "20260317-5";
+const PALLET_ASSET_VERSION = "20260317-6";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 const I18N = {
@@ -13,6 +13,7 @@ const I18N = {
     pageTitle: "Fahrerinformation",
     pageSubtitle: "Offene Paletten",
     bookingType: "Buchungstyp",
+    orderNo: "Auftragsnummer",
     route: "Route",
     palletCount: "Paletten",
     generatedAt: "Erstellt",
@@ -49,6 +50,7 @@ const I18N = {
     pageTitle: "Driver information",
     pageSubtitle: "Open pallets",
     bookingType: "Order type",
+    orderNo: "Order number",
     route: "Route",
     palletCount: "Pallets",
     generatedAt: "Created",
@@ -85,6 +87,7 @@ const I18N = {
     pageTitle: "Informacije za voza\u010da",
     pageSubtitle: "Otvorene palete",
     bookingType: "Vrsta naloga",
+    orderNo: "Broj naloga",
     route: "Ruta",
     palletCount: "Palete",
     generatedAt: "Izra\u0111eno",
@@ -121,6 +124,7 @@ const I18N = {
     pageTitle: "\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f \u0434\u043b\u044f \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f",
     pageSubtitle: "\u041e\u0442\u043a\u0440\u044b\u0442\u044b\u0435 \u043f\u0430\u043b\u0435\u0442\u044b",
     bookingType: "\u0422\u0438\u043f \u0437\u0430\u044f\u0432\u043a\u0438",
+    orderNo: "\u041d\u043e\u043c\u0435\u0440 \u0437\u0430\u043a\u0430\u0437\u0430",
     route: "\u041c\u0430\u0440\u0448\u0440\u0443\u0442",
     palletCount: "\u041f\u0430\u043b\u0435\u0442\u044b",
     generatedAt: "\u0421\u043e\u0437\u0434\u0430\u043d\u043e",
@@ -414,6 +418,10 @@ async function init() {
           <div class="driver-meta__item">
             <span>${escapeHtml(dict.bookingType)}</span>
             <strong>${escapeHtml(titleLabel(booking.title, lang))}</strong>
+          </div>
+          <div class="driver-meta__item">
+            <span>${escapeHtml(dict.orderNo)}</span>
+            <strong>${escapeHtml(booking.order_no || "-")}</strong>
           </div>
           <div class="driver-meta__item">
             <span>${escapeHtml(dict.generatedAt)}</span>
