@@ -177,7 +177,7 @@
 
     .driver-meta {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
       margin-top: 18px;
     }
@@ -389,10 +389,15 @@
 
     @page {
       size: A4;
-      margin: 12mm;
+      margin: 8mm;
     }
 
     @media print {
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
       html, body {
         background: #ffffff;
       }
@@ -413,11 +418,161 @@
         border-radius: 0;
         box-shadow: none;
       }
+
+      .driver-hero {
+        gap: 10px;
+        padding: 16px 18px;
+        border-radius: 18px;
+      }
+
+      .driver-hero__icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+      }
+
+      .driver-hero__icon svg {
+        width: 30px;
+        height: 30px;
+      }
+
+      .driver-hero__eyebrow {
+        margin-bottom: 4px;
+        font-size: 9px;
+        letter-spacing: 0.12em;
+      }
+
+      .driver-hero h1 {
+        font-size: 22px;
+      }
+
+      .driver-hero p {
+        margin-top: 6px;
+        font-size: 10.5px;
+        line-height: 1.35;
+      }
+
+      .driver-count {
+        min-width: 112px;
+        padding: 10px 12px;
+        border-radius: 16px;
+      }
+
+      .driver-count span {
+        margin-bottom: 4px;
+        font-size: 9px;
+      }
+
+      .driver-count strong {
+        font-size: 28px;
+      }
+
+      .driver-meta {
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .driver-meta__item {
+        padding: 10px 12px;
+        border-radius: 14px;
+      }
+
+      .driver-meta__item span {
+        margin-bottom: 4px;
+        font-size: 9px;
+      }
+
+      .driver-meta__item strong {
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .driver-section {
+        margin-top: 12px;
+        page-break-inside: avoid;
+      }
+
+      .driver-section__head {
+        margin-bottom: 8px;
+      }
+
+      .driver-section__head b {
+        font-size: 9px;
+        letter-spacing: 0.12em;
+      }
+
+      .driver-route--transfer {
+        grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .driver-arrow {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+      }
+
+      .driver-arrow svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .driver-card {
+        border-radius: 16px;
+        page-break-inside: avoid;
+      }
+
+      .driver-card__head {
+        padding: 10px 12px;
+        font-size: 12px;
+      }
+
+      .driver-card__body {
+        padding: 4px 12px 8px;
+      }
+
+      .driver-card__row {
+        grid-template-columns: 86px minmax(0, 1fr);
+        gap: 8px;
+        padding: 6px 0;
+      }
+
+      .driver-card__row span {
+        font-size: 8.5px;
+        letter-spacing: 0.05em;
+      }
+
+      .driver-card__row strong {
+        font-size: 11px;
+        line-height: 1.3;
+      }
+
+      .driver-note {
+        border-radius: 16px;
+        page-break-inside: avoid;
+      }
+
+      .driver-note__head {
+        padding: 10px 12px;
+        font-size: 10px;
+      }
+
+      .driver-note__body {
+        padding: 10px 12px 12px;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .driver-footer {
+        margin-top: 10px;
+        padding-top: 8px;
+        font-size: 9px;
+      }
     }
   </style>
 </head>
 <body>
   <div id="app"></div>
-  <script src="/public/modules/pallets/open-pallet-print.js?v=20260317-5"></script>
+  <script src="/public/modules/pallets/open-pallet-print.js?v=20260317-6"></script>
 </body>
 </html>

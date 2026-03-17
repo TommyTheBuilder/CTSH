@@ -14,6 +14,7 @@ const { requirePermission } = require("./middleware_permissions");
 const { checkIpBlocked, registerFailedLogin, clearFailedLogin } = require("./security/loginRateLimit");
 const { createWarehouseRouter } = require("./modules/warehouse/router");
 const permissionsConfig = require("./permissions_config");
+const OPEN_PALLET_COUNTRIES = require("./public/modules/pallets/open-pallet-countries.js");
 const {
   buildDashboardModules,
   canAccessAppAdmin,
@@ -39,7 +40,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-5";
+const PALLET_ASSET_VERSION = "20260317-6";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -537,6 +538,52 @@ const OPEN_PALLET_URGENCY_LEVELS = {
   critical: "Kritisch"
 };
 
+function normalizeOpenPalletCountry(countryRaw, { allowEmpty = false, fieldLabel = "Land" } = {}) {
+  const rawCountry = safeTrim(countryRaw);
+  if (!rawCountry) {
+    if (allowEmpty) return { ok: true, country: null };
+    return { ok: false, msg: `${fieldLabel} ist Pflicht` };
+  }
+
+  const country = OPEN_PALLET_COUNTRIES.normalize(rawCountry);
+  if (!country) {
+    return { ok: false, msg: `${fieldLabel} ist ungültig` };
+  }
+
+  return { ok: true, country };
+}
+
+function presentOpenPalletCountry(countryRaw) {
+  const rawCountry = safeTrim(countryRaw);
+  if (!rawCountry) return null;
+  return OPEN_PALLET_COUNTRIES.normalize(rawCountry) || rawCountry;
+}
+
+function normalizeOpenPalletCustomerRow(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    country: presentOpenPalletCountry(row.country)
+  };
+}
+
+function normalizeOpenPalletBookingRow(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    country: presentOpenPalletCountry(row.country),
+    destination_country: presentOpenPalletCountry(row.destination_country)
+  };
+}
+
+function openPalletCountrySqlExpression(columnName = "op.country") {
+  return `UPPER(REGEXP_REPLACE(REPLACE(TRANSLATE(COALESCE(${columnName}, ''), '\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc', 'AOUaou'), '\u00df', 'ss'), '[^A-Za-z0-9]', '', 'g'))`;
+}
+
+function getOpenPalletCountryAliases(countryCode) {
+  return OPEN_PALLET_COUNTRIES.aliasesByCode[String(countryCode || "").trim().toUpperCase()] || [];
+}
+
 function normalizeOpenPalletStatus(statusRaw, { allowEmpty = false } = {}) {
   const status = String(statusRaw || "").trim().toLowerCase();
   if (!status) {
@@ -694,7 +741,7 @@ async function getOpenPalletCustomerRecord(appCustomerId, customerId) {
     `,
     [normalizedCustomerId, appCustomerId]
   );
-  return result.rowCount ? result.rows[0] : null;
+  return result.rowCount ? normalizeOpenPalletCustomerRow(result.rows[0]) : null;
 }
 
 function isOpenPalletTransferTitle(title) {
@@ -816,7 +863,7 @@ async function getOpenPalletBookingRecord(appCustomerId, bookingId) {
     [normalizedBookingId, appCustomerId]
   );
 
-  return result.rowCount ? result.rows[0] : null;
+  return result.rowCount ? normalizeOpenPalletBookingRow(result.rows[0]) : null;
 }
 
 function escapePdfText(value) {
@@ -3639,7 +3686,7 @@ app.get("/api/modules/pallets/open-pallets/feed", authRequired, requireModuleEna
     params
   )).rows;
 
-  res.json({ items: rows });
+  res.json({ items: rows.map((row) => normalizeOpenPalletBookingRow(row)) });
 });
 
 app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
@@ -3657,7 +3704,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
   const company = safeTrim(req.query?.company);
   const city = safeTrim(req.query?.city);
   const postalCode = safeTrim(req.query?.postal_code);
-  const country = safeTrim(req.query?.country);
+  const countryCheck = normalizeOpenPalletCountry(req.query?.country, { allowEmpty: true });
   const orderNo = safeTrim(req.query?.order_no);
   const statusCheck = normalizeOpenPalletStatus(req.query?.status, { allowEmpty: true });
   const limitRaw = Number(req.query?.limit || 25);
@@ -3665,6 +3712,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
   const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 25;
   const offset = Number.isInteger(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
   if (!titleCheck.ok) return res.status(400).json({ error: titleCheck.msg });
+  if (!countryCheck.ok) return res.status(400).json({ error: countryCheck.msg });
   if (!statusCheck.ok) return res.status(400).json({ error: statusCheck.msg });
 
   const whereNew = ["op.app_customer_id = $1"];
@@ -3697,9 +3745,9 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
     paramsNew.push(`%${postalCode}%`);
     idxNew += 1;
   }
-  if (country) {
-    whereNew.push(`COALESCE(op.country, '') ILIKE $${idxNew}`);
-    paramsNew.push(`%${country}%`);
+  if (countryCheck.country) {
+    whereNew.push(`${openPalletCountrySqlExpression("op.country")} = ANY($${idxNew}::text[])`);
+    paramsNew.push(getOpenPalletCountryAliases(countryCheck.country));
     idxNew += 1;
   }
   if (orderNo) {
@@ -3764,7 +3812,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
 
   const hasMoreNew = rowsNew.length > limit;
   return res.json({
-    items: hasMoreNew ? rowsNew.slice(0, limit) : rowsNew,
+    items: (hasMoreNew ? rowsNew.slice(0, limit) : rowsNew).map((row) => normalizeOpenPalletBookingRow(row)),
     has_more: hasMoreNew,
     limit,
     offset
@@ -3861,7 +3909,7 @@ app.get("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled(
 
   const has_more = rows.length > limit;
   res.json({
-    items: has_more ? rows.slice(0, limit) : rows,
+    items: (has_more ? rows.slice(0, limit) : rows).map((row) => normalizeOpenPalletBookingRow(row)),
     has_more,
     limit,
     offset
@@ -3945,7 +3993,7 @@ app.get("/api/modules/pallets/open-pallet-customers", authRequired, requireModul
     [req.user.app_customer_id]
   )).rows;
 
-  res.json(rows);
+  res.json(rows.map((row) => normalizeOpenPalletCustomerRow(row)));
 });
 
 app.post("/api/modules/pallets/open-pallet-customers", authRequired, requireModuleEnabled("pallets"), async (req, res) => {
@@ -3959,8 +4007,9 @@ app.post("/api/modules/pallets/open-pallet-customers", authRequired, requireModu
   const addressExtra = safeTrim(req.body?.address_extra);
   const postalCode = safeTrim(req.body?.postal_code);
   const city = safeTrim(req.body?.city);
-  const country = safeTrim(req.body?.country);
+  const countryCheck = normalizeOpenPalletCountry(req.body?.country, { allowEmpty: true });
   if (!name) return res.status(400).json({ error: "Kundenname ist Pflicht" });
+  if (!countryCheck.ok) return res.status(400).json({ error: countryCheck.msg });
 
   const existing = await q(
     `
@@ -3991,7 +4040,7 @@ app.post("/api/modules/pallets/open-pallet-customers", authRequired, requireModu
           AND app_customer_id = $9
         RETURNING id, name, street, address_extra, postal_code, city, country, created_at, updated_at
         `,
-        [name, street, addressExtra, postalCode, city, country, req.user.id, existing.rows[0].id, req.user.app_customer_id]
+        [name, street, addressExtra, postalCode, city, countryCheck.country, req.user.id, existing.rows[0].id, req.user.app_customer_id]
       )).rows[0];
     } else {
       row = (await q(
@@ -4010,11 +4059,11 @@ app.post("/api/modules/pallets/open-pallet-customers", authRequired, requireModu
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
         RETURNING id, name, street, address_extra, postal_code, city, country, created_at, updated_at
         `,
-        [req.user.app_customer_id, name, street, addressExtra, postalCode, city, country, req.user.id]
+        [req.user.app_customer_id, name, street, addressExtra, postalCode, city, countryCheck.country, req.user.id]
       )).rows[0];
     }
 
-    res.json(row);
+    res.json(normalizeOpenPalletCustomerRow(row));
   } catch (error) {
     if (error?.code === "23505") {
       return res.status(400).json({ error: "Kunde existiert bereits" });
@@ -4049,8 +4098,9 @@ app.patch("/api/modules/pallets/open-pallet-customers/:id", authRequired, requir
   const addressExtra = safeTrim(req.body?.address_extra);
   const postalCode = safeTrim(req.body?.postal_code);
   const city = safeTrim(req.body?.city);
-  const country = safeTrim(req.body?.country);
+  const countryCheck = normalizeOpenPalletCountry(req.body?.country, { allowEmpty: true });
   if (!name) return res.status(400).json({ error: "Kundenname ist Pflicht" });
+  if (!countryCheck.ok) return res.status(400).json({ error: countryCheck.msg });
 
   try {
     const row = (await q(
@@ -4068,10 +4118,10 @@ app.patch("/api/modules/pallets/open-pallet-customers/:id", authRequired, requir
         AND app_customer_id = $9
       RETURNING id, name, street, address_extra, postal_code, city, country, created_at, updated_at
       `,
-      [name, street, addressExtra, postalCode, city, country, req.user.id, id, req.user.app_customer_id]
+      [name, street, addressExtra, postalCode, city, countryCheck.country, req.user.id, id, req.user.app_customer_id]
     )).rows[0];
 
-    res.json(row);
+    res.json(normalizeOpenPalletCustomerRow(row));
   } catch (error) {
     if (error?.code === "23505") {
       return res.status(400).json({ error: "Kunde existiert bereits" });
@@ -4142,11 +4192,15 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   const urgencyCheckNew = normalizeOpenPalletUrgency(bodyNew?.urgency_level);
   const customerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.customer_id, { allowEmpty: true });
   const destinationCustomerIdCheckNew = normalizeOpenPalletCustomerId(bodyNew?.destination_customer_id, { allowEmpty: true });
+  const countryCheckNew = normalizeOpenPalletCountry(bodyNew?.country, { allowEmpty: true });
+  const destinationCountryCheckNew = normalizeOpenPalletCountry(bodyNew?.destination_country, { allowEmpty: true, fieldLabel: "Ziel-Land" });
   const palletCountNew = Number(bodyNew?.pallet_count || 0);
   if (!titleCheckNew.ok) return res.status(400).json({ error: titleCheckNew.msg });
   if (!urgencyCheckNew.ok) return res.status(400).json({ error: urgencyCheckNew.msg });
   if (!customerIdCheckNew.ok) return res.status(400).json({ error: customerIdCheckNew.msg });
   if (!destinationCustomerIdCheckNew.ok) return res.status(400).json({ error: destinationCustomerIdCheckNew.msg });
+  if (!countryCheckNew.ok) return res.status(400).json({ error: countryCheckNew.msg });
+  if (!destinationCountryCheckNew.ok) return res.status(400).json({ error: destinationCountryCheckNew.msg });
   if (!Number.isInteger(palletCountNew) || palletCountNew <= 0) {
     return res.status(400).json({ error: "Anzahl der Paletten muss größer als 0 sein" });
   }
@@ -4184,7 +4238,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
     ? safeTrim(bodyNew?.city)
     : (customerRecordNew?.city || null);
   const countryNew = Object.prototype.hasOwnProperty.call(bodyNew, "country")
-    ? safeTrim(bodyNew?.country)
+    ? countryCheckNew.country
     : (customerRecordNew?.country || null);
   const destinationCompanyNew = isTransferNew
     ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_company")
@@ -4213,7 +4267,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
     : null;
   const destinationCountryNew = isTransferNew
     ? (Object.prototype.hasOwnProperty.call(bodyNew, "destination_country")
-      ? safeTrim(bodyNew?.destination_country)
+      ? destinationCountryCheckNew.country
       : (destinationCustomerRecordNew?.country || null))
     : null;
   const orderNoNew = safeTrim(bodyNew?.order_no);
@@ -4384,7 +4438,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const currentFullNew = (await q(
+  const currentFullNew = normalizeOpenPalletBookingRow((await q(
     `
     SELECT
       id,
@@ -4422,9 +4476,11 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
     LIMIT 1
     `,
     [id, req.user.app_customer_id]
-  )).rows[0];
+  )).rows[0]);
 
   const bodyNew = req.body || {};
+  const countryCheckNew = normalizeOpenPalletCountry(bodyNew?.country, { allowEmpty: true });
+  const destinationCountryCheckNew = normalizeOpenPalletCountry(bodyNew?.destination_country, { allowEmpty: true, fieldLabel: "Ziel-Land" });
   const editableFieldsNew = [
     "title",
     "customer_id",
@@ -4455,6 +4511,9 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   if (!hasAnyChangeNew) {
     return res.status(400).json({ error: "Keine Änderungen übergeben" });
   }
+
+  if (!countryCheckNew.ok) return res.status(400).json({ error: countryCheckNew.msg });
+  if (!destinationCountryCheckNew.ok) return res.status(400).json({ error: destinationCountryCheckNew.msg });
 
   if (!canEditOpenPalletBooking(perms, req.user, currentFullNew)) {
     return res.status(403).json({ error: "Keine Berechtigung" });
@@ -4507,7 +4566,9 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const applySnapshotFieldNew = (fieldName, columnName, fallbackValue) => {
     const hasField = Object.prototype.hasOwnProperty.call(bodyNew, fieldName);
     if (!hasField && !(customerChangedNew && customerRecordNew)) return;
-    const value = hasField ? safeTrim(bodyNew?.[fieldName]) : fallbackValue;
+    const value = hasField
+      ? (fieldName === "country" ? countryCheckNew.country : safeTrim(bodyNew?.[fieldName]))
+      : fallbackValue;
     valuesNew.push(value);
     updatesNew.push(`${columnName} = $${valuesNew.length}`);
   };
@@ -4515,7 +4576,9 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const applyDestinationSnapshotFieldNew = (fieldName, columnName, fallbackValue) => {
     const hasField = Object.prototype.hasOwnProperty.call(bodyNew, fieldName);
     if (!hasField && !(destinationCustomerChangedNew && destinationCustomerRecordNew) && String(currentFullNew.title || "") === "firma_zu_firma") return;
-    const value = hasField ? safeTrim(bodyNew?.[fieldName]) : fallbackValue;
+    const value = hasField
+      ? (fieldName === "destination_country" ? destinationCountryCheckNew.country : safeTrim(bodyNew?.[fieldName]))
+      : fallbackValue;
     valuesNew.push(value);
     updatesNew.push(`${columnName} = $${valuesNew.length}`);
   };

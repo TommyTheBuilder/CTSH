@@ -86,7 +86,9 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-5";
+const PALLET_ASSET_VERSION = "20260317-6";
+const OPEN_PALLET_COUNTRY_DATA = globalThis.OPEN_PALLET_COUNTRIES || {};
+const OPEN_PALLET_COUNTRY_OPTIONS = Array.isArray(OPEN_PALLET_COUNTRY_DATA.list) ? OPEN_PALLET_COUNTRY_DATA.list : [];
 
 let ME = null;
 let PERMS = {};
@@ -125,6 +127,46 @@ function buildAddressSummary(company, street, addressExtra, postalCode, city, co
 
 function fullAddress(item) {
   return [formatStreetLine(item?.street, item?.address_extra), formatPostalCityLine(item?.postal_code, item?.city), item?.country].filter(Boolean).join(" | ") || "-";
+}
+
+function normalizeCountryCode(value) {
+  if (typeof OPEN_PALLET_COUNTRY_DATA.normalize !== "function") return "";
+  return OPEN_PALLET_COUNTRY_DATA.normalize(value);
+}
+
+function countryOptionsHtml(selectedValue, { emptyLabel = "Bitte w\u00e4hlen..." } = {}) {
+  const rawValue = String(selectedValue ?? "").trim();
+  const normalizedValue = normalizeCountryCode(rawValue);
+  const activeValue = normalizedValue || rawValue;
+  const options = [];
+
+  if (emptyLabel !== null) {
+    options.push(`<option value="">${escapeHtml(emptyLabel)}</option>`);
+  }
+  if (activeValue && !OPEN_PALLET_COUNTRY_OPTIONS.some((entry) => entry.code === activeValue)) {
+    options.push(`<option value="${escapeHtml(activeValue)}" selected>${escapeHtml(activeValue)}</option>`);
+  }
+
+  return [
+    ...options,
+    ...OPEN_PALLET_COUNTRY_OPTIONS.map((entry) => `<option value="${entry.code}" ${activeValue === entry.code ? "selected" : ""}>${escapeHtml(entry.label)}</option>`)
+  ].join("");
+}
+
+function renderCountrySelectElement(select, selectedValue, options = {}) {
+  if (!select) return;
+  const activeValue = normalizeCountryCode(selectedValue) || String(selectedValue ?? "").trim();
+  select.innerHTML = countryOptionsHtml(activeValue, options);
+  select.value = activeValue;
+}
+
+function renderCountrySelect(id, selectedValue, options = {}) {
+  renderCountrySelectElement($(id), selectedValue, options);
+}
+
+function initializeCountrySelects() {
+  renderCountrySelect("filterCountry", "", { emptyLabel: "Alle" });
+  renderCountrySelect("customerCountry", "");
 }
 
 function truckInfoText(item) {
@@ -342,9 +384,10 @@ function closeCustomerModal() {
 
 function clearCustomerForm() {
   ACTIVE_CUSTOMER_ID = null;
-  ["customerName", "customerStreet", "customerAddressExtra", "customerPostalCode", "customerCity", "customerCountry"].forEach((id) => {
+  ["customerName", "customerStreet", "customerAddressExtra", "customerPostalCode", "customerCity"].forEach((id) => {
     if ($(id)) $(id).value = "";
   });
+  renderCountrySelect("customerCountry", "");
   updateCustomerDeleteButton();
 }
 
@@ -355,7 +398,7 @@ function fillCustomerForm(customer) {
   $("customerAddressExtra").value = customer?.address_extra || "";
   $("customerPostalCode").value = customer?.postal_code || "";
   $("customerCity").value = customer?.city || "";
-  $("customerCountry").value = customer?.country || "";
+  renderCountrySelect("customerCountry", customer?.country || "");
   updateCustomerDeleteButton();
 }
 
@@ -476,7 +519,7 @@ function applyCustomerToBookingFields(customer, prefix) {
   $(`${prefix}AddressExtra`) && ($(`${prefix}AddressExtra`).value = customer.address_extra || "");
   $(`${prefix}PostalCode`) && ($(`${prefix}PostalCode`).value = customer.postal_code || "");
   $(`${prefix}City`) && ($(`${prefix}City`).value = customer.city || "");
-  $(`${prefix}Country`) && ($(`${prefix}Country`).value = customer.country || "");
+  renderCountrySelect(`${prefix}Country`, customer?.country || "");
 }
 
 function toggleBookingTypeFields() {
@@ -528,7 +571,7 @@ function renderBookingModal() {
             <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingAddressExtra">Adresszusatz</label><input id="bookingAddressExtra" value="${escapeHtml(booking.address_extra || "")}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingPostalCode">Postleitzahl</label><input id="bookingPostalCode" value="${escapeHtml(booking.postal_code || "")}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingCity">Ort</label><input id="bookingCity" value="${escapeHtml(booking.city || "")}" ${disabled}></div>
-            <div class="pallet-booking-field"><label for="bookingCountry">Land</label><input id="bookingCountry" value="${escapeHtml(booking.country || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingCountry">Land</label><select id="bookingCountry" ${disabled}>${countryOptionsHtml(booking.country || "")}</select></div>
 
             <div class="pallet-booking-field pallet-booking-field--wide pallet-booking-subsection" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><span class="module-section-kicker">Zieladresse</span></div>
             <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCustomer">Zielkunde (Stammdaten)</label><select id="bookingDestinationCustomer" ${disabled}>${bookingCustomerOptions(booking.destination_customer_id)}</select></div>
@@ -538,7 +581,7 @@ function renderBookingModal() {
             <div class="pallet-booking-field pallet-booking-field--wide" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationAddressExtra">Ziel-Adresszusatz</label><input id="bookingDestinationAddressExtra" value="${escapeHtml(booking.destination_address_extra || "")}" ${disabled}></div>
             <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationPostalCode">Ziel-Postleitzahl</label><input id="bookingDestinationPostalCode" value="${escapeHtml(booking.destination_postal_code || "")}" ${disabled}></div>
             <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCity">Ziel-Ort</label><input id="bookingDestinationCity" value="${escapeHtml(booking.destination_city || "")}" ${disabled}></div>
-            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCountry">Ziel-Land</label><input id="bookingDestinationCountry" value="${escapeHtml(booking.destination_country || "")}" ${disabled}></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCountry">Ziel-Land</label><select id="bookingDestinationCountry" ${disabled}>${countryOptionsHtml(booking.destination_country || "")}</select></div>
 
             ${showTruckFields ? `
             <div class="pallet-booking-field"><label for="bookingTruckPlate">LKW Kennzeichen</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${workflowDisabled}></div>
@@ -618,7 +661,7 @@ function closeBookingModal() {
 }
 
 function openBookingTab(bookingId) {
-  window.open(`/modules/pallets/open-pallet-detail.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}`, "_blank", "noopener,noreferrer");
+  window.location.href = `/modules/pallets/open-pallet-detail.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}`;
 }
 
 function collectBookingFormPayload() {
@@ -764,13 +807,13 @@ function bindEvents() {
     await loadOpenPallets();
   });
 
-  ["filterCompany", "filterCity", "filterPostalCode", "filterCountry", "filterOrderNo"].forEach((id) => {
+  ["filterCompany", "filterCity", "filterPostalCode", "filterOrderNo"].forEach((id) => {
     $(id).addEventListener("input", () => {
       clearTimeout(window.__openPalletFilterTimer);
       window.__openPalletFilterTimer = setTimeout(() => loadOpenPallets({ resetPage: true }), 250);
     });
   });
-  ["filterTitle", "filterStatus"].forEach((id) => {
+  ["filterTitle", "filterStatus", "filterCountry"].forEach((id) => {
     $(id).addEventListener("change", () => loadOpenPallets({ resetPage: true }));
   });
 
@@ -787,6 +830,7 @@ async function openBookingFromQueryParam() {
 }
 
 (async function init() {
+  initializeCountrySelects();
   bindEvents();
   await loadMe();
   await loadPerms();
