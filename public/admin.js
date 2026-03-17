@@ -227,7 +227,9 @@ function permissionInputId(path) {
 
 function visiblePermissionSections() {
   const activeModules = new Set(context?.active_modules || []);
-  return PERMISSION_SECTIONS.filter((section) => !section.moduleKey || activeModules.has(section.moduleKey));
+  return PERMISSION_SECTIONS.filter(
+    (section) => section.key !== "warehouse" && (!section.moduleKey || activeModules.has(section.moduleKey))
+  );
 }
 
 function canManageUsers() {

@@ -32,7 +32,7 @@
         <b>Produkt-Admin</b>
         <span class="pill" id="me">-</span>
       </div>
-      <p class="module-hero__lead">Installation und Module.</p>
+      <p class="module-hero__lead">Installation, App-Admins und Warehouse.</p>
     </div>
     <div class="module-hero__panel">
       <div class="module-hero__panel-item">
@@ -105,67 +105,224 @@
     </article>
   </section>
 
+  <section class="admin-section-grid">
+    <article class="card admin-card">
+      <div class="admin-card-head">
+        <div>
+          <span class="section-eyebrow">Benutzer</span>
+          <h3>App-Admins</h3>
+          <p>Nur Produktadministration.</p>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="createAppAdminUsername">Benutzername</label>
+          <input id="createAppAdminUsername" placeholder="z.B. admin.max">
+        </div>
+        <div>
+          <label for="createAppAdminPassword">Passwort</label>
+          <input id="createAppAdminPassword" type="password" autocomplete="new-password">
+        </div>
+        <div>
+          <label for="createAppAdminEmail">E-Mail</label>
+          <input id="createAppAdminEmail" type="email" placeholder="optional">
+        </div>
+        <div>
+          <label for="createAppAdminActive">Status</label>
+          <select id="createAppAdminActive">
+            <option value="true">Aktiv</option>
+            <option value="false">Inaktiv</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="module-admin-inline-actions">
+          <button class="primary" id="createAppAdminBtn" type="button">App-Admin anlegen</button>
+        </div>
+      </div>
+      <p id="createAppAdminMsg"></p>
+
+      <div class="row">
+        <div>
+          <label for="appAdminSelect">App-Admin</label>
+          <select id="appAdminSelect"></select>
+        </div>
+        <div>
+          <label for="editAppAdminEmail">E-Mail</label>
+          <input id="editAppAdminEmail" type="email" placeholder="optional">
+        </div>
+        <div>
+          <label for="editAppAdminActive">Status</label>
+          <select id="editAppAdminActive">
+            <option value="true">Aktiv</option>
+            <option value="false">Inaktiv</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="module-admin-inline-actions">
+          <button class="primary" id="saveAppAdminBtn" type="button">Speichern</button>
+          <button class="secondary" id="resetAppAdminPasswordBtn" type="button">Passwort zurücksetzen</button>
+          <button class="secondary" id="deleteAppAdminBtn" type="button">Löschen</button>
+        </div>
+      </div>
+      <p id="editAppAdminMsg"></p>
+
+      <div class="admin-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Benutzer</th>
+              <th>E-Mail</th>
+              <th>Aktiv</th>
+            </tr>
+          </thead>
+          <tbody id="appAdminsBody"></tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card admin-card">
+      <div class="admin-card-head">
+        <div>
+          <span class="section-eyebrow">Warehouse</span>
+          <h3>Warehouse-Benutzer</h3>
+          <p>Nur durch App-Admins erstellbar und verwaltbar.</p>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="createWarehouseUsername">Benutzername</label>
+          <input id="createWarehouseUsername" placeholder="z.B. lager.max">
+        </div>
+        <div>
+          <label for="createWarehousePassword">Passwort</label>
+          <input id="createWarehousePassword" type="password" autocomplete="new-password">
+        </div>
+        <div>
+          <label for="createWarehouseEmail">E-Mail</label>
+          <input id="createWarehouseEmail" type="email" placeholder="optional">
+        </div>
+        <div>
+          <label for="createWarehouseRole">Warehouse-Rolle</label>
+          <select id="createWarehouseRole"></select>
+        </div>
+        <div>
+          <label for="createWarehouseActive">Status</label>
+          <select id="createWarehouseActive">
+            <option value="true">Aktiv</option>
+            <option value="false">Inaktiv</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="module-admin-inline-actions">
+          <button class="primary" id="createWarehouseUserBtn" type="button">Warehouse-Benutzer anlegen</button>
+        </div>
+      </div>
+      <p id="createWarehouseUserMsg"></p>
+
+      <div class="row">
+        <div>
+          <label for="warehouseUserSelect">Warehouse-Benutzer</label>
+          <select id="warehouseUserSelect"></select>
+        </div>
+        <div>
+          <label for="editWarehouseEmail">E-Mail</label>
+          <input id="editWarehouseEmail" type="email" placeholder="optional">
+        </div>
+        <div>
+          <label for="editWarehouseRole">Warehouse-Rolle</label>
+          <select id="editWarehouseRole"></select>
+        </div>
+        <div>
+          <label for="editWarehouseActive">Status</label>
+          <select id="editWarehouseActive">
+            <option value="true">Aktiv</option>
+            <option value="false">Inaktiv</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="module-admin-inline-actions">
+          <button class="primary" id="saveWarehouseUserBtn" type="button">Speichern</button>
+          <button class="secondary" id="resetWarehousePasswordBtn" type="button">Passwort zurücksetzen</button>
+          <button class="secondary" id="deleteWarehouseUserBtn" type="button">Löschen</button>
+        </div>
+      </div>
+      <p id="editWarehouseUserMsg"></p>
+
+      <div class="admin-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Benutzer</th>
+              <th>E-Mail</th>
+              <th>Warehouse-Rolle</th>
+              <th>Aktiv</th>
+            </tr>
+          </thead>
+          <tbody id="warehouseUsersBody"></tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
   <section class="card admin-card">
     <div class="admin-card-head">
       <div>
-        <span class="section-eyebrow">Benutzer</span>
-        <h3>App-Admins</h3>
-        <p>Rollen, Status und Rechte.</p>
+        <span class="section-eyebrow">Warehouse</span>
+        <h3>Warehouse-Rollen</h3>
+        <p>Nur Rechte für das Warehouse-Modul.</p>
       </div>
     </div>
-    <div class="row">
-      <div>
-        <label for="appAdminUserSelect">Benutzer</label>
-        <select id="appAdminUserSelect"></select>
-      </div>
-      <div>
-        <label for="userRoleSelect">Rolle</label>
-        <select id="userRoleSelect"></select>
-      </div>
-      <div>
-        <label for="userLocationSelect">Standort</label>
-        <select id="userLocationSelect"></select>
-      </div>
-      <div>
-        <label for="userDepartmentSelect">Feste Abteilung</label>
-        <select id="userDepartmentSelect"></select>
-      </div>
-      <div>
-        <label for="userIsActiveSelect">Status</label>
-        <select id="userIsActiveSelect">
-          <option value="true">Aktiv</option>
-          <option value="false">Inaktiv</option>
-        </select>
-      </div>
-      <div>
-        <label for="userIsAppAdminSelect">App Admin</label>
-        <select id="userIsAppAdminSelect">
-          <option value="false">Nein</option>
-          <option value="true">Ja</option>
-        </select>
-      </div>
+
+    <div class="admin-section-grid">
+      <article class="card admin-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Rolle</span>
+            <h3>Warehouse-Rolle anlegen</h3>
+            <p>Neue Rolle.</p>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="newWarehouseRoleName">Rollenname</label>
+            <input id="newWarehouseRoleName" placeholder="z.B. Warehouse Büro">
+          </div>
+          <div class="module-admin-action">
+            <button class="primary" id="createWarehouseRoleBtn" type="button">Warehouse-Rolle anlegen</button>
+          </div>
+        </div>
+        <p id="createWarehouseRoleMsg"></p>
+      </article>
+
+      <article class="card admin-card">
+        <div class="admin-card-head compact">
+          <div>
+            <span class="section-eyebrow">Rolle</span>
+            <h3>Warehouse-Rolle bearbeiten</h3>
+            <p>Rechte bearbeiten.</p>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="warehouseRoleSelect">Warehouse-Rolle</label>
+            <select id="warehouseRoleSelect"></select>
+          </div>
+          <div class="module-admin-inline-actions">
+            <button class="primary" id="saveWarehouseRoleBtn" type="button">Speichern</button>
+            <button class="secondary" id="deleteWarehouseRoleBtn" type="button">Löschen</button>
+          </div>
+        </div>
+        <p id="editWarehouseRoleMsg"></p>
+      </article>
     </div>
-    <div class="row">
-      <div class="module-admin-inline-actions">
-        <button class="primary" id="saveUserBtn" type="button">Speichern</button>
-      </div>
-    </div>
-    <p id="saveUserMsg"></p>
-    <div class="admin-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Benutzer</th>
-            <th>Rolle</th>
-            <th>Standort</th>
-            <th>Abteilung</th>
-            <th>Aktiv</th>
-            <th>App Admin</th>
-          </tr>
-        </thead>
-        <tbody id="usersBody"></tbody>
-      </table>
-    </div>
+
+    <div id="warehousePermissionSections" class="permission-sections-host"></div>
   </section>
 </main>
 

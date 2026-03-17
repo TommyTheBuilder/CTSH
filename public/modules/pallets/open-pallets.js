@@ -86,7 +86,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-10";
+const PALLET_ASSET_VERSION = "20260317-11";
 const OPEN_PALLET_COUNTRY_DATA = globalThis.OPEN_PALLET_COUNTRIES || {};
 const OPEN_PALLET_COUNTRY_OPTIONS = Array.isArray(OPEN_PALLET_COUNTRY_DATA.list) ? OPEN_PALLET_COUNTRY_DATA.list : [];
 
@@ -368,6 +368,7 @@ function renderOpenPallets() {
               <div class="pallet-open-table__actions">
                 <button class="secondary" data-open-id="${item.id}" type="button">Öffnen</button>
                 <button class="secondary" data-tab-id="${item.id}" type="button">Detailansicht</button>
+                <button class="secondary" data-print-id="${item.id}" type="button">Drucken</button>
                 ${PERMS?.open_pallets?.delete ? `<button class="danger" data-delete-id="${item.id}" type="button">Löschen</button>` : ""}
               </div>
             </td>
@@ -388,6 +389,12 @@ function renderOpenPallets() {
     button.addEventListener("click", () => {
       const bookingId = Number(button.getAttribute("data-tab-id") || 0);
       if (bookingId) openBookingTab(bookingId);
+    });
+  });
+  document.querySelectorAll("[data-print-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const bookingId = Number(button.getAttribute("data-print-id") || 0);
+      if (bookingId) downloadBookingPdf(bookingId);
     });
   });
   document.querySelectorAll("[data-delete-id]").forEach((button) => {
@@ -723,6 +730,12 @@ function closeBookingModal() {
 
 function openBookingTab(bookingId) {
   window.location.href = `/modules/pallets/open-pallet-detail.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}`;
+}
+
+function downloadBookingPdf(bookingId) {
+  const language = localStorage.getItem("openPalletPdfLanguage") || "de";
+  const url = `/modules/pallets/open-pallet-print.html?v=${PALLET_ASSET_VERSION}&id=${encodeURIComponent(bookingId)}&lang=${encodeURIComponent(language)}&autoprint=1`;
+  window.location.href = url;
 }
 
 function collectBookingFormPayload() {

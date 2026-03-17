@@ -47,6 +47,10 @@ function isAppAdmin(user) {
   return Boolean(user?.is_app_admin || user?.role === "admin");
 }
 
+function isWarehouseUser(user) {
+  return Boolean(user?.is_warehouse_user);
+}
+
 async function seedModulesForCustomer(customerId) {
   for (const moduleDefinition of listModules()) {
     await pool.query(
@@ -129,10 +133,12 @@ async function getUserContext(userId) {
       u.fixed_department_id,
       u.app_customer_id,
       u.is_app_admin,
+      u.is_warehouse_user,
       c.name AS customer_name,
       c.slug AS customer_slug,
       c.is_active AS customer_is_active,
-      ro.name AS business_role_name
+      ro.name AS business_role_name,
+      COALESCE(ro.is_warehouse_role, FALSE) AS is_warehouse_role
     FROM users u
     LEFT JOIN app_customers c ON c.id = u.app_customer_id
     LEFT JOIN roles ro ON ro.id = u.role_id
@@ -346,6 +352,7 @@ module.exports = {
   getUserContext,
   getUserPermissions,
   isAppAdmin,
+  isWarehouseUser,
   listCustomers,
   parseRequestedCustomerId,
   resolveManagedCustomerId
