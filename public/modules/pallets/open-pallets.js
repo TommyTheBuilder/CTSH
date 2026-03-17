@@ -67,7 +67,8 @@ function formatDateTime(value) {
 
 const OPEN_PALLET_TITLE_LABELS = {
   abholung: "Abholung",
-  rueckfuehrung: "R\u00fcckf\u00fchrung"
+  rueckfuehrung: "R\u00fcckf\u00fchrung",
+  firma_zu_firma: "Firma zu Firma"
 };
 
 const OPEN_PALLET_STATUS_LABELS = {
@@ -85,7 +86,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-3";
+const PALLET_ASSET_VERSION = "20260317-4";
 
 let ME = null;
 let PERMS = {};
@@ -110,10 +111,20 @@ function urgencyLabel(value) {
   return OPEN_PALLET_URGENCY_LABELS[value] || OPEN_PALLET_URGENCY_LABELS.medium;
 }
 
+function formatStreetLine(street, addressExtra) {
+  return [street, addressExtra].filter(Boolean).join(", ") || "-";
+}
+
+function formatPostalCityLine(postalCode, city) {
+  return [postalCode, city].filter(Boolean).join(" ") || "-";
+}
+
+function buildAddressSummary(company, street, addressExtra, postalCode, city, country) {
+  return [company || "-", formatStreetLine(street, addressExtra), formatPostalCityLine(postalCode, city), country || "-"].filter(Boolean).join(" | ");
+}
+
 function fullAddress(item) {
-  const lineOne = [item?.street, item?.address_extra].filter(Boolean).join(", ");
-  const lineTwo = [item?.postal_code, item?.city].filter(Boolean).join(" ");
-  return [lineOne, lineTwo, item?.country].filter(Boolean).join(" | ") || "-";
+  return [formatStreetLine(item?.street, item?.address_extra), formatPostalCityLine(item?.postal_code, item?.city), item?.country].filter(Boolean).join(" | ") || "-";
 }
 
 function truckInfoText(item) {
@@ -445,11 +456,36 @@ function bookingUrgencyOptions(selectedUrgency) {
 }
 
 function refreshBookingCustomerSelectOptions() {
-  const select = $("bookingCustomer");
-  if (!select) return;
-  const currentValue = select.value;
-  select.innerHTML = bookingCustomerOptions(currentValue);
-  if (currentValue) select.value = currentValue;
+  ["bookingCustomer", "bookingDestinationCustomer"].forEach((id) => {
+    const select = $(id);
+    if (!select) return;
+    const currentValue = select.value;
+    select.innerHTML = bookingCustomerOptions(currentValue);
+    if (currentValue) select.value = currentValue;
+  });
+}
+
+function isTransferTitle(value) {
+  return String(value || "") === "firma_zu_firma";
+}
+
+function applyCustomerToBookingFields(customer, prefix) {
+  if (!customer) return;
+  $(`${prefix}Company`) && ($(`${prefix}Company`).value = customer.name || "");
+  $(`${prefix}Street`) && ($(`${prefix}Street`).value = customer.street || "");
+  $(`${prefix}AddressExtra`) && ($(`${prefix}AddressExtra`).value = customer.address_extra || "");
+  $(`${prefix}PostalCode`) && ($(`${prefix}PostalCode`).value = customer.postal_code || "");
+  $(`${prefix}City`) && ($(`${prefix}City`).value = customer.city || "");
+  $(`${prefix}Country`) && ($(`${prefix}Country`).value = customer.country || "");
+}
+
+function toggleBookingTypeFields() {
+  const transfer = isTransferTitle($("bookingTitle")?.value);
+  document.querySelectorAll("[data-transfer-only]").forEach((el) => {
+    el.style.display = transfer ? "" : "none";
+  });
+  $("bookingPrimarySectionLabel") && ($("bookingPrimarySectionLabel").textContent = transfer ? "Startadresse" : "Adresse");
+  $("bookingReferenceLabel") && ($("bookingReferenceLabel").textContent = transfer ? "Referenz Start" : "Referenz");
 }
 
 function renderBookingModal() {
@@ -459,7 +495,10 @@ function renderBookingModal() {
   const editable = isCreate ? canCreateBookings() : canEditBooking(booking);
   const disabled = isEditing ? "" : "disabled";
   const workflowDisabled = isCreate ? "disabled" : disabled;
+  const transfer = isTransferTitle(booking.title || "abholung");
   const showTruckFields = !isCreate;
+  const startSummary = buildAddressSummary(booking.customer_name || booking.company || "-", booking.street, booking.address_extra, booking.postal_code, booking.city, booking.country);
+  const destinationSummary = buildAddressSummary(booking.destination_customer_name || booking.destination_company || "-", booking.destination_street, booking.destination_address_extra, booking.destination_postal_code, booking.destination_city, booking.destination_country);
 
   $("bookingModalTitle").textContent = isCreate ? "Neue Buchung" : `Details f\u00fcr ${booking.customer_name || booking.company || titleLabel(booking.title)}`;
   $("bookingModalEditBtn").style.display = !isCreate && editable && !isEditing ? "" : "none";
@@ -476,17 +515,31 @@ function renderBookingModal() {
           </div>
           <div class="pallet-booking-grid">
             <div class="pallet-booking-field"><label for="bookingTitle">Titel</label><select id="bookingTitle" ${disabled}>${bookingTitleOptions(booking.title || "abholung")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingStatus">Status</label><select id="bookingStatus" ${workflowDisabled}>${bookingStatusOptions(booking.status || "open")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingUrgency">Dringlichkeit</label><select id="bookingUrgency" ${disabled}>${bookingUrgencyOptions(booking.urgency_level || "medium")}</select></div>
+            <div class="pallet-booking-field"><label for="bookingPalletCount">Paletten</label><input id="bookingPalletCount" type="number" min="1" value="${escapeHtml(booking.pallet_count || 1)}" ${disabled}></div>
+            <div class="pallet-booking-field"><label for="bookingOrderNo">Auftragsnummer</label><input id="bookingOrderNo" value="${escapeHtml(booking.order_no || "")}" ${disabled}></div>
+            <div class="pallet-booking-field"><label id="bookingReferenceLabel" for="bookingReference">${transfer ? "Referenz Start" : "Referenz"}</label><input id="bookingReference" value="${escapeHtml(booking.reference_no || "")}" ${disabled}></div>
+
+            <div class="pallet-booking-field pallet-booking-field--wide pallet-booking-subsection"><span class="module-section-kicker" id="bookingPrimarySectionLabel">${transfer ? "Startadresse" : "Adresse"}</span></div>
             <div class="pallet-booking-field"><label for="bookingCustomer">Kunde (Stammdaten)</label><select id="bookingCustomer" ${disabled}>${bookingCustomerOptions(booking.customer_id)}</select></div>
             <div class="pallet-booking-field"><label for="bookingCompany">Firma</label><input id="bookingCompany" value="${escapeHtml(booking.company || "")}" ${disabled}></div>
-            <div class="pallet-booking-field"><label for="bookingOrderNo">Auftragsnummer</label><input id="bookingOrderNo" value="${escapeHtml(booking.order_no || "")}" ${disabled}></div>
             <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingStreet">Stra&szlig;e / Hausnummer</label><input id="bookingStreet" value="${escapeHtml(booking.street || "")}" ${disabled}></div>
             <div class="pallet-booking-field pallet-booking-field--wide"><label for="bookingAddressExtra">Adresszusatz</label><input id="bookingAddressExtra" value="${escapeHtml(booking.address_extra || "")}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingPostalCode">Postleitzahl</label><input id="bookingPostalCode" value="${escapeHtml(booking.postal_code || "")}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingCity">Ort</label><input id="bookingCity" value="${escapeHtml(booking.city || "")}" ${disabled}></div>
             <div class="pallet-booking-field"><label for="bookingCountry">Land</label><input id="bookingCountry" value="${escapeHtml(booking.country || "")}" ${disabled}></div>
-            <div class="pallet-booking-field"><label for="bookingPalletCount">Paletten</label><input id="bookingPalletCount" type="number" min="1" value="${escapeHtml(booking.pallet_count || 1)}" ${disabled}></div>
-            <div class="pallet-booking-field"><label for="bookingStatus">Status</label><select id="bookingStatus" ${workflowDisabled}>${bookingStatusOptions(booking.status || "open")}</select></div>
-            <div class="pallet-booking-field"><label for="bookingUrgency">Dringlichkeit</label><select id="bookingUrgency" ${disabled}>${bookingUrgencyOptions(booking.urgency_level || "medium")}</select></div>
+
+            <div class="pallet-booking-field pallet-booking-field--wide pallet-booking-subsection" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><span class="module-section-kicker">Zieladresse</span></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCustomer">Zielkunde (Stammdaten)</label><select id="bookingDestinationCustomer" ${disabled}>${bookingCustomerOptions(booking.destination_customer_id)}</select></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCompany">Ziel-Firma</label><input id="bookingDestinationCompany" value="${escapeHtml(booking.destination_company || "")}" ${disabled}></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationReference">Referenz Ziel</label><input id="bookingDestinationReference" value="${escapeHtml(booking.destination_reference_no || "")}" ${disabled}></div>
+            <div class="pallet-booking-field pallet-booking-field--wide" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationStreet">Ziel-Stra&szlig;e / Hausnummer</label><input id="bookingDestinationStreet" value="${escapeHtml(booking.destination_street || "")}" ${disabled}></div>
+            <div class="pallet-booking-field pallet-booking-field--wide" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationAddressExtra">Ziel-Adresszusatz</label><input id="bookingDestinationAddressExtra" value="${escapeHtml(booking.destination_address_extra || "")}" ${disabled}></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationPostalCode">Ziel-Postleitzahl</label><input id="bookingDestinationPostalCode" value="${escapeHtml(booking.destination_postal_code || "")}" ${disabled}></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCity">Ziel-Ort</label><input id="bookingDestinationCity" value="${escapeHtml(booking.destination_city || "")}" ${disabled}></div>
+            <div class="pallet-booking-field" data-transfer-only="true" style="${transfer ? "" : "display:none;"}"><label for="bookingDestinationCountry">Ziel-Land</label><input id="bookingDestinationCountry" value="${escapeHtml(booking.destination_country || "")}" ${disabled}></div>
+
             ${showTruckFields ? `
             <div class="pallet-booking-field"><label for="bookingTruckPlate">LKW Kennzeichen</label><input id="bookingTruckPlate" value="${escapeHtml(booking.truck_license_plate || "")}" ${workflowDisabled}></div>
             <div class="pallet-booking-field"><label for="bookingTruckDate">Einplanung f\u00fcr</label><input id="bookingTruckDate" type="date" value="${escapeHtml(booking.truck_planned_for ? String(booking.truck_planned_for).slice(0, 10) : "")}" ${workflowDisabled}></div>
@@ -498,15 +551,15 @@ function renderBookingModal() {
       </div>
       <aside class="pallet-booking-shell__side">
         <section class="pallet-booking-sidebar-card">
-          <div class="pallet-booking-sidebar-card__head">Status</div>
+          <div class="pallet-booking-sidebar-card__head">\u00dcbersicht</div>
           <div class="pallet-booking-sidebar-card__body">
-            <div class="pallet-booking-meta"><span>Kunde</span><strong>${escapeHtml(booking.customer_name || booking.company || "-")}</strong></div>
-            <div class="pallet-booking-meta"><span>Adresse</span><strong>${escapeHtml(fullAddress(booking))}</strong></div>
-            <div class="pallet-booking-meta"><span>Abteilung</span><strong>${escapeHtml(booking.department_name || "-")}</strong></div>
-            <div class="pallet-booking-meta"><span>Erstellt von</span><strong>${escapeHtml(booking.created_by_name || ME?.username || "-")}</strong></div>
-            <div class="pallet-booking-meta"><span>Aktualisiert</span><strong>${escapeHtml(booking.updated_at ? formatDateTime(booking.updated_at) : "-")}</strong></div>
-            <div class="pallet-booking-meta"><span>Disponent Status 2</span><strong>${escapeHtml(booking.truck_planned_by_name || "-")}</strong></div>
-            <div class="pallet-booking-meta"><span>Einplanung</span><strong>${escapeHtml(booking.truck_planned_for ? formatDate(booking.truck_planned_for) : "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Typ</span><strong>${escapeHtml(titleLabel(booking.title || "abholung"))}</strong></div>
+            <div class="pallet-booking-meta"><span>Start</span><strong>${escapeHtml(startSummary)}</strong></div>
+            ${transfer ? `<div class="pallet-booking-meta"><span>Ziel</span><strong>${escapeHtml(destinationSummary)}</strong></div>` : ""}
+            <div class="pallet-booking-meta"><span>Referenz</span><strong>${escapeHtml(booking.reference_no || "-")}</strong></div>
+            ${transfer ? `<div class="pallet-booking-meta"><span>Referenz Ziel</span><strong>${escapeHtml(booking.destination_reference_no || "-")}</strong></div>` : ""}
+            <div class="pallet-booking-meta"><span>Auftragsnummer</span><strong>${escapeHtml(booking.order_no || "-")}</strong></div>
+            <div class="pallet-booking-meta"><span>Paletten</span><strong>${escapeHtml(booking.pallet_count || "-")}</strong></div>
           </div>
         </section>
       </aside>
@@ -514,6 +567,7 @@ function renderBookingModal() {
   `;
 
   bindBookingModalEvents();
+  toggleBookingTypeFields();
 }
 
 function bindBookingModalEvents() {
@@ -529,16 +583,16 @@ function bindBookingModalEvents() {
     renderBookingModal();
   });
   $("saveBookingBtn")?.addEventListener("click", saveBookingFromModal);
+  $("bookingTitle")?.addEventListener("change", toggleBookingTypeFields);
   $("bookingCustomer")?.addEventListener("change", () => {
     if (!(BOOKING_MODAL_STATE?.mode === "create" || BOOKING_MODAL_STATE?.editMode)) return;
     const customer = OPEN_PALLET_CUSTOMERS.find((entry) => Number(entry.id) === Number($("bookingCustomer").value || 0));
-    if (!customer) return;
-    $("bookingCompany").value = customer.name || "";
-    $("bookingStreet").value = customer.street || "";
-    $("bookingAddressExtra").value = customer.address_extra || "";
-    $("bookingPostalCode").value = customer.postal_code || "";
-    $("bookingCity").value = customer.city || "";
-    $("bookingCountry").value = customer.country || "";
+    applyCustomerToBookingFields(customer, "booking");
+  });
+  $("bookingDestinationCustomer")?.addEventListener("change", () => {
+    if (!(BOOKING_MODAL_STATE?.mode === "create" || BOOKING_MODAL_STATE?.editMode)) return;
+    const customer = OPEN_PALLET_CUSTOMERS.find((entry) => Number(entry.id) === Number($("bookingDestinationCustomer").value || 0));
+    applyCustomerToBookingFields(customer, "bookingDestination");
   });
 }
 
@@ -568,6 +622,7 @@ function openBookingTab(bookingId) {
 }
 
 function collectBookingFormPayload() {
+  const transfer = isTransferTitle($("bookingTitle").value);
   const payload = {
     title: $("bookingTitle").value,
     customer_id: $("bookingCustomer").value || null,
@@ -578,11 +633,31 @@ function collectBookingFormPayload() {
     city: $("bookingCity").value.trim(),
     country: $("bookingCountry").value.trim(),
     order_no: $("bookingOrderNo").value.trim(),
+    reference_no: $("bookingReference").value.trim(),
     pallet_count: Number($("bookingPalletCount").value || 0),
     status: $("bookingStatus").value,
     urgency_level: $("bookingUrgency").value,
     note: $("bookingNote").value.trim()
   };
+  if (transfer) {
+    payload.destination_customer_id = $("bookingDestinationCustomer")?.value || null;
+    payload.destination_company = $("bookingDestinationCompany")?.value.trim() || "";
+    payload.destination_street = $("bookingDestinationStreet")?.value.trim() || "";
+    payload.destination_address_extra = $("bookingDestinationAddressExtra")?.value.trim() || "";
+    payload.destination_postal_code = $("bookingDestinationPostalCode")?.value.trim() || "";
+    payload.destination_city = $("bookingDestinationCity")?.value.trim() || "";
+    payload.destination_country = $("bookingDestinationCountry")?.value.trim() || "";
+    payload.destination_reference_no = $("bookingDestinationReference")?.value.trim() || "";
+  } else {
+    payload.destination_customer_id = null;
+    payload.destination_company = null;
+    payload.destination_street = null;
+    payload.destination_address_extra = null;
+    payload.destination_postal_code = null;
+    payload.destination_city = null;
+    payload.destination_country = null;
+    payload.destination_reference_no = null;
+  }
   if (payload.status === "truck_planned") {
     payload.truck_license_plate = $("bookingTruckPlate")?.value.trim() || "";
     payload.truck_planned_for = $("bookingTruckDate")?.value || "";
@@ -599,6 +674,9 @@ async function saveBookingFromModal() {
   if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel auswählen.");
   if (!Number.isInteger(payload.pallet_count) || payload.pallet_count <= 0) {
     return setMsg("bookingModalMsg", "Die Palettenanzahl muss größer als 0 sein.");
+  }
+  if (isTransferTitle(payload.title) && !payload.destination_company) {
+    return setMsg("bookingModalMsg", "Bitte eine Zieladresse angeben.");
   }
   if (payload.status === "truck_planned" && (!payload.truck_license_plate || !payload.truck_planned_for)) {
     return setMsg("bookingModalMsg", "Bei Status LKW eingeplant sind Kennzeichen und Datum Pflicht.");
