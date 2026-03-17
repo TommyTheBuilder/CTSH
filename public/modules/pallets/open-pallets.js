@@ -86,7 +86,7 @@ const OPEN_PALLET_URGENCY_LABELS = {
 };
 
 const OPEN_PALLET_PAGE_SIZE = 25;
-const PALLET_ASSET_VERSION = "20260317-9";
+const PALLET_ASSET_VERSION = "20260317-10";
 const OPEN_PALLET_COUNTRY_DATA = globalThis.OPEN_PALLET_COUNTRIES || {};
 const OPEN_PALLET_COUNTRY_OPTIONS = Array.isArray(OPEN_PALLET_COUNTRY_DATA.list) ? OPEN_PALLET_COUNTRY_DATA.list : [];
 
@@ -210,8 +210,16 @@ function canManageCustomers() {
   return !!PERMS?.open_pallets?.create || !!PERMS?.open_pallets?.edit;
 }
 
+function canEditBookingAll(item) {
+  return !!item?.can_edit_all || Number(item?.created_by || 0) === Number(ME?.id || 0);
+}
+
+function canChangeBookingStatus(item) {
+  return !!item?.can_change_status || canEditBookingAll(item);
+}
+
 function canEditBooking(item) {
-  return !!item?.can_edit || !!PERMS?.open_pallets?.edit || Number(item?.created_by || 0) === Number(ME?.id || 0);
+  return canEditBookingAll(item) || canChangeBookingStatus(item);
 }
 
 function showModal(backId, show) {
@@ -557,7 +565,9 @@ function toggleBookingTypeFields() {
 }
 
 function syncBookingStatusFields() {
+  const booking = BOOKING_MODAL_STATE?.booking || {};
   const editable = BOOKING_MODAL_STATE?.mode === "create" || !!BOOKING_MODAL_STATE?.editMode;
+  const canChangeStatus = BOOKING_MODAL_STATE?.mode === "create" ? canCreateBookings() : canChangeBookingStatus(booking);
   const requiresTruckFields = isTruckPlannedStatus($("bookingStatus")?.value || "");
   const fields = [
     { labelId: "bookingTruckPlateLabel", inputId: "bookingTruckPlate", baseLabel: "LKW Kennzeichen" },
@@ -571,7 +581,7 @@ function syncBookingStatusFields() {
     const input = $(inputId);
     if (!input) return;
     input.required = requiresTruckFields;
-    input.disabled = !editable || !requiresTruckFields;
+    input.disabled = !editable || !canChangeStatus || !requiresTruckFields;
     input.setAttribute("aria-required", requiresTruckFields ? "true" : "false");
   });
 }
@@ -580,13 +590,15 @@ function renderBookingModal() {
   const booking = BOOKING_MODAL_STATE?.booking || {};
   const isCreate = BOOKING_MODAL_STATE?.mode === "create";
   const isEditing = isCreate || !!BOOKING_MODAL_STATE?.editMode;
-  const editable = isCreate ? canCreateBookings() : canEditBooking(booking);
-  const disabled = isEditing ? "" : "disabled";
-  const workflowDisabled = disabled;
+  const canEditAll = isCreate ? canCreateBookings() : canEditBookingAll(booking);
+  const canChangeStatus = isCreate ? canCreateBookings() : canChangeBookingStatus(booking);
+  const editable = isCreate ? canCreateBookings() : (canEditAll || canChangeStatus);
+  const disabled = isEditing && canEditAll ? "" : "disabled";
+  const workflowDisabled = isEditing && canChangeStatus ? "" : "disabled";
   const transfer = isTransferTitle(booking.title || "abholung");
   const requiresTruckFields = isTruckPlannedStatus(booking.status || "open");
   const showTruckFields = isEditing || !!booking.truck_license_plate || !!booking.truck_planned_for || requiresTruckFields;
-  const truckFieldDisabled = isEditing && requiresTruckFields ? "" : "disabled";
+  const truckFieldDisabled = isEditing && canChangeStatus && requiresTruckFields ? "" : "disabled";
   const startSummary = buildAddressSummary(booking.customer_name || booking.company || "", booking.street, booking.address_extra, booking.postal_code, booking.city, booking.country);
   const destinationSummary = buildAddressSummary(booking.destination_customer_name || booking.destination_company || "", booking.destination_street, booking.destination_address_extra, booking.destination_postal_code, booking.destination_city, booking.destination_country);
 
@@ -714,7 +726,22 @@ function openBookingTab(bookingId) {
 }
 
 function collectBookingFormPayload() {
+  const booking = BOOKING_MODAL_STATE?.booking || {};
+  const isCreate = BOOKING_MODAL_STATE?.mode === "create";
+  const canEditAll = isCreate ? canCreateBookings() : canEditBookingAll(booking);
   const transfer = isTransferTitle($("bookingTitle").value);
+
+  if (!canEditAll) {
+    const payload = {
+      status: $("bookingStatus").value
+    };
+    if (isTruckPlannedStatus(payload.status)) {
+      payload.truck_license_plate = $("bookingTruckPlate")?.value.trim() || "";
+      payload.truck_planned_for = $("bookingTruckDate")?.value || "";
+    }
+    return payload;
+  }
+
   const payload = {
     title: $("bookingTitle").value,
     customer_id: $("bookingCustomer").value || null,
@@ -760,15 +787,18 @@ function collectBookingFormPayload() {
 async function saveBookingFromModal() {
   const isCreate = BOOKING_MODAL_STATE?.mode === "create";
   const bookingId = BOOKING_MODAL_STATE?.booking?.id;
+  const canEditAll = isCreate ? canCreateBookings() : canEditBookingAll(BOOKING_MODAL_STATE?.booking || {});
   const payload = collectBookingFormPayload();
   setMsg("bookingModalMsg", "");
 
-  if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel auswählen.");
-  if (!Number.isInteger(payload.pallet_count) || payload.pallet_count <= 0) {
-    return setMsg("bookingModalMsg", "Die Palettenanzahl muss größer als 0 sein.");
-  }
-  if (isTransferTitle(payload.title) && !payload.destination_company) {
-    return setMsg("bookingModalMsg", "Bitte eine Zieladresse angeben.");
+  if (canEditAll) {
+    if (!payload.title) return setMsg("bookingModalMsg", "Bitte einen Titel auswählen.");
+    if (!Number.isInteger(payload.pallet_count) || payload.pallet_count <= 0) {
+      return setMsg("bookingModalMsg", "Die Palettenanzahl muss größer als 0 sein.");
+    }
+    if (isTransferTitle(payload.title) && !payload.destination_company) {
+      return setMsg("bookingModalMsg", "Bitte eine Zieladresse angeben.");
+    }
   }
   if (isTruckPlannedStatus(payload.status) && (!payload.truck_license_plate || !payload.truck_planned_for)) {
     return setMsg("bookingModalMsg", "Bei Status LKW eingeplant sind Kennzeichen und Datum Pflicht.");

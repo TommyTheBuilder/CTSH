@@ -40,7 +40,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || "100kb";
 const PRODUCT_TYPES = ["euro", "h1", "gitterbox"];
 const SHARED_AUTH_SECRET = String(process.env.SHARED_AUTH_SECRET || "13215489156189421598412").trim();
 const SSO_MAX_TOKEN_AGE_SECONDS = Number(process.env.SSO_MAX_TOKEN_AGE_SECONDS || 300);
-const PALLET_ASSET_VERSION = "20260317-9";
+const PALLET_ASSET_VERSION = "20260317-10";
 const MODULE_PALLETS_PATH = "/modules/pallets/index.html";
 const MODULE_PALLETS_ADMIN_PATH = "/modules/pallets/admin.html";
 const MODULE_CONTAINER_PLANNING_PATH = "/modules/container-planning/index.html";
@@ -702,12 +702,23 @@ function openPalletStatusSortSql(columnName = "op.status") {
 }
 
 function canViewAllOpenPallets(perms) {
-  return Boolean(perms?.admin?.full_access || perms?.open_pallets?.view_all);
+  return Boolean(perms?.open_pallets?.view_all);
+}
+
+function isOpenPalletBookingCreator(user, booking) {
+  return Number(booking?.created_by || 0) === Number(user?.id || 0);
 }
 
 function canEditOpenPalletBooking(perms, user, booking) {
-  if (perms?.open_pallets?.edit) return true;
-  return Number(booking?.created_by || 0) === Number(user?.id || 0);
+  return isOpenPalletBookingCreator(user, booking);
+}
+
+function canChangeOpenPalletBookingStatus(perms, user, booking) {
+  if (canEditOpenPalletBooking(perms, user, booking)) return true;
+  if (!perms?.open_pallets?.view) return false;
+  const fixedDepartmentId = user?.fixed_department_id ? Number(user.fixed_department_id) : null;
+  if (!fixedDepartmentId) return false;
+  return Number(booking?.department_id || 0) === fixedDepartmentId;
 }
 
 function getOpenPalletDepartmentScope(user, perms) {
@@ -4094,7 +4105,9 @@ app.get("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEnab
 
   res.json({
     ...booking,
-    can_edit: canEditOpenPalletBooking(perms, req.user, booking),
+    can_edit: canEditOpenPalletBooking(perms, req.user, booking) || canChangeOpenPalletBookingStatus(perms, req.user, booking),
+    can_edit_all: canEditOpenPalletBooking(perms, req.user, booking),
+    can_change_status: canChangeOpenPalletBookingStatus(perms, req.user, booking),
     can_delete: !!perms?.open_pallets?.delete
   });
 });
@@ -4336,9 +4349,7 @@ app.post("/api/modules/pallets/open-pallets", authRequired, requireModuleEnabled
   }
 
   const scope = getOpenPalletDepartmentScope(req.user, perms);
-  const fallbackDepartmentId = scope.fixedDepartmentId;
-  const requestedDepartmentId = req.body?.department_id ? Number(req.body.department_id) : null;
-  const departmentId = fallbackDepartmentId || (scope.canViewAll ? requestedDepartmentId : null);
+  const departmentId = scope.fixedDepartmentId;
   if (!departmentId) {
     return res.status(400).json({ error: "Diesem Konto ist keine Abteilung zugeordnet." });
   }
@@ -4664,7 +4675,7 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
   const bodyNew = req.body || {};
   const countryCheckNew = normalizeOpenPalletCountry(bodyNew?.country, { allowEmpty: true });
   const destinationCountryCheckNew = normalizeOpenPalletCountry(bodyNew?.destination_country, { allowEmpty: true, fieldLabel: "Ziel-Land" });
-  const editableFieldsNew = [
+  const allEditableFieldsNew = [
     "title",
     "customer_id",
     "destination_customer_id",
@@ -4690,17 +4701,27 @@ app.patch("/api/modules/pallets/open-pallets/:id", authRequired, requireModuleEn
     "truck_license_plate",
     "truck_planned_for"
   ];
+  const canEditAllNew = canEditOpenPalletBooking(perms, req.user, currentFullNew);
+  const canChangeStatusNew = canChangeOpenPalletBookingStatus(perms, req.user, currentFullNew);
+  if (!canChangeStatusNew) {
+    return res.status(403).json({ error: "Keine Berechtigung" });
+  }
+  const editableFieldsNew = canEditAllNew
+    ? allEditableFieldsNew
+    : ["status", "truck_license_plate", "truck_planned_for"];
   const hasAnyChangeNew = editableFieldsNew.some((field) => Object.prototype.hasOwnProperty.call(bodyNew, field));
+  const forbiddenFieldsNew = allEditableFieldsNew.filter((field) => (
+    Object.prototype.hasOwnProperty.call(bodyNew, field) && !editableFieldsNew.includes(field)
+  ));
+  if (forbiddenFieldsNew.length) {
+    return res.status(403).json({ error: "Nur der Ersteller kann diese Felder ändern" });
+  }
   if (!hasAnyChangeNew) {
     return res.status(400).json({ error: "Keine Änderungen übergeben" });
   }
 
   if (!countryCheckNew.ok) return res.status(400).json({ error: countryCheckNew.msg });
   if (!destinationCountryCheckNew.ok) return res.status(400).json({ error: destinationCountryCheckNew.msg });
-
-  if (!canEditOpenPalletBooking(perms, req.user, currentFullNew)) {
-    return res.status(403).json({ error: "Keine Berechtigung" });
-  }
 
   const updatesNew = [];
   const valuesNew = [];

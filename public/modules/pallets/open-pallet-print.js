@@ -1,7 +1,7 @@
 const token = localStorage.getItem("token");
 if (!token) window.location.href = "/login.html";
 
-const PALLET_ASSET_VERSION = "20260317-9";
+const PALLET_ASSET_VERSION = "20260317-10";
 const PDF_LANGUAGE_STORAGE_KEY = "openPalletPdfLanguage";
 
 const I18N = {
