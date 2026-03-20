@@ -588,6 +588,8 @@ let notificationAudio = null;
 let alertOverlayTimer = 0;
 let titleFlashTimer = 0;
 let titleResetTimer = 0;
+let webPushConfig = null;
+let webPushSubscriptionActive = false;
 const defaultDocumentTitle = document.title;
 const VIEWER_LANG_KEY = "viewerLang";
 const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
@@ -697,6 +699,37 @@ function syncViewerHomeLink() {
 
 function t(key){
   return I18N[currentLang]?.[key] || I18N.de[key] || key;
+}
+
+async function viewerApi(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (portalToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${portalToken}`);
+  }
+  if (options.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(path, {
+    method: options.method || "GET",
+    headers,
+    body: options.body,
+    credentials: "include"
+  });
+  const text = await response.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || response.statusText || "Request failed");
+  }
+
+  return data;
 }
 
 function normalizeLanguage(value) {
@@ -1198,6 +1231,97 @@ function applyIosSafariHint() {
   hint.classList.toggle("is-visible", isIosSafari() && !isStandaloneMode());
 }
 
+function base64UrlToUint8Array(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  const base64 = `${normalized}${padding}`;
+  const raw = window.atob(base64);
+  const output = new Uint8Array(raw.length);
+
+  for (let index = 0; index < raw.length; index += 1) {
+    output[index] = raw.charCodeAt(index);
+  }
+
+  return output;
+}
+
+function canUseWebPush() {
+  return "serviceWorker" in navigator && "PushManager" in window;
+}
+
+function currentPushFilter() {
+  return {
+    slot: focusedContainerId,
+    plate: filteredPlate
+  };
+}
+
+async function getWebPushConfig() {
+  if (webPushConfig) return webPushConfig;
+
+  try {
+    webPushConfig = await viewerApi("/api/modules/container-registration/push/config", {
+      method: "GET",
+      headers: {}
+    });
+  } catch (error) {
+    console.warn("Push-Konfiguration konnte nicht geladen werden:", error);
+    webPushConfig = {
+      enabled: false,
+      publicKey: "",
+      requiresHomeScreen: true
+    };
+  }
+
+  return webPushConfig;
+}
+
+async function syncContainerPushSubscription() {
+  if (!hasPersonalViewerMode()) return false;
+  if (!canUseWebPush()) return false;
+  if (isIosSafari() && !isStandaloneMode()) return false;
+
+  const permission = await requestNotificationPermission();
+  if (permission !== "granted") {
+    webPushSubscriptionActive = false;
+    return false;
+  }
+
+  const config = await getWebPushConfig();
+  if (!config?.enabled || !config.publicKey) {
+    webPushSubscriptionActive = false;
+    return false;
+  }
+
+  try {
+    const registration = notificationRegistration || await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToUint8Array(config.publicKey)
+      });
+    }
+
+    await viewerApi("/api/modules/container-registration/push/subscribe", {
+      method: "POST",
+      headers: {},
+      body: JSON.stringify({
+        subscription: typeof subscription.toJSON === "function" ? subscription.toJSON() : subscription,
+        filter: currentPushFilter(),
+        targetUrl: window.location.href,
+        userAgent: navigator.userAgent || ""
+      })
+    });
+    webPushSubscriptionActive = true;
+    return true;
+  } catch (error) {
+    webPushSubscriptionActive = false;
+    console.warn("Push-Subscription konnte nicht synchronisiert werden:", error);
+    return false;
+  }
+}
+
 function clearAlertTitleFlash() {
   if (titleFlashTimer) {
     window.clearInterval(titleFlashTimer);
@@ -1329,6 +1453,7 @@ async function playProfessionalAlert() {
 }
 
 async function showBackgroundNotification(id, data) {
+  if (document.hidden && webPushSubscriptionActive) return;
   if (!document.hidden && !shouldForceSystemNotification()) return;
 
   const permission = await requestNotificationPermission();
@@ -1373,6 +1498,7 @@ function primeAlerts() {
   alertsPrimed = true;
   void unlockAudioOutput();
   void unlockHtmlAudioPlayback();
+  void syncContainerPushSubscription();
   if (!notificationPermissionPrimed && "Notification" in window && Notification.permission === "default") {
     notificationPermissionPrimed = true;
     void requestNotificationPermission();
@@ -1401,6 +1527,7 @@ async function initializeAlerts() {
       if (!alertsPrimed) return;
       void ensureAudioContext();
       void unlockHtmlAudioPlayback();
+      void syncContainerPushSubscription();
     });
   });
 
@@ -1408,7 +1535,12 @@ async function initializeAlerts() {
     if (document.hidden || !alertsPrimed) return;
     void ensureAudioContext();
     void unlockHtmlAudioPlayback();
+    void syncContainerPushSubscription();
   });
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    void syncContainerPushSubscription();
+  }
 }
 
 document.getElementById("iosSafariHintBtn").addEventListener("click", () => {

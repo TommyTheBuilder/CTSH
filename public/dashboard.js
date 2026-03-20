@@ -329,15 +329,20 @@ function applyContextUi() {
   const canCustomerAdmin = Boolean(coreContext?.admin?.can_open_customer_admin);
   const canPalletAdmin = Boolean(coreContext?.admin?.can_open_pallet_admin);
   const canAppAdmin = Boolean(coreContext?.admin?.can_open_app_admin);
+  const canViewAdminQuickAccess = Boolean(coreContext?.admin?.can_view_admin_quick_access);
+  const showCustomerAdminEntry = canViewAdminQuickAccess && canCustomerAdmin;
+  const showPalletAdminEntry = canViewAdminQuickAccess && canPalletAdmin;
+  const showAppAdminEntry = canViewAdminQuickAccess && canAppAdmin;
 
-  $("openCustomerAdminBtn").style.display = canCustomerAdmin ? "" : "none";
-  $("quickCustomerAdminBtn").style.display = canCustomerAdmin ? "" : "none";
-  $("openPalletAdminBtn").style.display = canPalletAdmin ? "" : "none";
-  $("quickPalletAdminBtn").style.display = canPalletAdmin ? "" : "none";
-  $("openAppAdminBtn").style.display = canAppAdmin ? "" : "none";
-  $("quickAppAdminBtn").style.display = canAppAdmin ? "" : "none";
+  $("openCustomerAdminBtn").style.display = showCustomerAdminEntry ? "" : "none";
+  $("quickCustomerAdminBtn").style.display = showCustomerAdminEntry ? "" : "none";
+  $("openPalletAdminBtn").style.display = showPalletAdminEntry ? "" : "none";
+  $("quickPalletAdminBtn").style.display = showPalletAdminEntry ? "" : "none";
+  $("openAppAdminBtn").style.display = showAppAdminEntry ? "" : "none";
+  $("quickAppAdminBtn").style.display = showAppAdminEntry ? "" : "none";
 
-  const quickAccessVisible = canCustomerAdmin || canPalletAdmin || canAppAdmin;
+  const quickAccessVisible = showCustomerAdminEntry || showPalletAdminEntry || showAppAdminEntry;
+  if ($("adminQuickCard")) $("adminQuickCard").style.display = quickAccessVisible ? "" : "none";
   if ($("adminQuickGrid")) $("adminQuickGrid").style.display = quickAccessVisible ? "" : "none";
   if ($("adminQuickEmpty")) $("adminQuickEmpty").style.display = quickAccessVisible ? "none" : "";
 
