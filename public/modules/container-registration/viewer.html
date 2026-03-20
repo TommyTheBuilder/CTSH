@@ -454,6 +454,7 @@ let notificationRegistration = null;
 let audioContextStateListenerBound = false;
 let alertsPrimed = false;
 let notificationPermissionPrimed = false;
+let audioOutputUnlocked = false;
 const VIEWER_LANG_KEY = "viewerLang";
 const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
 let currentLang = getInitialLanguage();
@@ -834,6 +835,9 @@ async function ensureAudioContext() {
     if (!audioContext) audioContext = new AUDIO_CONTEXT_CLASS();
     if (!audioContextStateListenerBound && typeof audioContext.addEventListener === "function") {
       audioContext.addEventListener("statechange", () => {
+        if (audioContext?.state === "interrupted" || audioContext?.state === "suspended") {
+          audioOutputUnlocked = false;
+        }
         if (!document.hidden && (audioContext?.state === "interrupted" || audioContext?.state === "suspended")) {
           window.setTimeout(() => {
             void ensureAudioContext();
@@ -851,6 +855,32 @@ async function ensureAudioContext() {
   } catch (error) {
     console.warn(t("audioContextError"), error);
     return null;
+  }
+}
+
+async function unlockAudioOutput() {
+  const ctx = await ensureAudioContext();
+  if (!ctx || ctx.state !== "running" || audioOutputUnlocked) return;
+
+  try {
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    const startAt = ctx.currentTime + 0.01;
+    const endAt = startAt + 0.03;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, startAt);
+    gainNode.gain.setValueAtTime(0.0001, startAt);
+    gainNode.gain.exponentialRampToValueAtTime(0.00012, startAt + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.start(startAt);
+    oscillator.stop(endAt);
+    audioOutputUnlocked = true;
+  } catch (error) {
+    console.warn(t("audioContextError"), error);
   }
 }
 
@@ -988,7 +1018,7 @@ async function triggerNotification(id, data){
 
 function primeAlerts() {
   alertsPrimed = true;
-  void ensureAudioContext();
+  void unlockAudioOutput();
   if (!notificationPermissionPrimed && "Notification" in window && Notification.permission === "default") {
     notificationPermissionPrimed = true;
     void requestNotificationPermission();

@@ -202,8 +202,11 @@ app.use((req, res, next) => {
   const isModuleHtml = pathName.startsWith("/modules/") && pathName.endsWith(".html");
   const isPalletAsset = pathName === "/public/styles.css"
     || pathName.startsWith("/public/modules/pallets/");
+  const isContainerRegistrationAsset = pathName.startsWith("/public/modules/container-registration/")
+    || pathName.startsWith("/modules/container-registration/")
+    || pathName === "/container-registration/viewer-sw.js";
 
-  if (isModuleHtml || isPalletAsset) {
+  if (isModuleHtml || isPalletAsset || isContainerRegistrationAsset) {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
