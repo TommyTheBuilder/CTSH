@@ -1,7 +1,8 @@
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = String(event.notification.data?.url || "/container-registration/viewer.html");
+  const defaultTargetUrl = new URL("viewer.html", self.registration.scope).toString();
+  const targetUrl = String(event.notification.data?.url || defaultTargetUrl);
 
   event.waitUntil((async () => {
     const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });

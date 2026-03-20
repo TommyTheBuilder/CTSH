@@ -451,7 +451,9 @@ const socket = io("/container-registration", {
 });
 let audioContext = null;
 let notificationRegistration = null;
+let audioContextStateListenerBound = false;
 let alertsPrimed = false;
+let notificationPermissionPrimed = false;
 const VIEWER_LANG_KEY = "viewerLang";
 const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
 let currentLang = getInitialLanguage();
@@ -465,6 +467,7 @@ const ALERT_REPEAT_INTERVAL = 0.95;
 const ALERT_VIBRATION_CYCLE = [180, 120, 180, 120, 180];
 const ALERT_VIBRATION_CYCLE_DURATION = ALERT_VIBRATION_CYCLE.reduce((total, duration) => total + duration, 0);
 const ALERT_VIBRATION_GAP = Math.max(0, Math.round((ALERT_REPEAT_INTERVAL * 1000) - ALERT_VIBRATION_CYCLE_DURATION));
+const AUDIO_CONTEXT_CLASS = window.AudioContext || window.webkitAudioContext;
 
 const I18N = {
   de: {
@@ -825,14 +828,64 @@ function applyStaticTranslations(){
 }
 
 async function ensureAudioContext() {
+  if (!AUDIO_CONTEXT_CLASS) return null;
+
   try {
-    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === "suspended") await audioContext.resume();
+    if (!audioContext) audioContext = new AUDIO_CONTEXT_CLASS();
+    if (!audioContextStateListenerBound && typeof audioContext.addEventListener === "function") {
+      audioContext.addEventListener("statechange", () => {
+        if (!document.hidden && (audioContext?.state === "interrupted" || audioContext?.state === "suspended")) {
+          window.setTimeout(() => {
+            void ensureAudioContext();
+          }, 120);
+        }
+      });
+      audioContextStateListenerBound = true;
+    }
+
+    if (audioContext.state === "suspended" || audioContext.state === "interrupted") {
+      await audioContext.resume();
+    }
+
     return audioContext;
   } catch (error) {
     console.warn(t("audioContextError"), error);
     return null;
   }
+}
+
+function isIosSafari() {
+  const userAgent = String(navigator.userAgent || "");
+  const platform = String(navigator.platform || "");
+  const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+  const isAppleMobileDevice = /iPad|iPhone|iPod/i.test(userAgent)
+    || (/Mac/i.test(platform) && maxTouchPoints > 1);
+  const isSafariEngine = /Safari/i.test(userAgent)
+    && !/Chrome|CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
+
+  return isAppleMobileDevice && isSafariEngine;
+}
+
+function supportsPageVibration() {
+  return typeof navigator.vibrate === "function";
+}
+
+function shouldForceSystemNotification() {
+  return isIosSafari() && !supportsPageVibration();
+}
+
+function getViewerServiceWorkerConfig() {
+  if (window.location.pathname.startsWith("/modules/container-registration/")) {
+    return {
+      scriptUrl: "/modules/container-registration/viewer-sw.js",
+      scope: "/modules/container-registration/"
+    };
+  }
+
+  return {
+    scriptUrl: "/container-registration/viewer-sw.js",
+    scope: "/container-registration/"
+  };
 }
 
 async function requestNotificationPermission() {
@@ -897,7 +950,7 @@ async function playProfessionalAlert() {
 }
 
 async function showBackgroundNotification(id, data) {
-  if (!document.hidden) return;
+  if (!document.hidden && !shouldForceSystemNotification()) return;
 
   const permission = await requestNotificationPermission();
   if (permission !== "granted") return;
@@ -928,29 +981,47 @@ async function showBackgroundNotification(id, data) {
 }
 
 async function triggerNotification(id, data){
-  if (navigator.vibrate) navigator.vibrate(getAlertVibrationPattern());
+  if (supportsPageVibration()) navigator.vibrate(getAlertVibrationPattern());
   await playProfessionalAlert();
   await showBackgroundNotification(id, data);
 }
 
 function primeAlerts() {
-  if (alertsPrimed) return;
   alertsPrimed = true;
   void ensureAudioContext();
-  void requestNotificationPermission();
+  if (!notificationPermissionPrimed && "Notification" in window && Notification.permission === "default") {
+    notificationPermissionPrimed = true;
+    void requestNotificationPermission();
+  }
 }
 
 async function initializeAlerts() {
   if ("serviceWorker" in navigator) {
     try {
-      notificationRegistration = await navigator.serviceWorker.register("/container-registration/viewer-sw.js");
+      const serviceWorkerConfig = getViewerServiceWorkerConfig();
+      notificationRegistration = await navigator.serviceWorker.register(
+        serviceWorkerConfig.scriptUrl,
+        { scope: serviceWorkerConfig.scope }
+      );
     } catch (error) {
       console.warn(t("serviceWorkerError"), error);
     }
   }
 
-  ["pointerdown", "touchstart", "keydown"].forEach((eventName) => {
+  ["pointerdown", "pointerup", "touchstart", "touchend", "keydown", "click"].forEach((eventName) => {
     window.addEventListener(eventName, primeAlerts, { passive: true });
+  });
+
+  ["focus", "pageshow"].forEach((eventName) => {
+    window.addEventListener(eventName, () => {
+      if (!alertsPrimed) return;
+      void ensureAudioContext();
+    });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || !alertsPrimed) return;
+    void ensureAudioContext();
   });
 }
 
