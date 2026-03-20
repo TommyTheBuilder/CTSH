@@ -11,6 +11,21 @@ function setMessage(message, type = "error") {
   err.classList.toggle("is-success", type === "success" && Boolean(message));
 }
 
+function setPasswordVisibility(isVisible) {
+  passwordInput.type = isVisible ? "text" : "password";
+  if (!togglePasswordBtn) return;
+  togglePasswordBtn.setAttribute("aria-pressed", String(isVisible));
+  togglePasswordBtn.setAttribute("aria-label", isVisible ? "Passwort verbergen" : "Passwort anzeigen");
+  togglePasswordBtn.textContent = isVisible ? "Verb." : "Anz.";
+  togglePasswordBtn.classList.toggle("is-visible", isVisible);
+}
+
+function clearPasswordField() {
+  passwordInput.value = "";
+  setPasswordVisibility(false);
+  passwordInput.focus();
+}
+
 async function submitLogin(event) {
   if (event) event.preventDefault();
   setMessage("");
@@ -37,7 +52,10 @@ async function submitLogin(event) {
     });
 
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Login fehlgeschlagen");
+    if (!response.ok) {
+      if (response.status === 401) clearPasswordField();
+      throw new Error(data.error || "Login fehlgeschlagen");
+    }
 
     localStorage.setItem("token", data.token);
     setMessage("Login erfolgreich. Weiterleitung wird vorbereitet.", "success");
@@ -59,11 +77,7 @@ if (loginForm) {
 if (togglePasswordBtn) {
   togglePasswordBtn.addEventListener("click", () => {
     const isHidden = passwordInput.type === "password";
-    passwordInput.type = isHidden ? "text" : "password";
-    togglePasswordBtn.setAttribute("aria-pressed", String(isHidden));
-    togglePasswordBtn.setAttribute("aria-label", isHidden ? "Passwort verbergen" : "Passwort anzeigen");
-    togglePasswordBtn.textContent = isHidden ? "Verb." : "Anz.";
-    togglePasswordBtn.classList.toggle("is-visible", isHidden);
+    setPasswordVisibility(isHidden);
     passwordInput.focus();
   });
 }
