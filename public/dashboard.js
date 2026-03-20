@@ -1,6 +1,7 @@
 let token = localStorage.getItem("token");
 let coreContext = null;
 let liveFeedTimer = null;
+let sessionRedirectInProgress = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -32,6 +33,21 @@ function setMsg(id, text, ok = false) {
   if (!el) return;
   el.style.color = ok ? "#0a7a2f" : "#b00020";
   el.textContent = text || "";
+}
+
+async function redirectToLogin() {
+  if (sessionRedirectInProgress) return;
+  sessionRedirectInProgress = true;
+  if (liveFeedTimer) {
+    window.clearInterval(liveFeedTimer);
+    liveFeedTimer = null;
+  }
+  try {
+    await fetch("/api/logout", { method: "POST", credentials: "include" });
+  } catch {}
+  localStorage.removeItem("token");
+  token = null;
+  window.location.href = "/login.html";
 }
 
 function closeSettingsMenu() {
@@ -278,6 +294,10 @@ function renderLiveFeed(items, message = "") {
 async function loadLiveFeed() {
   const response = await api("/api/dashboard/live-feed?limit=8", { method: "GET", headers: {} });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    await redirectToLogin();
+    return;
+  }
   if (!response.ok) {
     renderLiveFeed([], data?.error || "Live Feed konnte nicht geladen werden.");
     return;
@@ -317,9 +337,13 @@ function applyContextUi() {
   $("openAppAdminBtn").style.display = canAppAdmin ? "" : "none";
   $("quickAppAdminBtn").style.display = canAppAdmin ? "" : "none";
 
-  $("quickCustomerAdminBtn")?.addEventListener("click", () => window.location.href = "/admin.html");
-  $("quickPalletAdminBtn")?.addEventListener("click", () => window.location.href = "/modules/pallets/admin.html");
-  $("quickAppAdminBtn")?.addEventListener("click", () => window.location.href = "/app-admin.html");
+  const quickAccessVisible = canCustomerAdmin || canPalletAdmin || canAppAdmin;
+  if ($("adminQuickGrid")) $("adminQuickGrid").style.display = quickAccessVisible ? "" : "none";
+  if ($("adminQuickEmpty")) $("adminQuickEmpty").style.display = quickAccessVisible ? "none" : "";
+
+  if ($("quickCustomerAdminBtn")) $("quickCustomerAdminBtn").onclick = () => window.location.href = "/admin.html";
+  if ($("quickPalletAdminBtn")) $("quickPalletAdminBtn").onclick = () => window.location.href = "/modules/pallets/admin.html";
+  if ($("quickAppAdminBtn")) $("quickAppAdminBtn").onclick = () => window.location.href = "/app-admin.html";
 
   renderModules();
 }
@@ -328,8 +352,7 @@ async function loadCoreContext() {
   const response = await api("/api/core/context", { method: "GET", headers: {} });
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem("token");
-      window.location.href = "/login.html";
+      await redirectToLogin();
       return false;
     }
     const data = await response.json().catch(() => ({}));
