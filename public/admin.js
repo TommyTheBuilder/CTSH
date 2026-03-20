@@ -12,8 +12,7 @@ const PERMISSION_SECTIONS = [
     permissions: [
       { path: "users.manage", label: "Benutzer verwalten" },
       { path: "users.view_department", label: "Nur eigene Abteilung sehen" },
-      { path: "roles.manage", label: "Rollen und Rechte verwalten" },
-      { path: "admin.dashboard_quick_access", label: "Admin-Schnellzugriff im Dashboard sehen" }
+      { path: "roles.manage", label: "Rollen und Rechte verwalten" }
     ]
   },
   {
@@ -218,10 +217,7 @@ function buildEmptyPermissions() {
       transactions: { create: false, view: false, export: false, manage: false },
       picking: { view: false, manage: false, process: false }
     },
-    admin: {
-      full_access: false,
-      dashboard_quick_access: false
-    }
+    admin: { full_access: false }
   };
 }
 

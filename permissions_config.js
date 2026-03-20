@@ -90,10 +90,7 @@ function createPermissionDefaults() {
       }
     },
     warehouse: deepClone(WAREHOUSE_PERMISSION_DEFAULTS),
-    admin: {
-      full_access: false,
-      dashboard_quick_access: false
-    }
+    admin: { full_access: false }
   };
 }
 
@@ -158,10 +155,7 @@ function createFullAccessPermissions() {
       }
     },
     warehouse: deepClone(WAREHOUSE_PERMISSION_FULL_ACCESS),
-    admin: {
-      full_access: true,
-      dashboard_quick_access: true
-    }
+    admin: { full_access: true }
   };
 }
 
@@ -348,12 +342,7 @@ function hasPalletModuleAdminPermission(perms) {
   );
 }
 
-function hasAdminDashboardQuickAccessPermission(perms) {
-  return Boolean(perms?.admin?.full_access || perms?.admin?.dashboard_quick_access);
-}
-
 module.exports = {
-  hasAdminDashboardQuickAccessPermission,
   createPermissionDefaults,
   createFullAccessPermissions,
   deepMerge,

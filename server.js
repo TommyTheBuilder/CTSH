@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const bcrypt = require("bcryptjs");
-const fs = require("fs");
 const jwt = require("jsonwebtoken");
 const { Parser } = require("json2csv");
 const ExcelJS = require("exceljs");
@@ -54,101 +53,6 @@ const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").t
 const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "paletten-ms.de").trim();
 const AUTH_COOKIE_SAME_SITE = String(process.env.AUTH_COOKIE_SAME_SITE || "None").trim();
 const AUTH_COOKIE_MAX_AGE_SECONDS = Number(process.env.AUTH_COOKIE_MAX_AGE_SECONDS || 12 * 60 * 60);
-const CONTAINER_REGISTRATION_PUSH_SCOPE = "container_registration_viewer";
-const WEB_PUSH_SUBJECT = String(
-  process.env.WEB_PUSH_SUBJECT
-  || `mailto:webpush@${String(AUTH_COOKIE_DOMAIN || "localhost").replace(/^\.+/, "") || "localhost"}`
-).trim();
-const WEB_PUSH_KEYS_FILE = path.join(__dirname, ".webpush-vapid.json");
-
-let webPush = null;
-try {
-  webPush = require("web-push");
-} catch (error) {
-  console.warn("[web-push] Package not installed. Web push is disabled until dependencies are installed.");
-}
-
-function toBase64Url(buffer) {
-  return Buffer.from(buffer)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-function fromBase64Url(value) {
-  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
-  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
-  return Buffer.from(`${normalized}${padding}`, "base64");
-}
-
-function generateVapidKeyPair() {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", {
-    namedCurve: "prime256v1",
-    publicKeyEncoding: { format: "jwk" },
-    privateKeyEncoding: { format: "jwk" }
-  });
-
-  return {
-    publicKey: toBase64Url(Buffer.concat([
-      Buffer.from([0x04]),
-      fromBase64Url(publicKey.x),
-      fromBase64Url(publicKey.y)
-    ])),
-    privateKey: String(privateKey.d || "")
-  };
-}
-
-function loadOrCreateWebPushVapidKeys() {
-  const envPublicKey = String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "").trim();
-  const envPrivateKey = String(process.env.WEB_PUSH_VAPID_PRIVATE_KEY || "").trim();
-  if (envPublicKey && envPrivateKey) {
-    return {
-      publicKey: envPublicKey,
-      privateKey: envPrivateKey
-    };
-  }
-
-  try {
-    if (fs.existsSync(WEB_PUSH_KEYS_FILE)) {
-      const stored = JSON.parse(fs.readFileSync(WEB_PUSH_KEYS_FILE, "utf8"));
-      if (stored?.publicKey && stored?.privateKey) {
-        return {
-          publicKey: String(stored.publicKey).trim(),
-          privateKey: String(stored.privateKey).trim()
-        };
-      }
-    }
-  } catch (error) {
-    console.warn("[web-push] Failed to read stored VAPID keys:", error);
-  }
-
-  const generated = generateVapidKeyPair();
-
-  try {
-    fs.writeFileSync(WEB_PUSH_KEYS_FILE, JSON.stringify(generated, null, 2));
-  } catch (error) {
-    console.warn("[web-push] Failed to persist generated VAPID keys:", error);
-  }
-
-  return generated;
-}
-
-const WEB_PUSH_VAPID_KEYS = loadOrCreateWebPushVapidKeys();
-const WEB_PUSH_ENABLED = Boolean(
-  webPush
-  && WEB_PUSH_VAPID_KEYS.publicKey
-  && WEB_PUSH_VAPID_KEYS.privateKey
-  && WEB_PUSH_SUBJECT
-);
-
-if (WEB_PUSH_ENABLED) {
-  webPush.setVapidDetails(
-    WEB_PUSH_SUBJECT,
-    WEB_PUSH_VAPID_KEYS.publicKey,
-    WEB_PUSH_VAPID_KEYS.privateKey
-  );
-}
 
 function buildAuthCookieOptions() {
   const options = {
@@ -298,14 +202,8 @@ app.use((req, res, next) => {
   const isModuleHtml = pathName.startsWith("/modules/") && pathName.endsWith(".html");
   const isPalletAsset = pathName === "/public/styles.css"
     || pathName.startsWith("/public/modules/pallets/");
-  const isContainerRegistrationAsset = pathName.startsWith("/public/modules/container-registration/")
-    || pathName.startsWith("/modules/container-registration/")
-    || pathName.startsWith("/container-registration/")
-    || pathName === "/container-registration/viewer-sw.js"
-    || pathName === "/container-registration/manifest.webmanifest"
-    || pathName === "/container-registration/logo.png";
 
-  if (isModuleHtml || isPalletAsset || isContainerRegistrationAsset) {
+  if (isModuleHtml || isPalletAsset) {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -461,274 +359,6 @@ let containerRegistrationState = {};
 
 async function q(sql, params = []) {
   return pool.query(sql, params);
-}
-
-function normalizeContainerPushPlate(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function normalizeContainerPushFilter(rawFilter) {
-  const slotValue = Number(rawFilter?.slot);
-  const slot = Number.isInteger(slotValue) && slotValue >= 1 && slotValue <= 8 ? slotValue : null;
-  const plate = normalizeContainerPushPlate(rawFilter?.plate);
-
-  return { slot, plate };
-}
-
-function normalizeWebPushSubscription(rawSubscription) {
-  if (!rawSubscription || typeof rawSubscription !== "object") return null;
-
-  const endpoint = String(rawSubscription.endpoint || "").trim();
-  const p256dh = String(rawSubscription.keys?.p256dh || "").trim();
-  const auth = String(rawSubscription.keys?.auth || "").trim();
-
-  if (!endpoint || !p256dh || !auth) return null;
-
-  return {
-    endpoint,
-    keys: { p256dh, auth }
-  };
-}
-
-function getContainerRegistrationStatusLabel(status) {
-  const labels = {
-    [CONTAINER_REGISTRATION_STATUS_SLOT_CREATED]: "Slot erstellt",
-    [CONTAINER_REGISTRATION_STATUS_REGISTERED]: "Angemeldet",
-    [CONTAINER_REGISTRATION_STATUS_TO_RAMP]: "An die Rampe",
-    [CONTAINER_REGISTRATION_STATUS_WAITING_CUSTOMS]: "Warten auf Zollfreigabe",
-    [CONTAINER_REGISTRATION_STATUS_CUSTOMS_RELEASED]: "Zollfreigabe erteilt"
-  };
-
-  return labels[String(status || "").trim()] || "Status aktualisiert";
-}
-
-function getContainerRegistrationPushEventLabel(eventType) {
-  const labels = {
-    driver_register: "Container wurde angemeldet",
-    status_changed: "Containerstatus wurde aktualisiert",
-    time_changed: "Zeitfenster wurde aktualisiert",
-    reset: "Container wurde zurueckgesetzt"
-  };
-
-  return labels[String(eventType || "").trim()] || "Container wurde aktualisiert";
-}
-
-function buildContainerRegistrationPushTitle(containerId, status) {
-  return `Container ${containerId}: ${getContainerRegistrationStatusLabel(status)}`;
-}
-
-function buildContainerRegistrationPushBody(data, eventType) {
-  const parts = [getContainerRegistrationPushEventLabel(eventType)];
-  if (data?.time) parts.push(`Termin: ${data.time}`);
-  if (data?.plate) parts.push(`Kennzeichen: ${data.plate}`);
-  return parts.join(" | ");
-}
-
-async function removeContainerPushSubscriptionByIds(ids) {
-  const normalizedIds = Array.isArray(ids)
-    ? ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
-    : [];
-  if (!normalizedIds.length) return;
-
-  await q(
-    `DELETE FROM web_push_subscriptions
-     WHERE id = ANY($1::bigint[])`,
-    [normalizedIds]
-  );
-}
-
-async function removeContainerPushSubscriptionByEndpoint(endpoint) {
-  const safeEndpoint = String(endpoint || "").trim();
-  if (!safeEndpoint) return;
-
-  await q(
-    `DELETE FROM web_push_subscriptions
-     WHERE endpoint = $1`,
-    [safeEndpoint]
-  );
-}
-
-async function upsertContainerPushSubscription(user, body = {}) {
-  const subscription = normalizeWebPushSubscription(body.subscription);
-  if (!subscription) {
-    throw new Error("Invalid subscription payload");
-  }
-
-  const filter = normalizeContainerPushFilter(body.filter);
-  if (filter.slot === null && !filter.plate) {
-    throw new Error("Push subscriptions require a personal slot or plate filter");
-  }
-
-  const targetUrl = String(body.targetUrl || "").trim().slice(0, 2000);
-  const userAgent = String(body.userAgent || "").trim().slice(0, 1000);
-
-  await q(
-    `INSERT INTO web_push_subscriptions (
-       user_id,
-       app_customer_id,
-       scope,
-       endpoint,
-       p256dh,
-       auth,
-       subscription,
-       filter_slot,
-       filter_plate,
-       target_url,
-       user_agent,
-       last_seen_at
-     )
-     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,now())
-     ON CONFLICT (endpoint) DO UPDATE
-       SET user_id = EXCLUDED.user_id,
-           app_customer_id = EXCLUDED.app_customer_id,
-           scope = EXCLUDED.scope,
-           p256dh = EXCLUDED.p256dh,
-           auth = EXCLUDED.auth,
-           subscription = EXCLUDED.subscription,
-           filter_slot = EXCLUDED.filter_slot,
-           filter_plate = EXCLUDED.filter_plate,
-           target_url = EXCLUDED.target_url,
-           user_agent = EXCLUDED.user_agent,
-           updated_at = now(),
-           last_seen_at = now()`,
-    [
-      user.id,
-      user.app_customer_id || null,
-      CONTAINER_REGISTRATION_PUSH_SCOPE,
-      subscription.endpoint,
-      subscription.keys.p256dh,
-      subscription.keys.auth,
-      JSON.stringify(subscription),
-      filter.slot,
-      filter.plate || null,
-      targetUrl || null,
-      userAgent || null
-    ]
-  );
-}
-
-async function deleteContainerPushSubscriptionForUser(user, body = {}) {
-  const endpoint = String(body.endpoint || body.subscription?.endpoint || "").trim();
-  if (!endpoint) return false;
-
-  const result = await q(
-    `DELETE FROM web_push_subscriptions
-     WHERE user_id = $1
-       AND scope = $2
-       AND endpoint = $3`,
-    [user.id, CONTAINER_REGISTRATION_PUSH_SCOPE, endpoint]
-  );
-
-  return result.rowCount > 0;
-}
-
-function subscriptionMatchesContainerPush(row, context = {}) {
-  const filterSlot = Number(row?.filter_slot);
-  const filterPlate = normalizeContainerPushPlate(row?.filter_plate);
-  const containerId = Number(context.containerId);
-  const candidatePlates = Array.from(new Set(
-    (Array.isArray(context.plateCandidates) ? context.plateCandidates : [])
-      .map((value) => normalizeContainerPushPlate(value))
-      .filter(Boolean)
-  ));
-
-  if (Number.isInteger(filterSlot) && filterSlot > 0 && filterSlot === containerId) {
-    return true;
-  }
-
-  if (filterPlate && candidatePlates.includes(filterPlate)) {
-    return true;
-  }
-
-  return false;
-}
-
-async function sendContainerRegistrationPushNotifications(context = {}) {
-  if (!WEB_PUSH_ENABLED || !webPush) return;
-
-  const containerId = Number(context.containerId);
-  if (!Number.isInteger(containerId) || containerId <= 0) return;
-  const appCustomerId = context.appCustomerId == null ? null : Number(context.appCustomerId);
-
-  const plateCandidates = Array.from(new Set(
-    (Array.isArray(context.plateCandidates) ? context.plateCandidates : [])
-      .map((value) => normalizeContainerPushPlate(value))
-      .filter(Boolean)
-  ));
-
-  const queryParams = [CONTAINER_REGISTRATION_PUSH_SCOPE];
-  queryParams.push(appCustomerId);
-  const customerClause = `COALESCE(app_customer_id, 0) = COALESCE($2::int, 0)`;
-  let slotClause = "";
-  let plateClause = "";
-
-  if (containerId > 0) {
-    queryParams.push(containerId);
-    slotClause = `filter_slot = $${queryParams.length}`;
-  }
-
-  if (plateCandidates.length > 0) {
-    queryParams.push(plateCandidates);
-    plateClause = `filter_plate = ANY($${queryParams.length}::text[])`;
-  }
-
-  if (!slotClause && !plateClause) return;
-
-  const rows = (await q(
-    `SELECT id, user_id, endpoint, subscription, filter_slot, filter_plate, target_url
-     FROM web_push_subscriptions
-     WHERE scope = $1
-       AND ${customerClause}
-       AND (${[slotClause, plateClause].filter(Boolean).join(" OR ")})`,
-    queryParams
-  )).rows;
-
-  if (!rows.length) return;
-
-  const staleIds = [];
-  await Promise.all(rows.map(async (row) => {
-    if (!subscriptionMatchesContainerPush(row, { containerId, plateCandidates })) {
-      return;
-    }
-
-    const title = buildContainerRegistrationPushTitle(containerId, context.data?.status);
-    const body = buildContainerRegistrationPushBody(context.data || {}, context.eventType);
-    const targetUrl = String(row.target_url || context.targetUrl || "/container-registration/viewer.html").trim();
-    const payload = JSON.stringify({
-      title,
-      body,
-      tag: `container-registration-${containerId}`,
-      icon: "/container-registration/logo.png",
-      badge: "/container-registration/logo.png",
-      data: {
-        url: targetUrl,
-        containerId,
-        status: context.data?.status || "",
-        plate: context.data?.plate || "",
-        time: context.data?.time || "",
-        eventType: context.eventType || "status_changed"
-      }
-    });
-
-    try {
-      await webPush.sendNotification(row.subscription, payload, {
-        TTL: 60 * 60,
-        urgency: "high",
-        topic: `container-registration-${containerId}`
-      });
-    } catch (error) {
-      const statusCode = Number(error?.statusCode || 0);
-      if (statusCode === 404 || statusCode === 410) {
-        staleIds.push(row.id);
-        return;
-      }
-      console.warn("[web-push] Failed to send container registration push:", error?.body || error?.message || error);
-    }
-  }));
-
-  if (staleIds.length) {
-    await removeContainerPushSubscriptionByIds(staleIds);
-  }
 }
 
 function normalizeProductType(value) {
@@ -2586,7 +2216,6 @@ app.get("/api/core/context", authRequired, async (req, res) => {
       enabledModuleKeys: activeModuleKeys
     }),
     admin: {
-      can_view_admin_quick_access: permissionsConfig.hasAdminDashboardQuickAccessPermission(permissions),
       can_open_customer_admin: canAccessCustomerAdmin(req.user, permissions),
       can_open_app_admin: canAccessAppAdmin(req.user),
       can_open_pallet_admin: canAccessPalletModuleAdmin(req.user, permissions, activeModuleKeys)
@@ -3499,21 +3128,6 @@ app.get("/container-registration/viewer-sw.js", requireModulePageAccess(async (u
 }), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer-sw.js"));
 });
-app.get("/container-registration/manifest.webmanifest", requireModulePageAccess(async (user, perms, req) => {
-  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
-  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
-    && hasContainerViewerPermission(perms);
-}), (req, res) => {
-  res.type("application/manifest+json");
-  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "manifest.webmanifest"));
-});
-app.get("/container-registration/logo.png", requireModulePageAccess(async (user, perms, req) => {
-  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
-  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
-    && hasContainerViewerPermission(perms);
-}), (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "logo.png"));
-});
 
 function defaultRegistrationContainer(id) {
   return {
@@ -4087,35 +3701,6 @@ app.get("/api/modules/container-registration/state", authRequired, requireContai
   res.json(cloneRegistrationState());
 });
 
-app.get("/api/modules/container-registration/push/config", authRequired, requireContainerViewerAccess, async (_req, res) => {
-  res.json({
-    enabled: WEB_PUSH_ENABLED,
-    publicKey: WEB_PUSH_ENABLED ? WEB_PUSH_VAPID_KEYS.publicKey : "",
-    requiresHomeScreen: true,
-    scope: CONTAINER_REGISTRATION_PUSH_SCOPE
-  });
-});
-
-app.post("/api/modules/container-registration/push/subscribe", authRequired, requireContainerViewerAccess, async (req, res) => {
-  if (!WEB_PUSH_ENABLED) {
-    return res.status(503).json({ error: "Web Push is not configured on the server." });
-  }
-
-  try {
-    await upsertContainerPushSubscription(req.user, req.body || {});
-    return res.status(201).json({ ok: true });
-  } catch (error) {
-    const message = error?.message || "Push subscription could not be saved.";
-    const statusCode = message.includes("filter") || message.includes("Invalid subscription") ? 400 : 500;
-    return res.status(statusCode).json({ error: message });
-  }
-});
-
-app.delete("/api/modules/container-registration/push/subscribe", authRequired, requireContainerViewerAccess, async (req, res) => {
-  const removed = await deleteContainerPushSubscriptionForUser(req.user, req.body || {});
-  res.json({ ok: true, removed });
-});
-
 app.get("/api/modules/container-registration/history", authRequired, requireContainerHistoryAccess, async (req, res) => {
   const entries = await getContainerRegistrationHistory(req.query.limit);
   res.json({ entries });
@@ -4281,14 +3866,6 @@ containerRegistrationNamespace.on("connection", (socket) => {
       plate: normalizedPlate,
       details: { bookingNo, timeSlot: selected.time || "", startedAt: nowIso }
     });
-    void sendContainerRegistrationPushNotifications({
-      containerId: cid,
-      data: { ...selected },
-      eventType: "driver_register",
-      appCustomerId: socket.data.portalUser?.app_customer_id || null,
-      plateCandidates: [normalizedPlate],
-      targetUrl: `/container-registration/viewer.html?slot=${cid}&plate=${encodeURIComponent(normalizedPlate)}`
-    });
 
     socket.emit("driverRegisterResult", { ok: true, message: "Erfolgreich angemeldet. Bitte warten." });
   });
@@ -4309,14 +3886,6 @@ containerRegistrationNamespace.on("connection", (socket) => {
       containerId: cid,
       plate: containerRegistrationState[cid].plate || "",
       details: { bookingNo: containerRegistrationState[cid].bookingNo || null, from: before, to: status }
-    });
-    void sendContainerRegistrationPushNotifications({
-      containerId: cid,
-      data: { ...containerRegistrationState[cid] },
-      eventType: "status_changed",
-      appCustomerId: socket.data.portalUser?.app_customer_id || null,
-      plateCandidates: [containerRegistrationState[cid].plate],
-      targetUrl: `/container-registration/viewer.html?slot=${cid}${containerRegistrationState[cid].plate ? `&plate=${encodeURIComponent(containerRegistrationState[cid].plate)}` : ""}`
     });
   });
 
@@ -4340,14 +3909,6 @@ containerRegistrationNamespace.on("connection", (socket) => {
       plate: containerRegistrationState[cid].plate || "",
       details: { bookingNo: containerRegistrationState[cid].bookingNo || null, from: before, to: safeTime }
     });
-    void sendContainerRegistrationPushNotifications({
-      containerId: cid,
-      data: { ...containerRegistrationState[cid] },
-      eventType: "time_changed",
-      appCustomerId: socket.data.portalUser?.app_customer_id || null,
-      plateCandidates: [containerRegistrationState[cid].plate],
-      targetUrl: `/container-registration/viewer.html?slot=${cid}${containerRegistrationState[cid].plate ? `&plate=${encodeURIComponent(containerRegistrationState[cid].plate)}` : ""}`
-    });
   });
 
   socket.on("adminResetContainer", async ({ id } = {}) => {
@@ -4366,14 +3927,6 @@ containerRegistrationNamespace.on("connection", (socket) => {
       containerId: cid,
       plate: before.plate || "",
       details: { bookingNo: before.bookingNo || null, completedAt: new Date().toISOString(), before }
-    });
-    void sendContainerRegistrationPushNotifications({
-      containerId: cid,
-      data: { ...containerRegistrationState[cid] },
-      eventType: "reset",
-      appCustomerId: socket.data.portalUser?.app_customer_id || null,
-      plateCandidates: [before.plate],
-      targetUrl: `/container-registration/viewer.html?slot=${cid}`
     });
   });
 
@@ -8055,28 +7608,6 @@ async function ensureRuntimeTables() {
     );
   `);
   await q(`CREATE INDEX IF NOT EXISTS idx_container_registration_history_booking ON container_registration_history ((details->>'bookingNo'));`);
-  await q(`
-    CREATE TABLE IF NOT EXISTS web_push_subscriptions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      app_customer_id INTEGER,
-      scope TEXT NOT NULL,
-      endpoint TEXT NOT NULL UNIQUE,
-      p256dh TEXT NOT NULL,
-      auth TEXT NOT NULL,
-      subscription JSONB NOT NULL,
-      filter_slot INTEGER,
-      filter_plate TEXT,
-      target_url TEXT,
-      user_agent TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  await q(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_user_scope ON web_push_subscriptions(user_id, scope, updated_at DESC);`);
-  await q(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_filter_slot ON web_push_subscriptions(filter_slot) WHERE filter_slot IS NOT NULL;`);
-  await q(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_filter_plate ON web_push_subscriptions(filter_plate) WHERE filter_plate IS NOT NULL;`);
 
   await q(`
     CREATE TABLE IF NOT EXISTS container_registration_booking_counter (

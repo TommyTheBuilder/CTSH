@@ -2,36 +2,10 @@ const jwt = require("jsonwebtoken");
 const { getUserContext, isAppAdmin } = require("./core/platform_access");
 
 const AUTH_COOKIE_NAME = String(process.env.AUTH_COOKIE_NAME || "portal_auth").trim();
-const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || "paletten-ms.de").trim();
-const AUTH_COOKIE_SAME_SITE = String(process.env.AUTH_COOKIE_SAME_SITE || "None").trim();
 
 const JWT_SECRET = process.env.JWT_SECRET || "7xK9!mP2#vQ8@zL4$rT1%wN6&bH3*eF9";
 if (JWT_SECRET === "CHANGE_ME_SUPER_SECRET" && process.env.ALLOW_INSECURE_JWT !== "true") {
   throw new Error("JWT_SECRET must be set (or explicitly set ALLOW_INSECURE_JWT=true for local dev only)");
-}
-
-function buildAuthCookieOptions() {
-  const options = {
-    httpOnly: true,
-    secure: true,
-    sameSite: AUTH_COOKIE_SAME_SITE,
-    path: "/"
-  };
-  if (AUTH_COOKIE_DOMAIN) {
-    options.domain = AUTH_COOKIE_DOMAIN;
-  }
-  return options;
-}
-
-function clearAuthCookie(res) {
-  if (!AUTH_COOKIE_NAME) return;
-  res.clearCookie(AUTH_COOKIE_NAME, buildAuthCookieOptions());
-}
-
-function isExpectedAuthError(error) {
-  return error?.name === "TokenExpiredError"
-    || error?.name === "JsonWebTokenError"
-    || error?.name === "NotBeforeError";
 }
 
 async function authRequired(req, res, next) {
@@ -52,12 +26,8 @@ async function authRequired(req, res, next) {
     req.user = user;
     next();
   } catch (error) {
-    clearAuthCookie(res);
-    if (!isExpectedAuthError(error)) {
-      console.error("authRequired error:", error);
-    }
-    const message = error?.name === "TokenExpiredError" ? "Session expired" : "Invalid token";
-    return res.status(401).json({ error: message });
+    console.error("authRequired error:", error);
+    return res.status(401).json({ error: "Invalid token" });
   }
 }
 

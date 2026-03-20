@@ -330,28 +330,6 @@ async function migrate() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_notifications_user_created ON user_notifications(user_id, created_at DESC);`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS web_push_subscriptions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      app_customer_id INTEGER,
-      scope TEXT NOT NULL,
-      endpoint TEXT NOT NULL UNIQUE,
-      p256dh TEXT NOT NULL,
-      auth TEXT NOT NULL,
-      subscription JSONB NOT NULL,
-      filter_slot INTEGER,
-      filter_plate TEXT,
-      target_url TEXT,
-      user_agent TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_user_scope ON web_push_subscriptions(user_id, scope, updated_at DESC);`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_filter_slot ON web_push_subscriptions(filter_slot) WHERE filter_slot IS NOT NULL;`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_filter_plate ON web_push_subscriptions(filter_plate) WHERE filter_plate IS NOT NULL;`);
 
   // booking_cases Index
   await pool.query(`
