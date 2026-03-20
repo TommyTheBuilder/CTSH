@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0a192f" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="/container-registration/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/container-registration/logo.png" />
 <title>Container Board</title>
 <script src="/socket.io/socket.io.js"></script>
 <style>
@@ -226,7 +232,109 @@ header {
   margin: 0 auto;
   padding: 26px 20px 34px;
   display: flex;
+  flex-direction: column;
+  gap: 16px;
   justify-content: center;
+}
+
+.iosHint {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 158, 11, .38);
+  background: linear-gradient(135deg, rgba(245,158,11,.18), rgba(251,191,36,.08));
+  color: var(--text-main);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, .10);
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.iosHint.is-visible { display: flex; }
+.iosHint__text { font-size: 14px; line-height: 1.45; }
+.iosHint__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.iosHintBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.alertOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(15, 23, 42, .68);
+  backdrop-filter: blur(6px);
+}
+
+.alertOverlay.is-visible { display: flex; }
+
+.alertOverlay__panel {
+  width: min(100%, 540px);
+  border-radius: 26px;
+  padding: 22px 20px;
+  border: 1px solid rgba(255,255,255,.18);
+  background:
+    radial-gradient(circle at top, rgba(239,68,68,.18), transparent 45%),
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, .32);
+  animation: alertPulse 1.15s ease-in-out infinite;
+}
+
+.alertOverlay__eyebrow {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #b91c1c;
+}
+
+.alertOverlay__title {
+  margin: 10px 0 8px;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.alertOverlay__body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.alertOverlay__actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.alertOverlay__close {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #0f172a;
+  color: #fff;
+}
+
+@keyframes alertPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 30px 60px rgba(15, 23, 42, .32); }
+  50% { transform: scale(1.015); box-shadow: 0 34px 72px rgba(185, 28, 28, .26); }
 }
 
 .grid {
@@ -388,6 +496,10 @@ body.dark .rampUrl { color: #bbf7d0; }
   .grid {
     grid-template-columns: 1fr;
   }
+  .iosHint {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .cardTop {
     flex-direction: column;
     align-items: stretch;
@@ -406,7 +518,7 @@ body.dark .rampUrl { color: #bbf7d0; }
 <header>
   <div class="headerBar">
     <a href="./viewer.html" class="logoLink" aria-label="ICS Home">
-      <img src="./logo.png" alt="ICS Logo" class="logoImage" />
+      <img src="/container-registration/logo.png" alt="ICS Logo" class="logoImage" />
     </a>
 
     <div class="headerActions">
@@ -437,9 +549,26 @@ body.dark .rampUrl { color: #bbf7d0; }
 
 <main>
   <div class="wrap">
+    <div id="iosSafariHint" class="iosHint" role="status" aria-live="polite">
+      <div id="iosSafariHintText" class="iosHint__text"></div>
+      <div class="iosHint__actions">
+        <button id="iosSafariHintBtn" class="iosHintBtn" type="button"></button>
+      </div>
+    </div>
     <div id="grid" class="grid"></div>
   </div>
 </main>
+
+<div id="alertOverlay" class="alertOverlay" aria-live="assertive" aria-hidden="true">
+  <div class="alertOverlay__panel">
+    <div id="alertOverlayEyebrow" class="alertOverlay__eyebrow"></div>
+    <h2 id="alertOverlayTitle" class="alertOverlay__title"></h2>
+    <p id="alertOverlayBody" class="alertOverlay__body"></p>
+    <div class="alertOverlay__actions">
+      <button id="alertOverlayCloseBtn" class="alertOverlay__close" type="button"></button>
+    </div>
+  </div>
+</div>
 
 <script src="/public/shared-theme.js"></script>
 <script>
@@ -455,6 +584,11 @@ let audioContextStateListenerBound = false;
 let alertsPrimed = false;
 let notificationPermissionPrimed = false;
 let audioOutputUnlocked = false;
+let notificationAudio = null;
+let alertOverlayTimer = 0;
+let titleFlashTimer = 0;
+let titleResetTimer = 0;
+const defaultDocumentTitle = document.title;
 const VIEWER_LANG_KEY = "viewerLang";
 const VIEWER_FILTER_KEY = "containerRegistrationViewerFilter";
 let currentLang = getInitialLanguage();
@@ -494,6 +628,11 @@ const I18N = {
     notificationDisplayError: "Systembenachrichtigung konnte nicht angezeigt werden:",
     serviceWorkerError: "Viewer Service Worker konnte nicht registriert werden:",
     routeCta: "📍 Route zur Rampe öffnen",
+    iosSafariHintText: "Apple blockiert Ton, Vibration und Systemmeldungen im normalen Safari-Tab teilweise. Tippe einmal auf Aktivieren. Falls iOS weiter blockiert, diese Seite zum Home-Bildschirm hinzufuegen und von dort oeffnen.",
+    iosSafariHintAction: "Alarm aktivieren",
+    alertOverlayEyebrow: "Live Alarm",
+    alertOverlayTitle: "Neue Container-Meldung",
+    alertOverlayClose: "Schliessen",
     toggle: "English"
   },
   en: {
@@ -519,6 +658,11 @@ const I18N = {
     notificationDisplayError: "Could not display system notification:",
     serviceWorkerError: "Could not register viewer service worker:",
     routeCta: "📍 Open route to ramp",
+    iosSafariHintText: "Apple limits sound, vibration, and system notifications in a normal Safari tab. Tap activate once. If iOS still blocks alerts, add this page to the Home Screen and open it from there.",
+    iosSafariHintAction: "Activate alerts",
+    alertOverlayEyebrow: "Live Alert",
+    alertOverlayTitle: "New container alert",
+    alertOverlayClose: "Close",
     toggle: "Deutsch"
   }
 };
@@ -815,7 +959,7 @@ function applyOne(id, data){
 
 function applyStaticTranslations(){
   document.documentElement.lang = currentLang;
-  document.title = t("pageTitle");
+  document.title = defaultDocumentTitle || t("pageTitle");
   document.getElementById("title").textContent = t("title");
   document.getElementById("subtitle").textContent = t("subtitle");
   document.getElementById("legend-red").textContent = t("statusRed");
@@ -826,6 +970,14 @@ function applyStaticTranslations(){
   document.getElementById("langToggle").textContent = t("toggle");
   document.getElementById("settingsToggle").setAttribute("aria-label", t("settingsAria"));
   document.getElementById("darkmodeToggle").textContent = t("darkmodeToggle");
+  document.getElementById("iosSafariHintText").textContent = t("iosSafariHintText");
+  document.getElementById("iosSafariHintBtn").textContent = t("iosSafariHintAction");
+  document.getElementById("alertOverlayEyebrow").textContent = t("alertOverlayEyebrow");
+  document.getElementById("alertOverlayCloseBtn").textContent = t("alertOverlayClose");
+  if (!document.getElementById("alertOverlayTitle").textContent.trim()) {
+    document.getElementById("alertOverlayTitle").textContent = t("alertOverlayTitle");
+  }
+  applyIosSafariHint();
 }
 
 async function ensureAudioContext() {
@@ -884,6 +1036,134 @@ async function unlockAudioOutput() {
   }
 }
 
+function writeAsciiToDataView(view, offset, value) {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index));
+  }
+}
+
+function buildAlertAudioDataUrl() {
+  const sampleRate = 22050;
+  const segments = [
+    { frequency: 659.25, duration: 0.18, gain: 0.65 },
+    { frequency: 0, duration: 0.04, gain: 0 },
+    { frequency: 880.0, duration: 0.26, gain: 0.62 },
+    { frequency: 0, duration: 0.10, gain: 0 },
+    { frequency: 659.25, duration: 0.18, gain: 0.65 },
+    { frequency: 0, duration: 0.04, gain: 0 },
+    { frequency: 880.0, duration: 0.28, gain: 0.62 }
+  ];
+  const sampleCount = segments.reduce((total, segment) => total + Math.floor(segment.duration * sampleRate), 0);
+  const samples = new Float32Array(sampleCount);
+  let cursor = 0;
+
+  segments.forEach((segment) => {
+    const segmentSamples = Math.floor(segment.duration * sampleRate);
+    for (let index = 0; index < segmentSamples; index += 1) {
+      if (segment.frequency <= 0) {
+        samples[cursor] = 0;
+      } else {
+        const progress = index / Math.max(1, segmentSamples - 1);
+        const envelope = Math.sin(Math.PI * progress) ** 1.2;
+        const wave = Math.sin((2 * Math.PI * segment.frequency * index) / sampleRate);
+        samples[cursor] = wave * segment.gain * envelope;
+      }
+      cursor += 1;
+    }
+  });
+
+  const buffer = new ArrayBuffer(44 + (samples.length * 2));
+  const view = new DataView(buffer);
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+
+  writeAsciiToDataView(view, 0, "RIFF");
+  view.setUint32(4, 36 + (samples.length * 2), true);
+  writeAsciiToDataView(view, 8, "WAVE");
+  writeAsciiToDataView(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeAsciiToDataView(view, 36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+function ensureNotificationAudio() {
+  if (notificationAudio) return notificationAudio;
+
+  try {
+    notificationAudio = new Audio(buildAlertAudioDataUrl());
+    notificationAudio.preload = "auto";
+    notificationAudio.loop = false;
+    notificationAudio.playsInline = true;
+    notificationAudio.setAttribute("playsinline", "");
+    notificationAudio.setAttribute("webkit-playsinline", "");
+  } catch (error) {
+    console.warn(t("audioContextError"), error);
+    notificationAudio = null;
+  }
+
+  return notificationAudio;
+}
+
+async function unlockHtmlAudioPlayback() {
+  const audio = ensureNotificationAudio();
+  if (!audio) return;
+
+  try {
+    audio.pause();
+    audio.muted = true;
+    audio.currentTime = 0;
+    const playResult = audio.play();
+    if (playResult && typeof playResult.then === "function") {
+      await playResult;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+  } catch {
+    audio.muted = false;
+  }
+}
+
+async function playHtmlAudioAlert() {
+  const audio = ensureNotificationAudio();
+  if (!audio) return false;
+
+  try {
+    audio.pause();
+    audio.muted = false;
+    audio.currentTime = 0;
+    const playResult = audio.play();
+    if (playResult && typeof playResult.then === "function") {
+      await playResult;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isIosSafari() {
   const userAgent = String(navigator.userAgent || "");
   const platform = String(navigator.platform || "");
@@ -900,8 +1180,77 @@ function supportsPageVibration() {
   return typeof navigator.vibrate === "function";
 }
 
+function isStandaloneMode() {
+  try {
+    return !!(window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true);
+  } catch {
+    return window.navigator.standalone === true;
+  }
+}
+
 function shouldForceSystemNotification() {
   return isIosSafari() && !supportsPageVibration();
+}
+
+function applyIosSafariHint() {
+  const hint = document.getElementById("iosSafariHint");
+  if (!hint) return;
+  hint.classList.toggle("is-visible", isIosSafari() && !isStandaloneMode());
+}
+
+function clearAlertTitleFlash() {
+  if (titleFlashTimer) {
+    window.clearInterval(titleFlashTimer);
+    titleFlashTimer = 0;
+  }
+  if (titleResetTimer) {
+    window.clearTimeout(titleResetTimer);
+    titleResetTimer = 0;
+  }
+  document.title = defaultDocumentTitle || t("pageTitle");
+}
+
+function startAlertTitleFlash(title) {
+  clearAlertTitleFlash();
+  let showAlertTitle = true;
+  document.title = title;
+  titleFlashTimer = window.setInterval(() => {
+    document.title = showAlertTitle ? title : (defaultDocumentTitle || t("pageTitle"));
+    showAlertTitle = !showAlertTitle;
+  }, 900);
+  titleResetTimer = window.setTimeout(() => {
+    if (titleFlashTimer) clearAlertTitleFlash();
+  }, 9000);
+}
+
+function hideInPageAlert() {
+  const overlay = document.getElementById("alertOverlay");
+  if (!overlay) return;
+  overlay.classList.remove("is-visible");
+  overlay.setAttribute("aria-hidden", "true");
+  if (alertOverlayTimer) {
+    window.clearTimeout(alertOverlayTimer);
+    alertOverlayTimer = 0;
+  }
+  clearAlertTitleFlash();
+}
+
+function showInPageAlert(id, data) {
+  const overlay = document.getElementById("alertOverlay");
+  if (!overlay) return;
+
+  const title = `Container ${id}: ${statusText(data.status)}`;
+  const body = `${t("scheduleLabel")}: ${timeText(data.time)} | ${plateText(data.plate)}`;
+  document.getElementById("alertOverlayTitle").textContent = title || t("alertOverlayTitle");
+  document.getElementById("alertOverlayBody").textContent = body;
+  overlay.classList.add("is-visible");
+  overlay.setAttribute("aria-hidden", "false");
+  startAlertTitleFlash(title);
+
+  if (alertOverlayTimer) window.clearTimeout(alertOverlayTimer);
+  alertOverlayTimer = window.setTimeout(() => {
+    hideInPageAlert();
+  }, 12000);
 }
 
 function getViewerServiceWorkerConfig() {
@@ -993,8 +1342,8 @@ async function showBackgroundNotification(id, data) {
     tag: `container-status-${id}`,
     renotify: true,
     requireInteraction: true,
-    icon: "/public/logo.png",
-    badge: "/public/logo.png",
+    icon: "/container-registration/logo.png",
+    badge: "/container-registration/logo.png",
     data: { url: window.location.href }
   };
 
@@ -1011,14 +1360,19 @@ async function showBackgroundNotification(id, data) {
 }
 
 async function triggerNotification(id, data){
+  showInPageAlert(id, data);
   if (supportsPageVibration()) navigator.vibrate(getAlertVibrationPattern());
-  await playProfessionalAlert();
-  await showBackgroundNotification(id, data);
+  await Promise.allSettled([
+    playHtmlAudioAlert(),
+    playProfessionalAlert(),
+    showBackgroundNotification(id, data)
+  ]);
 }
 
 function primeAlerts() {
   alertsPrimed = true;
   void unlockAudioOutput();
+  void unlockHtmlAudioPlayback();
   if (!notificationPermissionPrimed && "Notification" in window && Notification.permission === "default") {
     notificationPermissionPrimed = true;
     void requestNotificationPermission();
@@ -1046,14 +1400,24 @@ async function initializeAlerts() {
     window.addEventListener(eventName, () => {
       if (!alertsPrimed) return;
       void ensureAudioContext();
+      void unlockHtmlAudioPlayback();
     });
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden || !alertsPrimed) return;
     void ensureAudioContext();
+    void unlockHtmlAudioPlayback();
   });
 }
+
+document.getElementById("iosSafariHintBtn").addEventListener("click", () => {
+  primeAlerts();
+});
+
+document.getElementById("alertOverlayCloseBtn").addEventListener("click", () => {
+  hideInPageAlert();
+});
 
 document.getElementById("langToggle").addEventListener("click", () => {
   currentLang = currentLang === "de" ? "en" : "de";

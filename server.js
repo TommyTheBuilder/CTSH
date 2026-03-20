@@ -204,7 +204,10 @@ app.use((req, res, next) => {
     || pathName.startsWith("/public/modules/pallets/");
   const isContainerRegistrationAsset = pathName.startsWith("/public/modules/container-registration/")
     || pathName.startsWith("/modules/container-registration/")
-    || pathName === "/container-registration/viewer-sw.js";
+    || pathName.startsWith("/container-registration/")
+    || pathName === "/container-registration/viewer-sw.js"
+    || pathName === "/container-registration/manifest.webmanifest"
+    || pathName === "/container-registration/logo.png";
 
   if (isModuleHtml || isPalletAsset || isContainerRegistrationAsset) {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -3130,6 +3133,21 @@ app.get("/container-registration/viewer-sw.js", requireModulePageAccess(async (u
     && hasContainerViewerPermission(perms);
 }), (req, res) => {
   res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "viewer-sw.js"));
+});
+app.get("/container-registration/manifest.webmanifest", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
+    && hasContainerViewerPermission(perms);
+}), (req, res) => {
+  res.type("application/manifest+json");
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "manifest.webmanifest"));
+});
+app.get("/container-registration/logo.png", requireModulePageAccess(async (user, perms, req) => {
+  const enabledModuleKeys = await getActiveModuleKeysForModuleRequest(user, req);
+  return canAccessModule("container_registration", user, perms, enabledModuleKeys)
+    && hasContainerViewerPermission(perms);
+}), (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "modules", "container-registration", "logo.png"));
 });
 
 function defaultRegistrationContainer(id) {
